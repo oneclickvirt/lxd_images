@@ -48,7 +48,7 @@ jobs:
       max-parallel: 12
       matrix: ${{ fromJson(needs.prepare-matrix.outputs.test-matrix) }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 10
+    timeout-minutes: 8
     # 定义 job 输出，方便在后续任务中收集每个测试的状态
     outputs:
       success: ${{ steps.test.outputs.success }}
@@ -108,32 +108,49 @@ jobs:
 
       - name: Collect Test Results
         run: |
-          echo "收集测试结果..."
-          # 将 prepare-matrix 任务构造的矩阵 JSON 提取出来，并遍历每个条目
+          echo "开始收集测试结果..."
+          echo "当前工作目录文件列表:"
+          ls -la
+          echo "初始镜像列表内容:"
+          echo "x86_64_all_images.txt 内容:"
+          cat x86_64_all_images.txt
+          echo "arm64_all_images.txt 内容:"
+          cat arm64_all_images.txt
+          echo "开始处理测试矩阵结果..."
           MATRIX_JSON='${{ needs.prepare-matrix.outputs.test-matrix }}'
+          echo "测试矩阵 JSON:"
+          echo "$MATRIX_JSON"
           echo "$MATRIX_JSON" | jq -c '.include[]' | nl -v 0 -w 1 -s ' ' | while read idx entry; do
             IMAGE=$(echo "$entry" | jq -r '.image')
             ARCH=$(echo "$entry" | jq -r '.arch')
-            
-            # 从矩阵任务输出中提取对应索引的 success 状态
-            # 这里借助 toJSON(needs.test-single-image) 获取各个矩阵 job 的输出，并用 jq 过滤出 index 为 idx 的项
+            echo "处理第 $idx 个测试结果:"
+            echo "镜像: $IMAGE"
+            echo "架构: $ARCH"
             SUCCESS=$(echo '${{ toJSON(needs.test-single-image) }}' | jq -r --arg idx "$idx" '.[$idx].outputs.success')
-            
+            echo "测试结果: $SUCCESS"
             if [ "$SUCCESS" = "true" ]; then
               if [ "$ARCH" = "amd64" ]; then
+                echo "添加成功的 amd64 镜像到 x86_64_fixed_images.txt: $IMAGE"
                 echo "$IMAGE" >> x86_64_fixed_images.txt
-              else
+              elif [ "$ARCH" = "arm64" ]; then
+                echo "添加成功的 arm64 镜像到 arm64_fixed_images.txt: $IMAGE"
                 echo "$IMAGE" >> arm64_fixed_images.txt
+              else
+                echo "警告: 未知架构 $ARCH, 镜像 $IMAGE 将被跳过"
               fi
             else
-              echo "跳过测试失败的镜像: $IMAGE"
+              echo "跳过测试失败的镜像: $IMAGE (架构: $ARCH)"
             fi
           done
-          
-          # 去重并排序
+          echo "排序并去重结果文件..."
           sort -u x86_64_fixed_images.txt -o x86_64_fixed_images.txt
           sort -u arm64_fixed_images.txt -o arm64_fixed_images.txt
-
+          echo "最终结果文件内容:"
+          echo "x86_64_fixed_images.txt 内容:"
+          cat x86_64_fixed_images.txt
+          echo "arm64_fixed_images.txt 内容:"
+          cat arm64_fixed_images.txt
+          
       - name: Push Results
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
