@@ -94,9 +94,6 @@ build_or_list_images() {
                         manager="portage"
                     # elif [[ "$run_funct" == "opensuse" ]]; then
                     #     manager="zypper"
-                    else
-                        echo "Unsupported distribution: $run_funct"
-                        exit 1
                     fi
                     EXTRA_ARGS=""
                     if [[ "$run_funct" == "alpine" ]]; then
