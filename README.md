@@ -21,15 +21,7 @@ Releases中的镜像(每日拉取镜像进行自动修补和更新)：
 
 本仓库每日检测可用性的日志：https://github.com/oneclickvirt/lxd_images/blob/main/log
 
-本仓库的容器镜像服务于： https://github.com/oneclickvirt/incus and https://github.com/oneclickvirt/lxd
-
-支持:
-
-[incus的所有版本](https://github.com/lxc/incus)
-
-LXD 版本 <= [5.18](https://github.com/canonical/lxd/releases/tag/lxd-5.18) 
-
-incus在LXD的5.18版本分叉，不保证LXD更高版本下的容器镜像可用性
+本仓库的容器镜像服务于： https://github.com/oneclickvirt/lxd
 
 ## Introduce
 
@@ -51,28 +43,20 @@ A list of names of images in this repository that have been tested without error
 
 A log of daily availability tests for this repository: https://github.com/oneclickvirt/lxd_images/blob/main/log
 
-This repository container images serves https://github.com/oneclickvirt/incus and https://github.com/oneclickvirt/lxd
-
-Support:
-
-[incus full version](https://github.com/lxc/incus)
-
-LXD version <= [5.18](https://github.com/canonical/lxd/releases/tag/lxd-5.18)
-
-incus forked at version 5.18 of LXD and does not guarantee container image availability under higher versions of LXD
+This repository container images serves https://github.com/oneclickvirt/lxd
 
 ## 测试-test
 
 ```
-incus image import incus.tar.xz rootfs.squashfs --alias myc
-incus init myc test
-incus start test
-incus exec test -- /bin/bash
+lxc image import lxd.tar.xz rootfs.squashfs --alias myc
+lxc init myc test
+lxc start test
+lxc exec test -- /bin/bash
 ```
 
 ```
-incus delete -f test
-incus image delete myc
+lxc delete -f test
+lxc image delete myc
 ```
 
 ## Sponsor
@@ -85,12 +69,8 @@ Thanks to [dartnode](https://dartnode.com/?via=server) for providing support for
 
 ## Thanks
 
-https://discuss.linuxcontainers.org/t/distrobuilder-how-to-compile-a-centos-container-image-in-an-ubuntu-environment-github-action/18709
+https://images.lxd.canonical.com/
 
-https://linuxcontainers.org/incus/docs/main/
-
-https://github.com/lxc/lxc-ci/tree/main/images
-
-https://github.com/lxc/distrobuilder
+https://github.com/canonical/lxd-imagebuilder
 
 https://go.dev/dl/
