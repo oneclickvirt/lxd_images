@@ -14,3 +14,5 @@ ubuntu_24.04_noble_amd64_default.zip
 ubuntu_24.04_noble_amd64_cloud.zip
 kali_latest_kali-rolling_amd64_default.zip
 kali_latest_kali-rolling_amd64_cloud.zip
+gentoo_current_current_amd64_systemd.zip
+gentoo_current_current_amd64_openrc.zip
