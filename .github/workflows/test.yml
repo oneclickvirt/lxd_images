@@ -1,4 +1,4 @@
-name: Test Incus Images
+name: Test lxd Images
 
 on:
   schedule:
@@ -16,8 +16,8 @@ jobs:
     
     - id: set-matrix
       run: |
-        curl -o x86_64_all_images.txt https://raw.githubusercontent.com/oneclickvirt/incus_images/main/x86_64_all_images.txt
-        curl -o arm64_all_images.txt https://raw.githubusercontent.com/oneclickvirt/incus_images/main/arm64_all_images.txt
+        curl -o x86_64_all_images.txt https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/x86_64_all_images.txt
+        curl -o arm64_all_images.txt https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/arm64_all_images.txt
         
         echo "构建测试矩阵..."
         matrix_json="{\"include\":["
@@ -56,7 +56,7 @@ jobs:
       run: |
         echo "设置新环境..."
         sudo apt update -y
-        sudo sh -c 'export noninteractive=true && curl -L https://raw.githubusercontent.com/oneclickvirt/incus/main/scripts/incus_install.sh -o incus_install.sh && chmod +x incus_install.sh && bash incus_install.sh'
+        sudo sh -c 'export noninteractive=true && curl -L https://raw.githubusercontent.com/oneclickvirt/lxd/main/scripts/lxd_install.sh -o lxd_install.sh && chmod +x lxd_install.sh && bash lxd_install.sh'
         
     - name: Configure Git
       run: |
