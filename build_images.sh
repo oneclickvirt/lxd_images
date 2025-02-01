@@ -78,29 +78,105 @@ build_or_list_images() {
         for arch in "${architectures[@]}"; do
             for variant in "${variants[@]}"; do
                 if [ "$is_build_image" == true ]; then
-                    if command -v lxd-imagebuilder >/dev/null 2>&1; then
-                        # if [[ "$run_funct" == "gentoo" ]]; then
-                        #     echo "sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} --debug"
-                        #     if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} --debug; then
-                        #         echo "Command succeeded"
-                        #     fi
-                        # elif [[ "$run_funct" != "archlinux" ]]; then
-                        #     echo "sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.release=${version} -o image.architecture=${arch} -o image.variant=${variant} --debug"
-                        #     if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.release=${version} -o image.architecture=${arch} -o image.variant=${variant} --debug; then
-                        #         echo "Command succeeded"
-                        #     fi
-                        # else
-                        #     echo "sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} --debug"
-                        #     if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} --debug; then
-                        #         echo "Command succeeded"
-                        #     fi
-                        # fi
-                        echo "------${run_funct}_${ver_num}_${version}_${arch}_${variant}"
-                        echo "sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.release=${version} -o image.architecture=${arch} -o image.variant=${variant} --debug"
-                        if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.release=${version} -o image.architecture=${arch} -o image.variant=${variant} --debug; then
-                            echo "Command succeeded"
-                        fi
+                    if [[ "$run_funct" == "centos" || "$run_funct" == "fedora" || "$run_funct" == "openeuler" ]]; then
+                    manager="yum"
+                elif [[ "$run_funct" == "kali" || "$run_funct" == "ubuntu" || "$run_funct" == "debian" ]]; then
+                    manager="apt"
+                elif [[ "$run_funct" == "almalinux" || "$run_funct" == "rockylinux" || "$run_funct" == "oracle" ]]; then
+                    manager="dnf"
+                elif [[ "$run_funct" == "archlinux" ]]; then
+                    manager="pacman"
+                elif [[ "$run_funct" == "alpine" ]]; then
+                    manager="apk"
+                elif [[ "$run_funct" == "openwrt" ]]; then
+                    manager="opkg"
+                    [ "${version}" = "snapshot" ] && manager="apk"
+                elif [[ "$run_funct" == "gentoo" ]]; then
+                    manager="portage"
+                elif [[ "$run_funct" == "opensuse" ]]; then
+                    manager="zypper"
+                else
+                    echo "Unsupported distribution: $run_funct"
+                    exit 1
+                fi
+                EXTRA_ARGS=""
+                if [[ "$run_funct" == "centos" ]]; then
+                    [ "${arch}" = "amd64" ] && arch="x86_64"
+                    [ "${arch}" = "arm64" ] && arch="aarch64"
+                    if [ "$version" = "7" ] && [ "${arch}" != "amd64" ] && [ "${arch}" != "x86_64" ]; then
+                        EXTRA_ARGS="-o source.url=http://mirror.math.princeton.edu/pub/centos-altarch/ -o source.skip_verification=true"
                     fi
+                    if [ "$version" = "8-Stream" ] || [ "$version" = "9-Stream" ]; then
+                        EXTRA_ARGS="${EXTRA_ARGS} -o source.variant=boot"
+                    fi
+                    if [ "$version" = "9-Stream" ]; then
+                        EXTRA_ARGS="${EXTRA_ARGS} -o source.url=https://mirror1.hs-esslingen.de/pub/Mirrors/centos-stream"
+                    fi
+                elif [[ "$run_funct" == "rockylinux" ]]; then
+                    [ "${arch}" = "amd64" ] && arch="x86_64"
+                    [ "${arch}" = "arm64" ] && arch="aarch64"
+                    EXTRA_ARGS="-o source.variant=boot"
+                elif [[ "$run_funct" == "almalinux" ]]; then
+                    [ "${arch}" = "amd64" ] && arch="x86_64"
+                    [ "${arch}" = "arm64" ] && arch="aarch64"
+                    EXTRA_ARGS="-o source.variant=boot"
+                elif [[ "$run_funct" == "oracle" ]]; then
+                    [ "${arch}" = "amd64" ] && arch="x86_64"
+                    [ "${arch}" = "arm64" ] && arch="aarch64"
+                    if [[ "$version" == "9" ]]; then
+                        EXTRA_ARGS="-o source.url=https://yum.oracle.com/ISOS/OracleLinux"
+                    fi
+                elif [[ "$run_funct" == "archlinux" ]]; then
+                    [ "${arch}" = "amd64" ] && arch="x86_64"
+                    [ "${arch}" = "arm64" ] && arch="aarch64"
+                    if [ "${arch}" != "amd64" ] && [ "${arch}" != "i386" ] && [ "${arch}" != "x86_64" ]; then
+                        EXTRA_ARGS="-o source.url=http://os.archlinuxarm.org"
+                    fi
+                elif [[ "$run_funct" == "alpine" ]]; then
+                    [ "${arch}" = "amd64" ] && arch="x86_64"
+                    [ "${arch}" = "arm64" ] && arch="aarch64"
+                    if [ "${version}" = "edge" ]; then
+                        EXTRA_ARGS="-o source.same_as=3.19"
+                    fi
+                elif [[ "$run_funct" == "fedora" || "$run_funct" == "openeuler" || "$run_funct" == "opensuse" ]]; then
+                    [ "${arch}" = "amd64" ] && arch="x86_64"
+                    [ "${arch}" = "arm64" ] && arch="aarch64"
+                elif [[ "$run_funct" == "gentoo" ]]; then
+                    [ "${arch}" = "x86_64" ] && arch="amd64"
+                    [ "${arch}" = "aarch64" ] && arch="arm64"
+                    if [ "${variant}" = "cloud" ]; then
+                        EXTRA_ARGS="-o source.variant=openrc"
+                    else
+                        EXTRA_ARGS="-o source.variant=${variant}"
+                    fi
+                elif [[ "$run_funct" == "debian" ]]; then
+                    [ "${arch}" = "x86_64" ] && arch="amd64"
+                    [ "${arch}" = "aarch64" ] && arch="arm64"
+                elif [[ "$run_funct" == "ubuntu" ]]; then
+                    [ "${arch}" = "x86_64" ] && arch="amd64"
+                    [ "${arch}" = "aarch64" ] && arch="arm64"
+                    if [ "${arch}" != "amd64" ] && [ "${arch}" != "i386" ] && [ "${arch}" != "x86_64" ]; then
+                        EXTRA_ARGS="-o source.url=http://ports.ubuntu.com/ubuntu-ports"
+                    fi
+                fi
+                if [ "$is_build_image" == true ]; then
+                    if command -v lxd-imagebuilder >/dev/null 2>&1; then
+                        if [[ "$run_funct" == "gentoo" ]]; then
+                            echo "sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} ${EXTRA_ARGS}"
+                            if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} ${EXTRA_ARGS}; then
+                                echo "Command succeeded"
+                            fi
+                        elif [[ "$run_funct" != "archlinux" ]]; then
+                            echo "sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.release=${version} -o image.architecture=${arch} -o image.variant=${variant} -o packages.manager=${manager} ${EXTRA_ARGS}"
+                            if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.release=${version} -o image.architecture=${arch} -o image.variant=${variant} -o packages.manager=${manager} ${EXTRA_ARGS}; then
+                                echo "Command succeeded"
+                            fi
+                        else
+                            echo "sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} -o packages.manager=${manager} ${EXTRA_ARGS}"
+                            if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} -o packages.manager=${manager} ${EXTRA_ARGS}; then
+                                echo "Command succeeded"
+                            fi
+                        fi
                     if [ -f lxd.tar.xz ] && [ -f rootfs.squashfs ]; then
                         zip "${run_funct}_${ver_num}_${version}_${arch}_${variant}.zip" lxd.tar.xz rootfs.squashfs
                         rm -rf lxd.tar.xz rootfs.squashfs
