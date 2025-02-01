@@ -269,7 +269,7 @@ process_file() {
 
 # 不同发行版的配置
 # build_or_list_images 镜像名字 镜像版本号 variants的值
-arch_list=("x86_64" "arm64")
+arch_list=("amd64" "arm64")
 for build_arch in "${arch_list[@]}"; do
     echo "当前架构: $build_arch"
     run_funct="debian"
