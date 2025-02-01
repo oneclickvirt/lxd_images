@@ -1,6 +1,6 @@
 #!/bin/bash
 # by https://github.com/oneclickvirt/lxd_images
-# 2025.01.31
+# 2025.02.01
 
 set -e
 trap 'echo "发生错误，行号: $LINENO, 命令: $BASH_COMMAND"' ERR
@@ -34,9 +34,9 @@ echo "success" > "$test_status_file"
 cleanup() {
     local exit_code=$?
     echo "清理资源..."
-    incus stop test 2>/dev/null || true
-    incus delete -f test 2>/dev/null || true
-    incus image delete myc 2>/dev/null || true
+    lxc stop test 2>/dev/null || true
+    lxc delete -f test 2>/dev/null || true
+    lxc image delete myc 2>/dev/null || true
 
     if [[ -f "$test_status_file" ]]; then
         if [[ "$(cat "$test_status_file")" != "success" ]]; then
@@ -48,7 +48,7 @@ cleanup() {
     fi
 
     rm -f "$test_status_file"
-    rm -f incus.tar.xz rootfs.squashfs "$image_name"
+    rm -f lxc.tar.xz rootfs.squashfs "$image_name"
     echo "------------------------------------------" >> log
 
     # 检查 systemd-resolved 是否被影响，并尝试恢复
@@ -88,19 +88,19 @@ fi
 
 echo "$image_name" >> "$fixed_images_file"
 
-if ! incus image import incus.tar.xz rootfs.squashfs --alias myc; then
+if ! lxc image import lxd.tar.xz rootfs.squashfs --alias myc; then
     echo "错误：镜像导入失败" | tee -a log
     echo "fail" > "$test_status_file"
     exit 1
 fi
 
-if ! incus init myc test; then
+if ! lxc init myc test; then
     echo "错误：容器初始化失败" | tee -a log
     echo "fail" > "$test_status_file"
     exit 1
 fi
 
-if ! incus start test; then
+if ! lxc start test; then
     echo "错误：容器启动失败" | tee -a log
     echo "fail" > "$test_status_file"
     exit 1
@@ -113,7 +113,7 @@ ssh_test() {
     local max_retries=5
     
     while [ $retries -lt $max_retries ]; do
-        if incus exec test -- lsof -i:22 2>/dev/null | grep -q ssh; then
+        if lxc exec test -- lsof -i:22 2>/dev/null | grep -q ssh; then
             echo "SSH服务正常" | tee -a log
             return 0
         fi
@@ -127,17 +127,17 @@ ssh_test() {
 }
 
 network_test() {
-    incus exec test -- cp /etc/resolv.conf /etc/resolv.conf.bak || true
+    lxc exec test -- cp /etc/resolv.conf /etc/resolv.conf.bak || true
 
-    incus exec test -- sh -c 'echo "nameserver 8.8.8.8" > /etc/resolv.conf'
+    lxc exec test -- sh -c 'echo "nameserver 8.8.8.8" > /etc/resolv.conf'
 
-    if incus exec test -- curl -m 10 -skL https://cdn.spiritlhl.net/https://raw.githubusercontent.com/spiritLHLS/ecs/main/back/test | grep -q "success"; then
+    if lxc exec test -- curl -m 10 -skL https://cdn.spiritlhl.net/https://raw.githubusercontent.com/spiritLHLS/ecs/main/back/test | grep -q "success"; then
         echo "网络连通正常" | tee -a log
-        incus exec test -- mv /etc/resolv.conf.bak /etc/resolv.conf 2>/dev/null || true
+        lxc exec test -- mv /etc/resolv.conf.bak /etc/resolv.conf 2>/dev/null || true
         return 0
     else
         echo "网络连接失败" | tee -a log
-        incus exec test -- mv /etc/resolv.conf.bak /etc/resolv.conf 2>/dev/null || true
+        lxc exec test -- mv /etc/resolv.conf.bak /etc/resolv.conf 2>/dev/null || true
         return 1
     fi
 }
@@ -151,12 +151,12 @@ if ! network_test; then
     exit 1
 fi
 echo "执行重启测试..." | tee -a log
-if ! incus stop test; then
+if ! lxc stop test; then
     echo "错误：容器停止失败" | tee -a log
     echo "fail" > "$test_status_file"
     exit 1
 fi
-if ! incus start test; then
+if ! lxc start test; then
     echo "错误：容器重启失败" | tee -a log
     echo "fail" > "$test_status_file"
     exit 1
