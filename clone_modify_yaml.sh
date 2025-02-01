@@ -22,7 +22,7 @@ for SYSTEM in $SYSTEMS; do
             elif echo "$PROFILES" | grep -q '^cloud$'; then
                 PROFILE="cloud"
             else
-                PROFILE=$(echo "$PROFILES" | sort -V | tail -n1)  # 选最后一个
+                PROFILE=$(echo "$PROFILES" | sort -V | tail -n1) # 选最后一个
             fi
             if [ -n "$PROFILE" ]; then
                 DATES=$(curl -s "$BASE_URL/$SYSTEM/$LATEST_VERSION/amd64/$PROFILE/" | grep -oP '(?<=href=")[^"]+' | grep '/$' | sed 's:/$::')
@@ -51,10 +51,10 @@ chmod 777 debian.yaml
 insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cron"
 sed -i "/- vim/ a\\$insert_content_1" debian.yaml
 insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-line_number=$(($(wc -l < debian.yaml) - 2))
-head -n $line_number debian.yaml > temp.yaml
-echo "$insert_content_2" >> temp.yaml
-tail -n 2 debian.yaml >> temp.yaml
+line_number=$(($(wc -l <debian.yaml) - 2))
+head -n $line_number debian.yaml >temp.yaml
+echo "$insert_content_2" >>temp.yaml
+tail -n 2 debian.yaml >>temp.yaml
 mv temp.yaml debian.yaml
 sed -i -e '/mappings:/i \ ' debian.yaml
 
@@ -63,10 +63,10 @@ chmod 777 ubuntu.yaml
 insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cron"
 sed -i "/- vim/ a\\$insert_content_1" ubuntu.yaml
 insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-line_number=$(($(wc -l < ubuntu.yaml) - 2))
-head -n $line_number ubuntu.yaml > temp.yaml
-echo "$insert_content_2" >> temp.yaml
-tail -n 2 ubuntu.yaml >> temp.yaml
+line_number=$(($(wc -l <ubuntu.yaml) - 2))
+head -n $line_number ubuntu.yaml >temp.yaml
+echo "$insert_content_2" >>temp.yaml
+tail -n 2 ubuntu.yaml >>temp.yaml
 mv temp.yaml ubuntu.yaml
 sed -i -e '/mappings:/i \ ' ubuntu.yaml
 
@@ -75,10 +75,10 @@ chmod 777 kali.yaml
 insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cron"
 sed -i "/- systemd/ a\\$insert_content_1" kali.yaml
 insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-line_number=$(($(wc -l < kali.yaml) - 2))
-head -n $line_number kali.yaml > temp.yaml
-echo "$insert_content_2" >> temp.yaml
-tail -n 2 kali.yaml >> temp.yaml
+line_number=$(($(wc -l <kali.yaml) - 2))
+head -n $line_number kali.yaml >temp.yaml
+echo "$insert_content_2" >>temp.yaml
+tail -n 2 kali.yaml >>temp.yaml
 mv temp.yaml kali.yaml
 sed -i -e '/mappings:/i \ ' kali.yaml
 
@@ -88,9 +88,9 @@ chmod 777 centos.yaml
 insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
 sed -i "/- vim-minimal/ a\\$insert_content_1" centos.yaml
 insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-cat centos.yaml > temp.yaml
-echo "" >> temp.yaml
-echo "$insert_content_2" >> temp.yaml
+cat centos.yaml >temp.yaml
+echo "" >>temp.yaml
+echo "$insert_content_2" >>temp.yaml
 mv temp.yaml centos.yaml
 
 # almalinux
@@ -99,9 +99,9 @@ chmod 777 almalinux.yaml
 insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
 sed -i "/- vim-minimal/ a\\$insert_content_1" almalinux.yaml
 insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-cat almalinux.yaml > temp.yaml
-echo "" >> temp.yaml
-echo "$insert_content_2" >> temp.yaml
+cat almalinux.yaml >temp.yaml
+echo "" >>temp.yaml
+echo "$insert_content_2" >>temp.yaml
 mv temp.yaml almalinux.yaml
 
 # rockylinux
@@ -110,9 +110,9 @@ chmod 777 rockylinux.yaml
 insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
 sed -i "/- vim-minimal/ a\\$insert_content_1" rockylinux.yaml
 insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-cat rockylinux.yaml > temp.yaml
-echo "" >> temp.yaml
-echo "$insert_content_2" >> temp.yaml
+cat rockylinux.yaml >temp.yaml
+echo "" >>temp.yaml
+echo "$insert_content_2" >>temp.yaml
 mv temp.yaml rockylinux.yaml
 
 # oracle
@@ -121,9 +121,9 @@ chmod 777 oracle.yaml
 insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
 sed -i "/- vim-minimal/ a\\$insert_content_1" oracle.yaml
 insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-cat oracle.yaml > temp.yaml
-echo "" >> temp.yaml
-echo "$insert_content_2" >> temp.yaml
+cat oracle.yaml >temp.yaml
+echo "" >>temp.yaml
+echo "$insert_content_2" >>temp.yaml
 mv temp.yaml oracle.yaml
 
 # archlinux
@@ -132,10 +132,10 @@ chmod 777 archlinux.yaml
 insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - iptables\n    - dos2unix"
 sed -i "/- which/ a\\$insert_content_1" archlinux.yaml
 insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-line_number=$(($(wc -l < archlinux.yaml) - 2))
-head -n $line_number archlinux.yaml > temp.yaml
-echo "$insert_content_2" >> temp.yaml
-tail -n 2 archlinux.yaml >> temp.yaml
+line_number=$(($(wc -l <archlinux.yaml) - 2))
+head -n $line_number archlinux.yaml >temp.yaml
+echo "$insert_content_2" >>temp.yaml
+tail -n 2 archlinux.yaml >>temp.yaml
 mv temp.yaml archlinux.yaml
 sed -i -e '/mappings:/i \ ' archlinux.yaml
 
@@ -159,9 +159,9 @@ chmod 777 fedora.yaml
 insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
 sed -i "/- xz/ a\\$insert_content_1" fedora.yaml
 insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-cat fedora.yaml > temp.yaml
-echo "" >> temp.yaml
-echo "$insert_content_2" >> temp.yaml
+cat fedora.yaml >temp.yaml
+echo "" >>temp.yaml
+echo "$insert_content_2" >>temp.yaml
 mv temp.yaml fedora.yaml
 
 # alpine
@@ -170,10 +170,10 @@ chmod 777 alpine.yaml
 insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - openssh-keygen\n    - cronie\n    - iptables\n    - dos2unix"
 sed -i "/- doas/ a\\$insert_content_1" alpine.yaml
 insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/sh_insert_content.text)
-line_number=$(($(wc -l < alpine.yaml) - 2))
-head -n $line_number alpine.yaml > temp.yaml
-echo "$insert_content_2" >> temp.yaml
-tail -n 2 alpine.yaml >> temp.yaml
+line_number=$(($(wc -l <alpine.yaml) - 2))
+head -n $line_number alpine.yaml >temp.yaml
+echo "$insert_content_2" >>temp.yaml
+tail -n 2 alpine.yaml >>temp.yaml
 mv temp.yaml alpine.yaml
 sed -i -e '/mappings:/i \ ' alpine.yaml
 
@@ -183,8 +183,8 @@ chmod 777 openwrt.yaml
 insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - openssh-keygen\n    - iptables"
 sed -i "/- sudo/ a\\$insert_content_1" openwrt.yaml
 insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/sh_insert_content.text)
-cat openwrt.yaml > temp.yaml
-echo "$insert_content_2" >> temp.yaml
+cat openwrt.yaml >temp.yaml
+echo "$insert_content_2" >>temp.yaml
 mv temp.yaml openwrt.yaml
 
 # opensuse
@@ -193,9 +193,9 @@ chmod 777 opensuse.yaml
 insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
 sed -i "/- vim-minimal/ a\\$insert_content_1" opensuse.yaml
 insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-cat opensuse.yaml > temp.yaml
-echo "" >> temp.yaml
-echo "$insert_content_2" >> temp.yaml
+cat opensuse.yaml >temp.yaml
+echo "" >>temp.yaml
+echo "$insert_content_2" >>temp.yaml
 mv temp.yaml opensuse.yaml
 
 # openeuler
@@ -204,9 +204,9 @@ chmod 777 openeuler.yaml
 insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
 sed -i "/- vim-minimal/ a\\$insert_content_1" openeuler.yaml
 insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-cat openeuler.yaml > temp.yaml
-echo "" >> temp.yaml
-echo "$insert_content_2" >> temp.yaml
+cat openeuler.yaml >temp.yaml
+echo "" >>temp.yaml
+echo "$insert_content_2" >>temp.yaml
 mv temp.yaml openeuler.yaml
 
 cd /home/runner/work/lxd_images/lxd_images
@@ -215,9 +215,9 @@ build_or_list_images() {
     local versions=()
     local ver_nums=()
     local variants=()
-    read -ra versions <<< "$1"
-    read -ra ver_nums <<< "$2"
-    read -ra variants <<< "$3"
+    read -ra versions <<<"$1"
+    read -ra ver_nums <<<"$2"
+    read -ra variants <<<"$3"
     local architectures=("$build_arch")
     local len=${#versions[@]}
     for ((i = 0; i < len; i++)); do
@@ -228,9 +228,9 @@ build_or_list_images() {
                 local url="https://github.com/oneclickvirt/lxd_images/releases/download/${run_funct}/${run_funct}_${ver_num}_${version}_${arch}_${variant}.zip"
                 if curl --output /dev/null --silent --head --fail "$url"; then
                     if [[ "$arch" == "x86_64" || "$arch" == "amd64" ]]; then
-                        echo "${run_funct}_${ver_num}_${version}_${arch}_${variant}.zip" >> x86_64_all_images.txt
+                        echo "${run_funct}_${ver_num}_${version}_${arch}_${variant}.zip" >>x86_64_all_images.txt
                     elif [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then
-                        echo "${run_funct}_${ver_num}_${version}_${arch}_${variant}.zip" >> arm64_all_images.txt
+                        echo "${run_funct}_${ver_num}_${version}_${arch}_${variant}.zip" >>arm64_all_images.txt
                     fi
                 else
                     echo "File not found: $url"
@@ -261,7 +261,7 @@ process_file() {
         touch "$file"
     else
         # 删除重复行
-        awk '!seen[$0]++' "$file" > temp && mv temp "$file"
+        awk '!seen[$0]++' "$file" >temp && mv temp "$file"
         # 删除空行
         sed -i '/^$/d' "$file"
     fi
