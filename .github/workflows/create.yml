@@ -69,13 +69,13 @@ jobs:
         # 获取或创建Release
         release_response=$(curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
           -H "Accept: application/vnd.github.v3+json" \
-          "https://api.github.com/repos/oneclickvirt/incus_images/releases/tags/$DISTRO" || true)
+          "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/$DISTRO" || true)
         if [ "$(jq -r '.id' <<< "$release_response")" == "null" ]; then
           echo "Creating new release for $DISTRO"
           release_response=$(curl -sS -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             -d '{"tag_name":"'"$DISTRO"'", "name":"'"$DISTRO Images"'", "generate_release_notes":true}' \
-            "https://api.github.com/repos/oneclickvirt/incus_images/releases" || true)
+            "https://api.github.com/repos/oneclickvirt/lxd_images/releases" || true)
         fi
         release_id=$(jq -r '.id' <<< "$release_response")
         # 执行实际构建
@@ -92,21 +92,21 @@ jobs:
             # 检查现有资产
             asset_name=$(basename "$file")
             existing_asset=$(curl -sS -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/oneclickvirt/incus_images/releases/$release_id/assets" \
+              "https://api.github.com/repos/oneclickvirt/lxd_images/releases/$release_id/assets" \
               | jq -r --arg name "$asset_name" '.[] | select(.name == $name)')
             # 删除已存在的资产
             if [ -n "$existing_asset" ]; then
               asset_id=$(jq -r '.id' <<< "$existing_asset")
               echo "Removing existing asset ID $asset_id"
               curl -sS -X DELETE -H "Authorization: Bearer $GITHUB_TOKEN" \
-                "https://api.github.com/repos/oneclickvirt/incus_images/releases/assets/$asset_id" || true
+                "https://api.github.com/repos/oneclickvirt/lxd_images/releases/assets/$asset_id" || true
             fi
             # 上传新资产
             echo "Uploading $asset_name..."
             curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
               -H "Content-Type: application/zip" \
               --data-binary @"$file" \
-              "https://uploads.github.com/repos/oneclickvirt/incus_images/releases/$release_id/assets?name=$asset_name" || true
+              "https://uploads.github.com/repos/oneclickvirt/lxd_images/releases/$release_id/assets?name=$asset_name" || true
             sudo rm -vf "$file"
           else
             echo "Skipping $file - does not exist or size <10MB"
