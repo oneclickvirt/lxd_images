@@ -161,14 +161,14 @@ build_or_list_images() {
                             if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} ${EXTRA_ARGS}; then
                                 echo "Command succeeded"
                             fi
-                        elif [[ "$run_funct" != "archlinux" ]]; then
-                            echo "sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.release=${version} -o image.architecture=${arch} -o image.variant=${variant} -o packages.manager=${manager} ${EXTRA_ARGS}"
-                            if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.release=${version} -o image.architecture=${arch} -o image.variant=${variant} -o packages.manager=${manager} ${EXTRA_ARGS}; then
-                                echo "Command succeeded"
-                            fi
+                        # elif [[ "$run_funct" != "archlinux" ]]; then
+                        #     echo "sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.release=${version} -o image.architecture=${arch} -o image.variant=${variant} -o packages.manager=${manager} ${EXTRA_ARGS}"
+                        #     if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.release=${version} -o image.architecture=${arch} -o image.variant=${variant} -o packages.manager=${manager} ${EXTRA_ARGS}; then
+                        #         echo "Command succeeded"
+                        #     fi
                         else
-                            echo "sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} -o packages.manager=${manager} ${EXTRA_ARGS}"
-                            if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} -o packages.manager=${manager} ${EXTRA_ARGS}; then
+                            echo "sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} ${EXTRA_ARGS}"
+                            if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} ${EXTRA_ARGS}; then
                                 echo "Command succeeded"
                             fi
                         fi
