@@ -1,0 +1,130 @@
+name: Test Incus Images
+
+on:
+  schedule:
+    - cron: '0 4 1-31/2 * *'
+  workflow_dispatch:
+
+jobs:
+  prepare-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      test-matrix: ${{ steps.set-matrix.outputs.matrix }}
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - id: set-matrix
+      run: |
+        curl -o x86_64_all_images.txt https://raw.githubusercontent.com/oneclickvirt/incus_images/main/x86_64_all_images.txt
+        curl -o arm64_all_images.txt https://raw.githubusercontent.com/oneclickvirt/incus_images/main/arm64_all_images.txt
+        
+        echo "构建测试矩阵..."
+        matrix_json="{\"include\":["
+        
+        while IFS= read -r image; do
+          if [[ -n "$image" ]]; then
+            matrix_json+="{\"image\":\"$image\",\"arch\":\"amd64\",\"runner\":\"ubuntu-latest\",\"output\":\"x86_64_fixed_images.txt\"},"
+          fi
+        done < x86_64_all_images.txt
+        
+        while IFS= read -r image; do
+          if [[ -n "$image" ]]; then
+            matrix_json+="{\"image\":\"$image\",\"arch\":\"arm64\",\"runner\":\"ubuntu-24.04-arm\",\"output\":\"arm64_fixed_images.txt\"},"
+          fi
+        done < arm64_all_images.txt
+        
+        matrix_json=${matrix_json%,}
+        matrix_json+="]}"
+        
+        echo "matrix=$matrix_json" >> $GITHUB_OUTPUT
+
+  test-single-image:
+    needs: prepare-matrix
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{fromJson(needs.prepare-matrix.outputs.test-matrix)}}
+    
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Fresh Environment
+      run: |
+        echo "设置新环境..."
+        sudo apt update -y
+        sudo sh -c 'export noninteractive=true && curl -L https://raw.githubusercontent.com/oneclickvirt/incus/main/scripts/incus_install.sh -o incus_install.sh && chmod +x incus_install.sh && bash incus_install.sh'
+        
+    - name: Configure Git
+      run: |
+        git config --global user.name "daily-test"
+        git config --global user.email "test@spiritlhl.top"
+        
+    - name: Test Image
+      run: |
+        echo "测试镜像: ${{ matrix.image }}"
+        touch ${{ matrix.output }}
+        
+        # 备份 DNS 解析文件，避免影响后续任务
+        sudo cp /etc/resolv.conf /etc/resolv.conf.backup
+        
+        if sudo bash test.sh "${{ matrix.image }}"; then
+          echo "${{ matrix.image }}" >> ${{ matrix.output }}
+          echo "测试通过: ${{ matrix.image }}"
+        else
+          echo "测试失败: ${{ matrix.image }}"
+          exit 1
+        fi
+
+        # 还原 DNS 配置，避免网络解析问题
+        sudo mv /etc/resolv.conf.backup /etc/resolv.conf || true
+
+    - name: Move Results to Workspace
+      run: |
+        mkdir -p /tmp/test-results
+        mv ${{ matrix.output }} /tmp/test-results/
+    
+  results-updater:
+    needs: test-single-image
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Aggregate Test Results
+      run: |
+        mkdir -p /tmp/test-results
+        cp -r /tmp/test-results/* . || true
+        
+        # 确保单独存储 x86_64 和 arm64 的测试结果
+        if [[ -f /tmp/test-results/x86_64_fixed_images.txt ]]; then
+          cat /tmp/test-results/x86_64_fixed_images.txt >> x86_64_fixed_images.txt
+        fi
+        if [[ -f /tmp/test-results/arm64_fixed_images.txt ]]; then
+          cat /tmp/test-results/arm64_fixed_images.txt >> arm64_fixed_images.txt
+        fi
+
+    - name: Push Results
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        if [[ -f x86_64_fixed_images.txt || -f arm64_fixed_images.txt ]]; then
+          echo "推送测试结果..."
+          git pull origin main
+          git add x86_64_fixed_images.txt arm64_fixed_images.txt
+          git commit -m "更新镜像测试结果"
+          git push
+        fi
+      continue-on-error: true
+
+  cleanup:
+    needs: results-updater
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check Test Results
+      run: |
+        echo "所有测试完成"
+        echo "查看 Actions 页面获取详细测试结果"

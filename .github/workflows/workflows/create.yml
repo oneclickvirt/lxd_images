@@ -1,0 +1,116 @@
+name: Multi-Distro Images Build
+
+on:
+  schedule:
+    - cron: '0 4 1-31/2 * *'
+  workflow_dispatch:
+
+jobs:
+  build-images:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        distro: ["debian", "kali", "centos", "almalinux", "rockylinux", 
+                "fedora", "opensuse", "alpine", "archlinux", "gentoo", "openwrt", 
+                "oracle", "openeuler", "ubuntu"]
+        arch:
+          - name: amd64
+            runner: ubuntu-latest
+          - name: arm64
+            runner: ubuntu-24.04-arm
+        # exclude:
+        #   # 排除已知不兼容的组合（根据实际情况调整）
+        #   - distro: oracle
+        #     arch: arm64
+        #   - distro: openeuler
+        #     arch: arm64
+    runs-on: ${{ matrix.arch.runner }}
+    timeout-minutes: 120
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Check workspace
+      run: pwd
+
+    - name: Build environment
+      run: |
+        sudo apt update -y
+        sudo apt install -y polkit || sudo apt install -y policykit-1
+        sudo apt install -y jq
+        
+    - name: Configure Git Identity
+      run: |
+        git config --global user.name "daily-update"
+        git config --global user.email "tg@spiritlhl.top"
+
+    - name: Build and Upload Images
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        set +e  # 禁止错误退出
+        # set -eo pipefail
+        # 获取构建参数
+        DISTRO="${{ matrix.distro }}"
+        ARCH="${{ matrix.arch.name }}"
+        echo "Processing $DISTRO for $ARCH architecture"
+        # 首次运行获取文件名列表
+        echo "---zip_name_list---"
+        output=$(bash build_images.sh $DISTRO false $ARCH | tail -n 1)
+        zip_name_list=($output)  # 让shell自动按空格分割
+        echo "---zip_name_list---"
+        for item in "${zip_name_list[@]}"; do
+          echo "$item"
+        done
+        echo "-------"
+        # 获取或创建Release
+        release_response=$(curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/oneclickvirt/incus_images/releases/tags/$DISTRO" || true)
+        if [ "$(jq -r '.id' <<< "$release_response")" == "null" ]; then
+          echo "Creating new release for $DISTRO"
+          release_response=$(curl -sS -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d '{"tag_name":"'"$DISTRO"'", "name":"'"$DISTRO Images"'", "generate_release_notes":true}' \
+            "https://api.github.com/repos/oneclickvirt/incus_images/releases" || true)
+        fi
+        release_id=$(jq -r '.id' <<< "$release_response")
+        # 执行实际构建
+        echo "Building $DISTRO and packaging zips for $ARCH"
+        sudo bash build_images.sh $DISTRO true $ARCH || true
+        echo "------------"
+        pwd
+        ls
+        echo "------------"
+        # 处理构建产物
+        for file in "${zip_name_list[@]}"; do
+          if [ -f "$file" ] && [ $(stat -c %s "$file") -gt 10485760 ]; then
+            echo "Processing $file (size: $(numfmt --to=iec-i --suffix=B $(stat -c %s "$file")))"
+            # 检查现有资产
+            asset_name=$(basename "$file")
+            existing_asset=$(curl -sS -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/oneclickvirt/incus_images/releases/$release_id/assets" \
+              | jq -r --arg name "$asset_name" '.[] | select(.name == $name)')
+            # 删除已存在的资产
+            if [ -n "$existing_asset" ]; then
+              asset_id=$(jq -r '.id' <<< "$existing_asset")
+              echo "Removing existing asset ID $asset_id"
+              curl -sS -X DELETE -H "Authorization: Bearer $GITHUB_TOKEN" \
+                "https://api.github.com/repos/oneclickvirt/incus_images/releases/assets/$asset_id" || true
+            fi
+            # 上传新资产
+            echo "Uploading $asset_name..."
+            curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: application/zip" \
+              --data-binary @"$file" \
+              "https://uploads.github.com/repos/oneclickvirt/incus_images/releases/$release_id/assets?name=$asset_name" || true
+            sudo rm -vf "$file"
+          else
+            echo "Skipping $file - does not exist or size <10MB"
+            [ -f "$file" ] && rm -vf "$file"
+          fi
+        done
+      # continue-on-error: true
