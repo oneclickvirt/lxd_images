@@ -19,7 +19,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          latest_completed_run_id=$(gh run list -L 10 --json databaseId,status,workflowName --jq '.[] | select(.status=="completed" and .workflowName=="Run Tests") | .databaseId' | head -n 1)
+          latest_completed_run_id=$(gh run list -L 10 --json databaseId,status,workflowName --jq '.[] | select(.status=="completed" and .workflowName=="Run LXD Tests") | .databaseId' | head -n 1)
           echo "LATEST_COMPLETED_RUN_ID=$latest_completed_run_id" >> $GITHUB_ENV
 
       - name: Collect Logs
