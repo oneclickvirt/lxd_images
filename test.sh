@@ -12,7 +12,7 @@ fi
 
 image_name="$1"
 
-if [[ "$image_name" == *"x86_64"* ]]; then
+if [[ "$image_name" == *"x86_64"* || "$image_name" == *"amd64"* ]]; then
     fixed_images_file="x86_64_fixed_images.txt"
 elif [[ "$image_name" == *"arm64"* ]]; then
     fixed_images_file="arm64_fixed_images.txt"
