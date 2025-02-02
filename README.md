@@ -22,11 +22,9 @@ Releases中的镜像(每日拉取镜像进行自动修补和更新)：
 
 未修改默认密码，与官方仓库一致
 
-本仓库所有镜像的名字列表：https://github.com/oneclickvirt/lxd_images/blob/main/x86_64_all_images.txt
+本仓库所有镜像的名字列表：[x86_64_all_images.txt](https://github.com/oneclickvirt/lxd_images/blob/main/x86_64_all_images.txt) 和 [arm64_all_images.txt](https://github.com/oneclickvirt/lxd_images/blob/main/arm64_all_images.txt)
 
-本仓库测试无误的镜像的名字列表：https://github.com/oneclickvirt/lxd_images/blob/main/x86_64_fixed_images.txt
-
-本仓库每日检测可用性的日志：https://github.com/oneclickvirt/lxd_images/blob/main/log
+本仓库测试无误的镜像的名字列表：[x86_64_fixed_images.txt](https://github.com/oneclickvirt/lxd_images/blob/main/x86_64_fixed_images.txt) 和 [arm64_fixed_images.txt](https://github.com/oneclickvirt/lxd_images/blob/main/arm64_fixed_images.txt)
 
 本仓库的容器镜像服务于： https://github.com/oneclickvirt/lxd
 
@@ -44,11 +42,9 @@ Default username: ```root```.
 
 Unchanged default password, consistent with official repository.
 
-A list of names for all images in this repository: https://github.com/oneclickvirt/lxd_images/blob/main/x86_64_all_images.txt
+A list of names for all images in this repository: [x86_64_all_images.txt](https://github.com/oneclickvirt/lxd_images/blob/main/x86_64_all_images.txt) 和 [arm64_all_images.txt](https://github.com/oneclickvirt/lxd_images/blob/main/arm64_all_images.txt)
 
-A list of names of images in this repository that have been tested without error: https://github.com/oneclickvirt/lxd_images/blob/main/x86_64_fixed_images.txt
-
-A log of daily availability tests for this repository: https://github.com/oneclickvirt/lxd_images/blob/main/log
+A list of names of images in this repository that have been tested without error: [x86_64_fixed_images.txt](https://github.com/oneclickvirt/lxd_images/blob/main/x86_64_fixed_images.txt) 和 [arm64_fixed_images.txt](https://github.com/oneclickvirt/lxd_images/blob/main/arm64_fixed_images.txt)
 
 This repository container images serves https://github.com/oneclickvirt/lxd
 
