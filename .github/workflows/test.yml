@@ -53,7 +53,7 @@ jobs:
         run: |
           echo "设置新环境..."
           sudo apt-get update -y
-          sudo sh -c 'export noninteractive=true; curl -sL https://raw.githubusercontent.com/oneclickvirt/lxd/main/scripts/lxd_install.sh -o lxd_install.sh && chmod +x lxd_install.sh && bash lxd_install.sh >/dev/null 2>&1'
+          sudo sh -c 'export noninteractive=true; curl -L https://raw.githubusercontent.com/oneclickvirt/lxd/main/scripts/lxdinstall.sh -o lxdinstall.sh && chmod +x lxdinstall.sh && bash lxdinstall.sh >/dev/null 2>&1'
       - name: Configure Git
         run: |
           git config --global user.name "daily-test"
