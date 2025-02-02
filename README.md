@@ -4,7 +4,7 @@
 
 [![Multi-Distro Images Build](https://github.com/oneclickvirt/lxd_images/actions/workflows/create.yml/badge.svg)](https://github.com/oneclickvirt/lxd_images/actions/workflows/create.yml)
 
-[![Test lxd Images](https://github.com/oneclickvirt/lxd_images/actions/workflows/test.yml/badge.svg)](https://github.com/oneclickvirt/lxd_images/actions/workflows/test.yml)
+[![Collect Logs](https://github.com/oneclickvirt/lxd_images/actions/workflows/collect.yml/badge.svg)](https://github.com/oneclickvirt/lxd_images/actions/workflows/collect.yml)
 
 [<img src="https://api.gitsponsors.com/api/badge/img?id=925517512" height="20">](https://api.gitsponsors.com/api/badge/link?p=5V6VCZysGmKMxHTCv4O6UVF+n9+9JfGERLEWsho21NItT0Dp3Qeh5PGNLnFM6v7qbnG65ayrvXcgmXZ9HFMqz8M86/PztB1AbuD/gH2oqYlXzhp1U8Jf7pfZtareir8Jc7X1X+39q98F0zatNPljlw==)
 
