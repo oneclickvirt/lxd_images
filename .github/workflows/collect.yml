@@ -1,0 +1,78 @@
+name: Collect Logs
+
+on:
+  workflow_run:
+    workflows: ["Run Tests"]
+    types:
+      - completed
+  workflow_dispatch:
+
+jobs:
+  collect-results:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Get Latest Completed Run ID
+        id: get_latest_run_id
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          latest_completed_run_id=$(gh run list -L 10 --json databaseId,status,workflowName --jq '.[] | select(.status=="completed" and .workflowName=="Run Tests") | .databaseId' | head -n 1)
+          echo "LATEST_COMPLETED_RUN_ID=$latest_completed_run_id" >> $GITHUB_ENV
+
+      - name: Collect Logs
+        id: collect_logs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p results
+          echo "收集最新日志..."
+          gh run view $LATEST_COMPLETED_RUN_ID --log > results/log-$LATEST_COMPLETED_RUN_ID.txt
+
+      - name: Parse Logs
+        run: |
+          > x86_64_fixed_images.txt
+          > arm64_fixed_images.txt
+          log_file="results/log-$LATEST_COMPLETED_RUN_ID.txt"
+          while IFS= read -r line; do
+            if [[ "$line" =~ success=(true|false) ]]; then
+              success="${BASH_REMATCH[1]}"
+            elif [[ "$line" =~ image=([^ ]+) ]]; then
+              image="${BASH_REMATCH[1]}"
+            elif [[ "$line" =~ arch=([^ ]+) ]]; then
+              arch="${BASH_REMATCH[1]}"
+              if [[ "$success" == "true" ]]; then
+                if [[ "$arch" == "amd64" ]]; then
+                  echo "$image" >> x86_64_fixed_images.txt
+                elif [[ "$arch" == "arm64" ]]; then
+                  echo "$image" >> arm64_fixed_images.txt
+                fi
+              fi
+            fi
+          done < "$log_file"
+
+          sort -u x86_64_fixed_images.txt -o x86_64_fixed_images.txt
+          sort -u arm64_fixed_images.txt -o arm64_fixed_images.txt
+          echo "最终结果："
+          echo "成功的 x86_64 镜像："
+          cat x86_64_fixed_images.txt
+          echo "成功的 arm64 镜像："
+          cat arm64_fixed_images.txt
+
+      - name: Commit and Push Updated Results
+        run: |
+          # 配置 Git 用户信息
+          git config --global user.name "Push Fixed Images"
+          git config --global user.email "admin@spiritlhl.net"
+          # 确保处于 main 分支
+          git checkout main
+          # 添加文件
+          git add x86_64_fixed_images.txt arm64_fixed_images.txt
+          # 提交更改（如果有更改才会提交）
+          git commit -m "Update fixed images list"
+          # 推送到仓库
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

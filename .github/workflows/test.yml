@@ -1,4 +1,4 @@
-name: Test lxd Images
+name: Run LXD Tests
 
 on:
   schedule:
@@ -9,7 +9,7 @@ jobs:
   prepare-matrix:
     runs-on: ubuntu-latest
     outputs:
-      test-matrix: ${{ steps.set-matrix.outputs.matrix }}
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
       - id: set-matrix
@@ -37,141 +37,36 @@ jobs:
           matrix_json=${matrix_json%,}
           matrix_json+="]}"
           
-          echo "matrix=$matrix_json" >> $GITHUB_OUTPUT
-          # 同时用 set-output 兼容部分旧版本 runner
-          echo "::set-output name=matrix::$matrix_json"
+          echo "matrix=$matrix_json" >> "$GITHUB_OUTPUT"
 
   test-single-image:
     needs: prepare-matrix
     strategy:
       fail-fast: false
-      max-parallel: 6
-      matrix: ${{ fromJson(needs.prepare-matrix.outputs.test-matrix) }}
+      max-parallel: 12
+      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 8
-    # 定义 job 输出，方便在后续任务中收集每个测试的状态
-    outputs:
-      success: ${{ steps.test.outputs.success }}
-      image:   ${{ steps.test.outputs.image }}
-      arch:    ${{ steps.test.outputs.arch }}
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@v4
       - name: Setup Fresh Environment
         run: |
           echo "设置新环境..."
-          sudo apt update -y
-          sudo sh -c 'export noninteractive=true && curl -L https://raw.githubusercontent.com/oneclickvirt/lxd/main/scripts/lxd_install.sh -o lxd_install.sh && chmod +x lxd_install.sh && bash lxd_install.sh'
+          sudo apt-get update -y
+          sudo sh -c 'export noninteractive=true; curl -sL https://raw.githubusercontent.com/oneclickvirt/lxd/main/scripts/lxd_install.sh -o lxd_install.sh && chmod +x lxd_install.sh && bash lxd_install.sh >/dev/null 2>&1'
       - name: Configure Git
         run: |
           git config --global user.name "daily-test"
           git config --global user.email "test@spiritlhl.top"
       - name: Test Image
-        id: test
-        # 使用 continue-on-error 保证即使当前镜像测试失败，也不会影响整个矩阵执行
-        continue-on-error: true
         run: |
           echo "测试镜像: ${{ matrix.image }}"
-          # 备份 DNS 配置
-          sudo cp /etc/resolv.conf /etc/resolv.conf.backup
-          
           if sudo bash test.sh "${{ matrix.image }}"; then
             echo "测试通过: ${{ matrix.image }}"
-            echo "success=true" >> $GITHUB_OUTPUT
-            echo "image=${{ matrix.image }}" >> $GITHUB_OUTPUT
-            echo "arch=${{ matrix.arch }}" >> $GITHUB_OUTPUT
+            echo "success=true"
           else
             echo "测试失败: ${{ matrix.image }}"
-            echo "success=false" >> $GITHUB_OUTPUT
-            # 同时输出当前镜像与架构，方便后续整理时匹配
-            echo "image=${{ matrix.image }}" >> $GITHUB_OUTPUT
-            echo "arch=${{ matrix.arch }}" >> $GITHUB_OUTPUT
-            # 使用 exit 1 标记此任务失败，但由于 continue-on-error，不会终止整个矩阵
-            exit 1
+            echo "success=false"
           fi
-          # 还原 DNS 配置
-          sudo mv /etc/resolv.conf.backup /etc/resolv.conf || true
-
-  results-updater:
-    needs: test-single-image
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download Image Lists
-        run: |
-          curl -o x86_64_all_images.txt https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/x86_64_all_images.txt
-          curl -o arm64_all_images.txt https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/arm64_all_images.txt
-          
-          # 初始化固定镜像列表文件
-          > x86_64_fixed_images.txt
-          > arm64_fixed_images.txt
-
-      - name: Collect Test Results
-        run: |
-          echo "开始收集测试结果..."
-          echo "当前工作目录文件列表:"
-          ls -la
-          echo "初始镜像列表内容:"
-          echo "x86_64_all_images.txt 内容:"
-          cat x86_64_all_images.txt
-          echo "arm64_all_images.txt 内容:"
-          cat arm64_all_images.txt
-          echo "开始处理测试矩阵结果..."
-          MATRIX_JSON='${{ needs.prepare-matrix.outputs.test-matrix }}'
-          echo "测试矩阵 JSON:"
-          echo "$MATRIX_JSON"
-          echo "$MATRIX_JSON" | jq -c '.include[]' | nl -v 0 -w 1 -s ' ' | while read idx entry; do
-            IMAGE=$(echo "$entry" | jq -r '.image')
-            ARCH=$(echo "$entry" | jq -r '.arch')
-            echo "处理第 $idx 个测试结果:"
-            echo "镜像: $IMAGE"
-            echo "架构: $ARCH"
-            SUCCESS=$(echo '${{ toJSON(needs.test-single-image) }}' | jq -r --arg idx "$idx" '.[$idx].outputs.success')
-            echo "测试结果: $SUCCESS"
-            if [ "$SUCCESS" = "true" ]; then
-              if [ "$ARCH" = "amd64" ]; then
-                echo "添加成功的 amd64 镜像到 x86_64_fixed_images.txt: $IMAGE"
-                echo "$IMAGE" >> x86_64_fixed_images.txt
-              elif [ "$ARCH" = "arm64" ]; then
-                echo "添加成功的 arm64 镜像到 arm64_fixed_images.txt: $IMAGE"
-                echo "$IMAGE" >> arm64_fixed_images.txt
-              else
-                echo "警告: 未知架构 $ARCH, 镜像 $IMAGE 将被跳过"
-              fi
-            else
-              echo "跳过测试失败的镜像: $IMAGE (架构: $ARCH)"
-            fi
-          done
-          echo "排序并去重结果文件..."
-          sort -u x86_64_fixed_images.txt -o x86_64_fixed_images.txt
-          sort -u arm64_fixed_images.txt -o arm64_fixed_images.txt
-          echo "最终结果文件内容:"
-          echo "x86_64_fixed_images.txt 内容:"
-          cat x86_64_fixed_images.txt
-          echo "arm64_fixed_images.txt 内容:"
-          cat arm64_fixed_images.txt
-          
-      - name: Push Results
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # 如果有任一固定镜像文件非空，则更新仓库
-          if [[ -s x86_64_fixed_images.txt || -s arm64_fixed_images.txt ]]; then
-            echo "推送测试结果..."
-            git pull origin main
-            git add x86_64_fixed_images.txt arm64_fixed_images.txt
-            git commit -m "更新镜像测试结果"
-            git push
-          fi
-        # 即使推送失败也不影响后续清理
-        continue-on-error: true
-
-  cleanup:
-    needs: results-updater
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Test Results
-        run: |
-          echo "所有测试完成"
-          echo "查看 Actions 页面获取详细测试结果"
+          echo "image=${{ matrix.image }}"
+          echo "arch=${{ matrix.arch }}"
