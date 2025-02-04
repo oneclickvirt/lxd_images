@@ -12,3 +12,4 @@ ubuntu_20.04_focal_arm64_default.zip
 ubuntu_22.04_jammy_arm64_cloud.zip
 ubuntu_22.04_jammy_arm64_default.zip
 ubuntu_24.04_noble_arm64_cloud.zip
+ubuntu_24.04_noble_arm64_default.zip
