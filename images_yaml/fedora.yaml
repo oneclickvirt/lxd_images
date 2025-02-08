@@ -313,6 +313,15 @@ actions:
 - trigger: post-packages
   action: |-
     #!/bin/sh
+    systemctl mask systemd-nsresourced.service systemd-nsresourced.socket
+  types:
+  - container
+  releases:
+  - 41
+
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
     systemctl enable systemd-networkd
   variants:
   - default
