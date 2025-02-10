@@ -8,6 +8,7 @@ kali_latest_kali-rolling_arm64_cloud.zip
 kali_latest_kali-rolling_arm64_default.zip
 ubuntu_18.04_bionic_arm64_default.zip
 ubuntu_20.04_focal_arm64_cloud.zip
+ubuntu_20.04_focal_arm64_default.zip
 ubuntu_22.04_jammy_arm64_cloud.zip
 ubuntu_22.04_jammy_arm64_default.zip
 ubuntu_24.04_noble_arm64_cloud.zip
