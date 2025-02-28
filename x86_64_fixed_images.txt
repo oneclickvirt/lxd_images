@@ -7,7 +7,9 @@ debian_12_bookworm_amd64_default.zip
 debian_13_trixie_amd64_cloud.zip
 debian_13_trixie_amd64_default.zip
 kali_latest_kali-rolling_amd64_cloud.zip
+kali_latest_kali-rolling_amd64_default.zip
 ubuntu_18.04_bionic_amd64_default.zip
+ubuntu_20.04_focal_amd64_cloud.zip
 ubuntu_20.04_focal_amd64_default.zip
 ubuntu_22.04_jammy_amd64_cloud.zip
 ubuntu_22.04_jammy_amd64_default.zip
