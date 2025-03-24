@@ -4,6 +4,7 @@ debian_11_bullseye_amd64_cloud.zip
 debian_11_bullseye_amd64_default.zip
 debian_12_bookworm_amd64_cloud.zip
 debian_12_bookworm_amd64_default.zip
+debian_13_trixie_amd64_cloud.zip
 debian_13_trixie_amd64_default.zip
 kali_latest_kali-rolling_amd64_cloud.zip
 kali_latest_kali-rolling_amd64_default.zip
