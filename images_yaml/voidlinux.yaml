@@ -219,22 +219,31 @@ actions:
     ln -s /run/runit/supervise.dhclient-eth0 /etc/sv/dhclient-eth0/supervice
     sed -i "/^exec dhclient/ s/$/eth0/" /etc/sv/dhclient-eth0/run
 
+    # Configure stopit on each boot.
+    # This ensures that the container performs a shutdown when receiving SIGCONT.
+    # Runit will only perform a shutdown if /etc/runit/stopit has mode 100, and /etc/runit/reboot has mode 0.
+    mkdir /etc/sv/setup-stopit
+    cat << EOF > /etc/sv/setup-stopit/run
+    #! /bin/sh
+    mkdir -p /run/runit
+    install -m100 /dev/null /run/runit/stopit
+    EOF
+
+    chmod +x /etc/sv/setup-stopit/run
+
     # Enable services
     ln -s /etc/sv/socklog-unix /etc/runit/runsvdir/default/
     ln -s /etc/sv/nanoklogd /etc/runit/runsvdir/default/
     ln -s /etc/sv/dhclient-eth0 /etc/runit/runsvdir/default/
     ln -s /etc/sv/cronie /etc/runit/runsvdir/default/
     ln -s /etc/sv/agetty-console /etc/runit/runsvdir/default/
+    ln -s /etc/sv/setup-stopit /etc/runit/runsvdir/default/
 
     # Disable services
     for tty in 1 2 3 4 5 6; do
         rm /etc/runit/runsvdir/default/agetty-tty${tty}
         touch /etc/sv/agetty-tty${tty}/down
     done
-
-    # This ensures that the container performs a shutdown when receiving SIGCONT.
-    # Runit will only perform a shutdown if /etc/runit/stopit has mode 100, and /etc/runit/reboot has mode 0.
-    sed -ri 's#install -m000 /dev/null /run/runit/stopit#install -m100 /dev/null /run/runit/stopit#' /etc/runit/1
 
 - trigger: post-packages
   action: |-
