@@ -1439,6 +1439,27 @@ actions:
   action: |-
     #!/bin/sh
     set -eux
+    # Workaround for https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1103503
+    # and https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1104344
+    [ -e /etc/apparmor.d/usr.sbin.dhclient ] || exit 0
+
+    # Check if usr.sbin.dhclient tries to include local/sbin.dhclient. If not, nothing to do.
+    grep -qF "include <local/sbin.dhclient>" /etc/apparmor.d/usr.sbin.dhclient || exit 0
+
+    # If local/sbin.dhclient exists, nothing to do.
+    [ -e /etc/apparmor.d/local/sbin.dhclient ] && exit 0
+
+    # Otherwise, create an empty file to please apparmor.service
+    mkdir -p /etc/apparmor.d/local
+    touch /etc/apparmor.d/local/sbin.dhclient
+  releases:
+  - sid
+  - trixie
+
+- trigger: post-files
+  action: |-
+    #!/bin/sh
+    set -eux
 
     systemctl disable iptables || true
     systemctl enable sshd || true
