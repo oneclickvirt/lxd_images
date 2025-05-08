@@ -205,6 +205,9 @@ files:
         option ifname 'eth0'
         option proto 'dhcpv6'
 
+    config globals 'globals'
+        option ula_prefix 'auto'
+
 packages:
   # Note: Older releases of OpenWrt use "opkg" package manager.
   manager: apk
@@ -229,8 +232,6 @@ actions:
     #!/bin/sh
     mkdir -p /var/lock
     echo "console::askfirst:/usr/libexec/login.sh" >> /etc/inittab
-  architectures:
-  - amd64
 
 - trigger: post-unpack
   action: |

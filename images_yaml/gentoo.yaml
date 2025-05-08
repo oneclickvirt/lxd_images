@@ -300,7 +300,7 @@ source:
 targets:
   lxd:
     vm:
-      size: 6442450944
+      size: 8589934592
       filesystem: ext4
 
   lxc:
@@ -340,7 +340,7 @@ files:
   path: /etc/conf.d/hostname
   generator: template
   content: |-
-    hostname="{{ container.name }}"
+    hostname="{{ instance.name }}"
 
 - name: hosts
   path: /etc/hosts
@@ -498,29 +498,8 @@ actions:
         locale-gen
     fi
 
-- trigger: post-unpack
-  action: |-
-    #!/bin/sh
-    set -eux
-
-    TARGET="$(uname -m)"
-
-    case "${TARGET}" in
-    aarch64)
-      TARGET=arm64 ;;
-    i686)
-      TARGET=x86 ;;
-    ppc*)
-      TARGET=ppc ;;
-    x86_64)
-      TARGET=amd64 ;;
-    arm*)
-      TARGET=arm ;;
-    esac
-
-  types:
-  - container
-  - vm
+    # Create empty hostname file
+    touch /etc/hostname
 
 - trigger: post-unpack
   action: |-
@@ -552,8 +531,11 @@ actions:
 
     echo "root=${LXD_IMAGEBUILDER_ROOT_UUID}" >> /etc/kernel/cmdline
 
+    mkdir -p /etc/dracut.conf.d/
+
     echo "sys-apps/systemd kernel-install" >> /etc/portage/package.use/systemd
     echo "sys-kernel/installkernel dracut systemd systemd-boot" >> /etc/portage/package.use/installkernel
+    echo "hostonly=no" >> /etc/dracut.conf.d/95-no-hostonly.conf
     emerge gentoo-kernel-bin
 
     rm -f /etc/machine-id /var/lib/dbus/machine-id
@@ -566,7 +548,9 @@ actions:
 - trigger: post-files
   action: |-
     #!/bin/sh
+    mkdir -p /etc/dracut.conf.d/
     echo "sys-kernel/installkernel dracut grub" >> /etc/portage/package.use/installkernel
+    echo "hostonly=no" >> /etc/dracut.conf.d/95-no-hostonly.conf
     emerge gentoo-kernel-bin
 
   types:
