@@ -232,8 +232,13 @@ gentoo)
     ;;
 centos | almalinux | rockylinux | alpine | openwrt | oracle | fedora | opensuse | openeuler)
     versions=$(get_versions "$run_funct")
-    echo "Version: $versions"
-    build_or_list_images "$versions" "$versions" "cloud default"
+    releases=$(get_releases "$run_funct")
+    if [[ -z "$versions" && -n "$releases" ]]; then
+        versions="$releases"
+    elif [[ -z "$releases" && -n "$versions" ]]; then
+        releases="$versions"
+    fi
+    build_or_list_images "$versions" "$releases" "cloud default"
     ;;
 *)
     echo "Invalid distribution specified."
