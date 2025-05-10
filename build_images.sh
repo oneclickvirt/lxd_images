@@ -167,10 +167,27 @@ build_or_list_images() {
                                 echo "Command succeeded"
                             fi
                         else
-                            echo "sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} ${EXTRA_ARGS}"
-                            if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} ${EXTRA_ARGS}; then
+                            echo "sudo lxd-imagebuilder build-lxd ${opath}/images_yaml/${run_funct}.yaml -o image.architecture=${arch} -o image.variant=${variant} ${EXTRA_ARGS}"
+                            if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" \
+                                -o image.architecture=${arch} \
+                                -o image.variant=${variant} \
+                                ${EXTRA_ARGS}; then
                                 echo "Command succeeded"
+                            
+                            else
+                                echo "Retrying with image.release=${ver_num}..."
+                                if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" \
+                                    -o image.architecture=${arch} \
+                                    -o image.variant=${variant} \
+                                    -o image.release=${ver_num} \
+                                    ${EXTRA_ARGS}; then
+                                    echo "Second attempt succeeded"
+                                else
+                                    echo "Both attempts failed"
+                                    exit 1
+                                fi
                             fi
+
                         fi
                     fi
                     if [ -f lxd.tar.xz ] && [ -f rootfs.squashfs ]; then
