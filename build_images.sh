@@ -170,52 +170,51 @@ build_or_list_images() {
                         fi
                     fi
                     if command -v lxd-imagebuilder >/dev/null 2>&1; then
-                        if [[ "$run_funct" == "gentoo" ]]; then
-                            echo "sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} ${EXTRA_ARGS}"
-                            if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.architecture=${arch} -o image.variant=${variant} ${EXTRA_ARGS}; then
+                        BUILDER_CMD=( sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" \
+                            -o image.architecture="${arch}" \
+                            -o image.variant="${variant}" \
+                            ${EXTRA_ARGS} )
+                        case "$run_funct" in
+                            gentoo)
+                                RELEASE_OPTS=( "" )
+                                ;;
+                            kali|ubuntu|debian|alpine)
+                                RELEASE_OPTS=( "" "-o image.release=${version}" )
+                                ;;
+                            *)
+                                RELEASE_OPTS=( "" "-o image.release=${ver_num}" "-o image.release=${version}" )
+                                ;;
+                        esac
+                        success=false
+                        for rel in "${RELEASE_OPTS[@]}"; do
+                            echo "Running: ${BUILDER_CMD[*]} $rel"
+                            if "${BUILDER_CMD[@]}" $rel; then
                                 echo "Command succeeded"
+                                success=true
+                                break
                             fi
-                        elif [[ "$run_funct" == "kali" || "$run_funct" == "ubuntu" || "$run_funct" == "debian" || "$run_funct" == "alpine" ]]; then
-                            echo "sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.release=${version} -o image.architecture=${arch} -o image.variant=${variant} -o packages.manager=${manager} ${EXTRA_ARGS}"
-                            if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" -o image.release=${version} -o image.architecture=${arch} -o image.variant=${variant} -o packages.manager=${manager} ${EXTRA_ARGS}; then
-                                echo "Command succeeded"
-                            fi
-                        else
-                            echo "sudo lxd-imagebuilder build-lxd ${opath}/images_yaml/${run_funct}.yaml -o image.architecture=${arch} -o image.variant=${variant} ${EXTRA_ARGS}"
-                            if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" \
-                                -o image.architecture=${arch} \
-                                -o image.variant=${variant} \
-                                ${EXTRA_ARGS}; then
-                                echo "Command succeeded"
-                            
-                            else
-                                echo "Retrying with image.release=${ver_num}..."
-                                if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" \
-                                    -o image.architecture=${arch} \
-                                    -o image.variant=${variant} \
-                                    -o image.release=${ver_num} \
-                                    ${EXTRA_ARGS}; then
-                                    echo "Second attempt succeeded"
+                            if [ -f lxd.tar.xz ] && [ -f rootfs.squashfs ]; then
+                                total_size=$(($(stat -c%s lxd.tar.xz) + $(stat -c%s rootfs.squashfs)))
+                                if [ "$total_size" -gt $((10 * 1024 * 1024)) ]; then
+                                    echo "Build artifacts detected (lxd.tar.xz + rootfs.squashfs), total size > 10MB, assuming success"
+                                    success=true
+                                    break
                                 else
-                                    echo "Retrying with image.release=${ver_num}..."
-                                    if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" \
-                                        -o image.architecture=${arch} \
-                                        -o image.variant=${variant} \
-                                        -o image.release=${version} \
-                                        ${EXTRA_ARGS}; then
-                                        echo "Second attempt succeeded"
-                                    else
-                                        echo "Both attempts failed"
-                                        continue
-                                    fi
+                                    echo "Artifacts found but total size <= 10MB, ignoring..."
                                 fi
                             fi
+                        done
+                        if ! $success; then
+                            echo "All build attempts failed, skipping this distro."
+                            continue
                         fi
                     fi
                     du -sh *
                     if [ -f lxd.tar.xz ] && [ -f rootfs.squashfs ]; then
                         zip "${run_funct}_${ver_num}_${version}_${arch}_${variant}.zip" lxd.tar.xz rootfs.squashfs
-                        rm -rf lxd.tar.xz rootfs.squashfs
+                        rm -f lxd.tar.xz rootfs.squashfs
+                    else
+                        echo "Expected artifacts not found, nothing to zip."
                     fi
                 else
                     zip_name_list+=("${run_funct}_${ver_num}_${version}_${arch}_${variant}.zip")
