@@ -49,16 +49,29 @@ fi
 get_versions() {
     local system=$1
     local url="https://images.lxd.canonical.com/images/$system/"
-    versions=$(curl -s "$url" | grep -oE '>[0-9]+\.[0-9]+/?<' | sed 's/[><]//g' | sed 's#/$##' | grep -v '^\.{1,2}$' | tr '\n' ' ')
-    echo "$versions"
+    local raw
+    raw=$(curl -s "$url" \
+        | grep -oE '>[0-9]+\.[0-9]+/?<' \
+        | sed 's/[><]//g' \
+        | sed 's#/$##' \
+        | grep -v '^\.{1,2}$' \
+        | tr '\n' ' ')
+    echo "${raw,,}"
 }
 
 # 获取发行版信息
 get_releases() {
     local system=$1
     local url="https://images.lxd.canonical.com/images/$system/"
-    releases=$(curl -s "$url" | grep -oE '>[a-zA-Z0-9.-]+/?<' | sed 's/[><]//g' | sed 's#/$##g' | grep -Ev '^\.\.$|^snapshot$' | sort -u | tr '\n' ' ')
-    echo "$releases"
+    local raw
+    raw=$(curl -s "$url" \
+        | grep -oE '>[a-zA-Z0-9.-]+/?<' \
+        | sed 's/[><]//g' \
+        | sed 's#/$##g' \
+        | grep -Ev '^\.\.$|^snapshot$' \
+        | sort -u \
+        | tr '\n' ' ')
+    echo "${raw,,}"
 }
 
 # 构建或列出镜像
