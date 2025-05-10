@@ -183,8 +183,17 @@ build_or_list_images() {
                                     ${EXTRA_ARGS}; then
                                     echo "Second attempt succeeded"
                                 else
-                                    echo "Both attempts failed"
-                                    continue
+                                    echo "Retrying with image.release=${ver_num}..."
+                                    if sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" \
+                                        -o image.architecture=${arch} \
+                                        -o image.variant=${variant} \
+                                        -o image.release=${version} \
+                                        ${EXTRA_ARGS}; then
+                                        echo "Second attempt succeeded"
+                                    else
+                                        echo "Both attempts failed"
+                                        continue
+                                    fi
                                 fi
                             fi
                         fi
@@ -221,10 +230,7 @@ archlinux)
 gentoo)
     build_or_list_images "current" "current" "openrc systemd"
     ;;
-centos)
-    build_or_list_images "7 8-Stream 9-Stream" "7 8-Stream 9-Stream" "cloud default"
-    ;;
-almalinux | rockylinux | alpine | openwrt | oracle | fedora | opensuse | openeuler)
+centos | almalinux | rockylinux | alpine | openwrt | oracle | fedora | opensuse | openeuler)
     versions=$(get_versions "$run_funct")
     echo "Version: $versions"
     build_or_list_images "$versions" "$versions" "cloud default"
