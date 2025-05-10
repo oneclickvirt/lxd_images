@@ -184,10 +184,9 @@ build_or_list_images() {
                                     echo "Second attempt succeeded"
                                 else
                                     echo "Both attempts failed"
-                                    exit 1
+                                    continue
                                 fi
                             fi
-
                         fi
                     fi
                     if [ -f lxd.tar.xz ] && [ -f rootfs.squashfs ]; then
