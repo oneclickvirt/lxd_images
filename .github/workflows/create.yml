@@ -13,11 +13,11 @@ jobs:
       fail-fast: false
       max-parallel: 6
       matrix:
-        # distro: ["debian", "kali", "centos", "almalinux", "rockylinux", 
+        # distro: ["debian", "kali", "almalinux", "rockylinux", 
         #         "fedora", "opensuse", "alpine", "archlinux", "gentoo", "openwrt", 
         #         "oracle", "openeuler", "ubuntu"]
-        distro: ["centos", "almalinux", "rockylinux", "oracle",
-                "fedora", "opensuse", "alpine", "archlinux", "openwrt", "openeuler"]
+        distro: ["almalinux", "rockylinux", "oracle", "fedora", "opensuse", "alpine", 
+                 "archlinux", "openwrt", "openeuler"]
         arch:
           - name: amd64
             runner: ubuntu-latest
