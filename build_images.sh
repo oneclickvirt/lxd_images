@@ -92,21 +92,21 @@ build_or_list_images() {
                 if [ "$is_build_image" == true ]; then
                     if [[ "$run_funct" == "kali" || "$run_funct" == "ubuntu" || "$run_funct" == "debian" ]]; then
                         manager="apt"
-                    # elif [[ "$run_funct" == "centos" || "$run_funct" == "fedora" || "$run_funct" == "openeuler" ]]; then
-                    #     manager="yum"
-                    # elif [[ "$run_funct" == "almalinux" || "$run_funct" == "rockylinux" || "$run_funct" == "oracle" ]]; then
-                    #     manager="dnf"
-                    # elif [[ "$run_funct" == "archlinux" ]]; then
-                    #     manager="pacman"
+                    elif [[ "$run_funct" == "centos" || "$run_funct" == "fedora" || "$run_funct" == "openeuler" ]]; then
+                        manager="yum"
+                    elif [[ "$run_funct" == "almalinux" || "$run_funct" == "rockylinux" || "$run_funct" == "oracle" ]]; then
+                        manager="dnf"
+                    elif [[ "$run_funct" == "archlinux" ]]; then
+                        manager="pacman"
                     elif [[ "$run_funct" == "alpine" ]]; then
                         manager="apk"
-                    # elif [[ "$run_funct" == "openwrt" ]]; then
-                    #     manager="opkg"
-                    #     [ "${version}" = "snapshot" ] && manager="apk"
+                    elif [[ "$run_funct" == "openwrt" ]]; then
+                        manager="opkg"
+                        [ "${version}" = "snapshot" ] && manager="apk"
                     elif [[ "$run_funct" == "gentoo" ]]; then
                         manager="portage"
-                    # elif [[ "$run_funct" == "opensuse" ]]; then
-                    #     manager="zypper"
+                    elif [[ "$run_funct" == "opensuse" ]]; then
+                        manager="zypper"
                     fi
                     EXTRA_ARGS=""
                     if [[ "$run_funct" == "alpine" ]]; then
@@ -115,41 +115,41 @@ build_or_list_images() {
                         if [ "${version}" = "edge" ]; then
                             EXTRA_ARGS="-o source.same_as=3.19"
                         fi
-                    # elif [[ "$run_funct" == "centos" ]]; then
-                    #     [ "${arch}" = "amd64" ] && arch="x86_64"
-                    #     [ "${arch}" = "arm64" ] && arch="aarch64"
-                    #     if [ "$version" = "7" ] && [ "${arch}" != "amd64" ] && [ "${arch}" != "x86_64" ]; then
-                    #         EXTRA_ARGS="-o source.url=http://mirror.math.princeton.edu/pub/centos-altarch/ -o source.skip_verification=true"
-                    #     fi
-                    #     if [ "$version" = "8-Stream" ] || [ "$version" = "9-Stream" ]; then
-                    #         EXTRA_ARGS="${EXTRA_ARGS} -o source.variant=boot"
-                    #     fi
-                    #     if [ "$version" = "9-Stream" ]; then
-                    #         EXTRA_ARGS="${EXTRA_ARGS} -o source.url=https://mirror1.hs-esslingen.de/pub/Mirrors/centos-stream"
-                    #     fi
-                    # elif [[ "$run_funct" == "rockylinux" ]]; then
-                    #     [ "${arch}" = "amd64" ] && arch="x86_64"
-                    #     [ "${arch}" = "arm64" ] && arch="aarch64"
-                    #     EXTRA_ARGS="-o source.variant=boot"
-                    # elif [[ "$run_funct" == "almalinux" ]]; then
-                    #     [ "${arch}" = "amd64" ] && arch="x86_64"
-                    #     [ "${arch}" = "arm64" ] && arch="aarch64"
-                    #     EXTRA_ARGS="-o source.variant=boot"
-                    # elif [[ "$run_funct" == "oracle" ]]; then
-                    #     [ "${arch}" = "amd64" ] && arch="x86_64"
-                    #     [ "${arch}" = "arm64" ] && arch="aarch64"
-                    #     if [[ "$version" == "9" ]]; then
-                    #         EXTRA_ARGS="-o source.url=https://yum.oracle.com/ISOS/OracleLinux"
-                    #     fi
-                    # elif [[ "$run_funct" == "archlinux" ]]; then
-                    #     [ "${arch}" = "amd64" ] && arch="x86_64"
-                    #     [ "${arch}" = "arm64" ] && arch="aarch64"
-                    #     if [ "${arch}" != "amd64" ] && [ "${arch}" != "i386" ] && [ "${arch}" != "x86_64" ]; then
-                    #         EXTRA_ARGS="-o source.url=http://os.archlinuxarm.org"
-                    #     fi
-                    # elif [[ "$run_funct" == "fedora" || "$run_funct" == "openeuler" || "$run_funct" == "opensuse" ]]; then
-                    #     [ "${arch}" = "amd64" ] && arch="x86_64"
-                    #     [ "${arch}" = "arm64" ] && arch="aarch64"
+                    elif [[ "$run_funct" == "centos" ]]; then
+                        [ "${arch}" = "amd64" ] && arch="x86_64"
+                        [ "${arch}" = "arm64" ] && arch="aarch64"
+                        if [ "$version" = "7" ] && [ "${arch}" != "amd64" ] && [ "${arch}" != "x86_64" ]; then
+                            EXTRA_ARGS="-o source.url=http://mirror.math.princeton.edu/pub/centos-altarch/ -o source.skip_verification=true"
+                        fi
+                        if [ "$version" = "8-Stream" ] || [ "$version" = "9-Stream" ]; then
+                            EXTRA_ARGS="${EXTRA_ARGS} -o source.variant=boot"
+                        fi
+                        if [ "$version" = "9-Stream" ]; then
+                            EXTRA_ARGS="${EXTRA_ARGS} -o source.url=https://mirror1.hs-esslingen.de/pub/Mirrors/centos-stream"
+                        fi
+                    elif [[ "$run_funct" == "rockylinux" ]]; then
+                        [ "${arch}" = "amd64" ] && arch="x86_64"
+                        [ "${arch}" = "arm64" ] && arch="aarch64"
+                        EXTRA_ARGS="-o source.variant=boot"
+                    elif [[ "$run_funct" == "almalinux" ]]; then
+                        [ "${arch}" = "amd64" ] && arch="x86_64"
+                        [ "${arch}" = "arm64" ] && arch="aarch64"
+                        EXTRA_ARGS="-o source.variant=boot"
+                    elif [[ "$run_funct" == "oracle" ]]; then
+                        [ "${arch}" = "amd64" ] && arch="x86_64"
+                        [ "${arch}" = "arm64" ] && arch="aarch64"
+                        if [[ "$version" == "9" ]]; then
+                            EXTRA_ARGS="-o source.url=https://yum.oracle.com/ISOS/OracleLinux"
+                        fi
+                    elif [[ "$run_funct" == "archlinux" ]]; then
+                        [ "${arch}" = "amd64" ] && arch="x86_64"
+                        [ "${arch}" = "arm64" ] && arch="aarch64"
+                        if [ "${arch}" != "amd64" ] && [ "${arch}" != "i386" ] && [ "${arch}" != "x86_64" ]; then
+                            EXTRA_ARGS="-o source.url=http://os.archlinuxarm.org"
+                        fi
+                    elif [[ "$run_funct" == "fedora" || "$run_funct" == "openeuler" || "$run_funct" == "opensuse" ]]; then
+                        [ "${arch}" = "amd64" ] && arch="x86_64"
+                        [ "${arch}" = "arm64" ] && arch="aarch64"
                     elif [[ "$run_funct" == "gentoo" ]]; then
                         [ "${arch}" = "x86_64" ] && arch="amd64"
                         [ "${arch}" = "aarch64" ] && arch="arm64"
@@ -243,7 +243,10 @@ archlinux)
 gentoo)
     build_or_list_images "current" "current" "openrc systemd"
     ;;
-centos | almalinux | rockylinux | alpine | openwrt | oracle | fedora | opensuse | openeuler)
+centos)
+    build_or_list_images "7 8 9-stream" "7 8 9-stream" "openrc systemd"
+    ;;
+almalinux | rockylinux | alpine | openwrt | oracle | fedora | opensuse | openeuler)
     versions=$(get_versions "$run_funct")
     releases=$(get_releases "$run_funct")
     if [[ -z "$versions" && -n "$releases" ]]; then
