@@ -85,7 +85,7 @@ jobs:
         sudo bash build_images.sh $DISTRO true $ARCH || true
         echo "------------"
         pwd
-        ls
+        du -sh *
         echo "------------"
         # 处理构建产物
         for file in "${zip_name_list[@]}"; do
