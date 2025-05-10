@@ -14,10 +14,9 @@ jobs:
       max-parallel: 6
       matrix:
         distro: ["debian", "kali", "almalinux", "rockylinux", 
-                "fedora", "opensuse", "alpine", "archlinux", "gentoo", "openwrt", 
+                "fedora", "opensuse", "alpine", "archlinux", "gentoo",
                 "oracle", "openeuler", "ubuntu"]
-        # distro: ["almalinux", "rockylinux", "oracle", "fedora", "opensuse", "alpine", 
-        #          "archlinux", "openwrt", "openeuler"]
+        # distro: [ "oracle", "fedora", "alpine", "openwrt", "centos"]
         arch:
           - name: amd64
             runner: ubuntu-latest
