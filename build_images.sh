@@ -57,7 +57,7 @@ get_versions() {
 get_releases() {
     local system=$1
     local url="https://images.lxd.canonical.com/images/$system/"
-    releases=$(curl -s "$url" | grep -oE '>[a-zA-Z0-9.-]+/?<' | sed 's/[><]//g' | sed 's#/$##g' | sort -u | tr '\n' ' ')
+    releases=$(curl -s "$url" | grep -oE '>[a-zA-Z0-9.-]+/?<' | sed 's/[><]//g' | sed 's#/$##g' | grep -Ev '^\.\.$|^snapshot$' | sort -u | tr '\n' ' ')
     echo "$releases"
 }
 
@@ -210,6 +210,7 @@ centos)
     ;;
 almalinux | rockylinux | alpine | openwrt | oracle | fedora | opensuse | openeuler)
     versions=$(get_versions "$run_funct")
+    echo "Version: $versions"
     build_or_list_images "$versions" "$versions" "cloud default"
     ;;
 *)
