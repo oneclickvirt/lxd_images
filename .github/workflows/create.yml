@@ -16,7 +16,7 @@ jobs:
         # distro: ["debian", "kali", "centos", "almalinux", "rockylinux", 
         #         "fedora", "opensuse", "alpine", "archlinux", "gentoo", "openwrt", 
         #         "oracle", "openeuler", "ubuntu"]
-        distro: ["centos", "almalinux", "rockylinux", 
+        distro: ["centos", "almalinux", "rockylinux", "oracle",
                 "fedora", "opensuse", "alpine", "archlinux", "openwrt", "openeuler"]
         arch:
           - name: amd64
