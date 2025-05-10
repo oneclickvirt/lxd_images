@@ -222,7 +222,7 @@ gentoo)
     build_or_list_images "current" "current" "openrc systemd"
     ;;
 centos)
-    build_or_list_images "7 8-Stream 9-Stream" "7 8 9" "cloud default"
+    build_or_list_images "7 8-Stream 9-Stream" "7 8-Stream 9-Stream" "cloud default"
     ;;
 almalinux | rockylinux | alpine | openwrt | oracle | fedora | opensuse | openeuler)
     versions=$(get_versions "$run_funct")
