@@ -211,9 +211,20 @@ build_or_list_images() {
                     fi
                     du -sh *
                     if [ -f lxd.tar.xz ] && [ -f rootfs.squashfs ]; then
-                        zip "${run_funct}_${ver_num}_${version}_${arch}_${variant}.zip" lxd.tar.xz rootfs.squashfs
+                        case "$arch" in
+                          x86_64)
+                            arch_label="amd64"
+                            ;;
+                          aarch64)
+                            arch_label="arm64"
+                            ;;
+                          *)
+                            arch_label="$arch"
+                            ;;
+                        esac
+                        zip_file="${run_funct}_${ver_num}_${version}_${arch_label}_${variant}.zip"
+                        zip "${zip_file}" lxd.tar.xz rootfs.squashfs
                         rm -f lxd.tar.xz rootfs.squashfs
-                        zip_file="${run_funct}_${ver_num}_${version}_${arch}_${variant}.zip"
                         if [[ -f "$zip_file" ]]; then
                             file_size_bytes=$(stat -c%s "$zip_file")
                             file_size_mb=$(awk "BEGIN {printf \"%.2f\", $file_size_bytes/1024/1024}")
