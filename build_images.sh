@@ -213,6 +213,12 @@ build_or_list_images() {
                     if [ -f lxd.tar.xz ] && [ -f rootfs.squashfs ]; then
                         zip "${run_funct}_${ver_num}_${version}_${arch}_${variant}.zip" lxd.tar.xz rootfs.squashfs
                         rm -f lxd.tar.xz rootfs.squashfs
+                        zip_file="${run_funct}_${ver_num}_${version}_${arch}_${variant}.zip"
+                        if [[ -f "$zip_file" ]]; then
+                            file_size_bytes=$(stat -c%s "$zip_file")
+                            file_size_mb=$(awk "BEGIN {printf \"%.2f\", $file_size_bytes/1024/1024}")
+                            echo "zipfile: $zip_file size: ${file_size_mb} MB"
+                        fi
                     else
                         echo "Expected artifacts not found, nothing to zip."
                     fi
