@@ -25,6 +25,7 @@ if command -v apt-get >/dev/null 2>&1; then
         sudo apt-get install snapd -y
     fi
     sudo systemctl start snapd
+    sleep 10
     if ! command -v lxd-imagebuilder >/dev/null 2>&1; then
         sudo snap install --edge lxd-imagebuilder --classic
         lxd-imagebuilder --version
