@@ -49,7 +49,7 @@ fi
 get_versions() {
     local system=$1
     local url="https://images.lxd.canonical.com/images/$system/"
-    versions=$(curl -s "$url" | grep -oE '>[0-9]+\.[0-9]+/?<' | sed 's/[><]//g' | sed 's#/$##' | tr '\n' ' ')
+    versions=$(curl -s "$url" | grep -oE '>[0-9]+\.[0-9]+/?<' | sed 's/[><]//g' | sed 's#/$##' | grep -v '^\.{1,2}$' | tr '\n' ' ')
     echo "$versions"
 }
 
