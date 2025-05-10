@@ -212,6 +212,7 @@ build_or_list_images() {
                             fi
                         fi
                     fi
+                    du -sh *
                     if [ -f lxd.tar.xz ] && [ -f rootfs.squashfs ]; then
                         zip "${run_funct}_${ver_num}_${version}_${arch}_${variant}.zip" lxd.tar.xz rootfs.squashfs
                         rm -rf lxd.tar.xz rootfs.squashfs
