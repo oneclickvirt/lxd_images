@@ -1,5 +1,4 @@
 debian_11_bullseye_arm64_cloud.zip
-debian_11_bullseye_arm64_default.zip
 debian_12_bookworm_arm64_cloud.zip
 debian_12_bookworm_arm64_default.zip
 debian_13_trixie_arm64_cloud.zip
