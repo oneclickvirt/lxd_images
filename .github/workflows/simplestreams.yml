@@ -1,7 +1,14 @@
 name: Build and Deploy SimpleStreams Index
 
 on:
+  schedule:
+    - cron: '0 */6 * * *'
   workflow_dispatch:
+  push:
+    branches:
+      - main
+  release:
+    types: [published]
 
 jobs:
   build-and-deploy:
@@ -78,12 +85,11 @@ jobs:
               return {
                   'ftype': item_type,
                   'size': asset.get('size', 0),
-                  'path': f'images/{asset["name"]}',
+                  'path': url,
                   'sha256': calculate_sha256_from_url(url)
               }
           
           products = {}
-          redirect_rules = []
           
           lxd_files = [asset for asset in assets if asset['name'].endswith('lxd.tar.xz')]
           rootfs_files = [asset for asset in assets if asset['name'].endswith('rootfs.squashfs')]
@@ -126,12 +132,6 @@ jobs:
                   }
               }
               
-              lxd_url = f'{BASE_URL}/{lxd_asset["name"]}'
-              rootfs_url = f'{BASE_URL}/{rootfs_asset["name"]}'
-              
-              redirect_rules.append(f'/images/{lxd_asset["name"]} {lxd_url} 302')
-              redirect_rules.append(f'/images/{rootfs_asset["name"]} {rootfs_url} 302')
-              
               print(f"Processed {product_name}")
           
           update_time = current_time.strftime('%a, %d %b %Y %H:%M:%S') + ' +0000'
@@ -167,11 +167,7 @@ jobs:
           with open('build/streams/v1/images.json', 'w') as f:
               json.dump(images_data, f, indent=2, separators=(',', ': '))
           
-          with open('build/_redirects', 'w') as f:
-              f.write('\n'.join(redirect_rules))
-          
           print(f"Generated index with {len(products)} products")
-          print(f"Generated {len(redirect_rules)} redirect rules")
           
           with open('build/streams/v1/index.json', 'r') as f:
               test_index = json.load(f)
@@ -187,46 +183,6 @@ jobs:
       - name: Create CNAME file
         run: |
           echo "lxdimages.spiritlhl.net" > build/CNAME
-          
-      - name: Create Netlify config for redirects
-        run: |
-          cat > build/netlify.toml << 'EOL'
-          [[redirects]]
-            from = "/images/*"
-            to = "https://github.com/oneclickvirt/lxd_images/releases/download/processed/:splat"
-            status = 302
-            force = true
-          
-          [[headers]]
-            for = "/streams/v1/*"
-            [headers.values]
-              Cache-Control = "public, max-age=300"
-              Content-Type = "application/json"
-          EOL
-          
-      - name: Create Apache .htaccess for redirects
-        run: |
-          mkdir -p build/images
-          cat > build/images/.htaccess << 'EOL'
-          RewriteEngine On
-          RewriteRule ^(.*)$ https://github.com/oneclickvirt/lxd_images/releases/download/processed/$1 [R=302,L]
-          EOL
-          
-      - name: Create Nginx redirects config
-        run: |
-          cat > build/nginx_redirects.conf << 'EOL'
-          # Nginx configuration for LXD Images redirects
-          # Add this to your nginx server block:
-          
-          location /images/ {
-              rewrite ^/images/(.*)$ https://github.com/oneclickvirt/lxd_images/releases/download/processed/$1 redirect;
-          }
-          
-          location /streams/v1/ {
-              add_header Cache-Control "public, max-age=300";
-              add_header Content-Type "application/json";
-          }
-          EOL
           
       - name: Generate HTML frontend
         run: |
@@ -295,15 +251,15 @@ jobs:
                       overflow-x: auto;
                       margin: 0.5rem 0;
                   }
-                  .info-box {
-                      background: #e3f2fd;
-                      border: 1px solid #2196f3;
+                  .warning-box {
+                      background: #fff3cd;
+                      border: 1px solid #ffeaa7;
                       padding: 1rem;
                       border-radius: 5px;
                       margin: 1rem 0;
                   }
-                  .info-box h3 {
-                      color: #1976d2;
+                  .warning-box h3 {
+                      color: #856404;
                       margin-top: 0;
                   }
                   .stats {
@@ -400,9 +356,9 @@ jobs:
                   <p><strong>步骤 4:</strong> 启动容器</p>
                   <pre><code>lxc launch spiritlhl:ubuntu:22.04:amd64 my-container</code></pre>
                   
-                  <div class="info-box">
-                      <h3>💡 技术架构</h3>
-                      <p>本镜像仓库使用重定向技术，SimpleStreams 索引托管在 GitHub Pages，实际镜像文件存储在 GitHub Releases 中。当 LXD 客户端请求镜像文件时，会自动重定向到 GitHub Releases 进行下载。</p>
+                  <div class="warning-box">
+                      <h3>⚠️ 重要说明</h3>
+                      <p>此镜像仓库使用 GitHub Pages 托管 SimpleStreams 索引，镜像文件直接链接到 GitHub Releases。由于 GitHub Pages 的限制，我们使用完整的下载 URL 作为文件路径。</p>
                   </div>
               </div>
               
@@ -474,8 +430,6 @@ jobs:
                   <p>🔗 <a href="https://github.com/oneclickvirt/lxd_images" target="_blank">GitHub Repository</a> | 
                   📊 <a href="streams/v1/index.json" target="_blank">SimpleStreams Index</a> | 
                   🗂️ <a href="streams/v1/images.json" target="_blank">Images Metadata</a></p>
-                  <p>📄 <a href="nginx_redirects.conf" target="_blank">Nginx配置</a> | 
-                  🌐 <a href="netlify.toml" target="_blank">Netlify配置</a></p>
                   <p>由 <a href="https://github.com/spiritLHLS" target="_blank">spiritLHLS</a> 维护</p>
               </div>
           </body>
@@ -497,4 +451,4 @@ jobs:
           force_orphan: true
           user_name: 'github-actions[bot]'
           user_email: 'github-actions[bot]@users.noreply.github.com'
-          commit_message: 'Deploy SimpleStreams index with redirects'
+          commit_message: 'Deploy SimpleStreams index with direct URLs'
