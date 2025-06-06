@@ -208,7 +208,7 @@ jobs:
           mkdir -p pages/streams/v1
           echo "Getting existing assets from processed release..."
           echo "[]" > all_assets.json
-          processed_assets_response=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" | jq '[ .[] | select(.tag_name=="processed") ][0] // {} | .assets // []')
+          processed_assets_response=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" | jq '[ .[] | select(.tag_name=="processed") ] | if length > 0 then .[0].assets // [] else [] end')
           echo "processed_assets_response: $processed_assets_response"
           if [ "$processed_assets_response" != "null" ] && [ "$processed_assets_response" != "empty" ] && [ -n "$processed_assets_response" ]; then
             echo "$processed_assets_response" > existing_assets_array.json
