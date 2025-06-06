@@ -225,7 +225,8 @@ jobs:
             fi
             lxd_name="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
             lxd_size=$(grep -F "$lxd_name" asset_sizes.txt | awk '{print $2}')
-            new_info=$(echo "$new_list" | jq -c --arg file "$rootfs_name" 'select(.rootfs_url and .rootfs_file == $file)')
+            lxd_size=${lxd_size:-0}
+            new_info=$(echo "$new_list" | jq -c --arg file "$name" 'select(.rootfs_url and .rootfs_file == $file)')
             rootfs_sha=""
             lxd_sha=""
             codename=""
