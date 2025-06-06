@@ -1,140 +1,88 @@
-name: Build Simplestreams
+name: Update Simplestreams Mirror
 
 on:
-  schedule:
-    - cron: '0 2 * * *'
   workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
 
 jobs:
-  build-repository:
+  update:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout gh-pages
+      uses: actions/checkout@v4
+      with:
+        ref: gh-pages
+        path: gh-pages
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq curl
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
 
-      - name: Fetch release assets
-        run: |
-          echo "Fetching release assets..."
-          mkdir -p temp
+    - name: Download release assets
+      run: |
+        cd gh-pages
+        rm -rf streams
+        pip install requests
+        python -c "
+import requests
+tag = 'processed'
+owner = 'oneclickvirt'
+repo = 'lxd_images'
+release_url = f'https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}'
+release = requests.get(release_url).json()
+for asset in release['assets']:
+    url = asset['browser_download_url']
+    path = asset['name']
+    print(f'Downloading {path}')
+    r = requests.get(url)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'wb') as f:
+        f.write(r.content)
+        "
 
-          curl -s "https://api.github.com/repos/oneclickvirt/lxd_images/releases" \
-            | jq -r '.[] | select(.tag_name=="processed") | .assets // empty' > temp/assets.json
+    - name: Generate CNAME
+      run: |
+        cd gh-pages
+        echo 'lxdimages.spiritlhl.net' > CNAME
 
-          if [ "$(jq length temp/assets.json)" -gt 0 ]; then
-            echo "Found $(jq length temp/assets.json) assets"
-          else
-            echo "[]" > temp/assets.json
-            echo "No assets found"
-          fi
+    - name: Generate index.html
+      run: |
+        cd gh-pages
+        cat > index.html <<EOF
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>LXD Image Repository</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                h1, h2 { color: #333; }
+                pre { background: #f4f4f4; padding: 10px; border-radius: 5px; }
+                a { color: #0366d6; }
+            </style>
+        </head>
+        <body>
+            <h1>LXD Image Repository</h1>
+            <p>Simplestreams service URL: <code>https://lxdimages.spiritlhl.net/streams/v1</code></p>
+            
+            <h2>Usage</h2>
+            <pre>lxc remote add images https://lxdimages.spiritlhl.net --protocol=simplestreams</pre>
+            
+            <h2>Endpoints</h2>
+            <ul>
+                <li><a href="/streams/v1/index.json">index.json</a></li>
+                <li><a href="/streams/v1/images.json">images.json</a></li>
+            </ul>
+        </body>
+        </html>
+        EOF
 
-      - name: Process images
-        run: |
-          echo "Processing image information..."
-
-          jq -n \
-            --slurpfile assets temp/assets.json '
-            $assets[0]
-            | map(
-                select(.name | test("^[a-z0-9]+-[0-9a-z\\.-]+-[a-z0-9]+-[a-z]+-(rootfs\\.squashfs|lxd\\.tar\\.xz)$"))
-                | {
-                    name: .name,
-                    url: .browser_download_url,
-                    size: .size
-                  }
-              )
-            | group_by(.name | capture("^(?<os>[a-z0-9]+)-(?<version>[0-9a-z\\.-]+)-(?<arch>[a-z0-9]+)-(?<variant>[a-z]+)-(rootfs|lxd)\\.").os + "-" + .name | capture("^(?<os>[a-z0-9]+)-(?<version>[0-9a-z\\.-]+)-(?<arch>[a-z0-9]+)-(?<variant>[a-z]+)-").variant + "-" + .name | capture("^(?<os>[a-z0-9]+)-(?<version>[0-9a-z\\.-]+)-(?<arch>[a-z0-9]+)-(?<variant>[a-z]+)-(?<type>rootfs|lxd)\\.").type)
-            | map({
-                os: .[0].name | capture("^(?<os>[a-z0-9]+)-").os,
-                version: .[0].name | capture("^[a-z0-9]+-(?<version>[0-9a-z\\.-]+)-").version,
-                arch: .[0].name | capture("^[a-z0-9]+-[0-9a-z\\.-]+-(?<arch>[a-z0-9]+)-").arch,
-                variant: .[0].name | capture("^[a-z0-9]+-[0-9a-z\\.-]+-[a-z0-9]+-(?<variant>[a-z]+)-").variant,
-                items: map({
-                  type: (.name | endswith("rootfs.squashfs") | if . then "rootfs" else "lxd" end),
-                  url: .url,
-                  size: .size
-                })
-              })
-            ' > temp/processed_images.json
-
-          echo "Processed $(jq length temp/processed_images.json) image entries"
-
-      - name: Generate Simplestreams index + images.json
-        run: |
-          mkdir -p pages/streams/v1
-
-          timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          echo "Using timestamp: $timestamp"
-
-          cat > pages/streams/v1/index.json <<EOF
-          {
-            "index": {
-              "images": {
-                "path": "streams/v1/images.json",
-                "format": "simplestreams.images:1.0"
-              }
-            },
-            "format": "index:1.0",
-            "updated_at": "$timestamp"
-          }
-          EOF
-
-          jq -n --slurpfile images temp/processed_images.json --arg updated "$timestamp" '
-          {
-            format: "simplestreams.images:1.0",
-            updated_at: $updated,
-            images: (
-              $images[0] | map({
-                os: .os,
-                release: .version,
-                arch: .arch,
-                variant: .variant,
-                updated_at: $updated,
-                items: (
-                  map({key: .type, value: { url: .url, size: .size } }) | from_entries
-                )
-              })
-            )
-          }
-          ' > pages/streams/v1/images.json
-
-      - name: Generate simple web page
-        run: |
-          mkdir -p pages
-          cat > pages/index.html <<EOF
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="UTF-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-            <title>LXD Images Repository</title>
-          </head>
-          <body>
-            <h1>LXD Images Repository (Simplestreams)</h1>
-            <p>Images available via <code>simplestreams</code> protocol:</p>
-            <pre>lxc remote add spiritlhl-images https://oneclickvirt.github.io/lxd_images --protocol=simplestreams --public</pre>
-            <p><a href="./streams/v1/index.json">index.json</a></p>
-            <p><a href="./streams/v1/images.json">images.json</a></p>
-          </body>
-          </html>
-          EOF
-
-      - name: Validate output
-        run: |
-          echo "=== Validation ==="
-          jq . pages/streams/v1/index.json
-          jq . pages/streams/v1/images.json
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./pages
-          publish_branch: gh-pages
-          force_orphan: true
-          cname: false
+    - name: Commit changes
+      run: |
+        cd gh-pages
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git add .
+        git commit -m "Auto-update from release"
+        git push
