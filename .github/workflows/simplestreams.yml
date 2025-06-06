@@ -210,13 +210,16 @@ jobs:
           echo "[]" > all_assets.json
           processed_assets_response=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" | jq '[ .[] | select(.tag_name=="processed") ] | if length > 0 then (.[0].assets // []) | (if type=="array" then . else [.] end) else [] end')
           echo "$processed_assets_response" > existing_assets_array.json
-          echo "======= existing_assets_array.json ======="
-          cat existing_assets_array.json
-          echo "========================================="
           if [ "$processed_assets_response" != "null" ] && [ "$processed_assets_response" != "empty" ] && [ -n "$processed_assets_response" ]; then
             echo "$processed_assets_response" > existing_assets_array.json
             if [ "$(jq length existing_assets_array.json)" -gt 0 ]; then
-              jq -er '.[] | select(.name | test("^[a-z0-9]+-[0-9a-z\\.-]+-[a-z0-9]+-[a-z]+-rootfs\\.squashfs$")) | @base64' existing_assets_array.json || true | while IFS= read -r encoded_asset; do
+              jq -er '
+                .[] 
+                | select(type=="object") 
+                | select(.name | type=="string") 
+                | select(.name | test("^[a-z0-9]+-[0-9a-z\\.-]+-[a-z0-9]+-[a-z]+-rootfs\\.squashfs$")) 
+                | @base64
+              ' existing_assets_array.json || true | while IFS= read -r encoded_asset; do
                 if [ -z "$encoded_asset" ]; then
                   continue
                 fi
