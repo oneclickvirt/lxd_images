@@ -121,7 +121,7 @@ jobs:
                 
                 assets = []
                 for asset in release_data.get('assets', []):
-                    download_url = asset['download_url']
+                    download_url = asset['browser_download_url']
                     filename = asset['name']
                     size = asset['size']
                     
@@ -189,7 +189,7 @@ jobs:
                         # 下载文件到临时位置计算hash
                         temp_file = tempfile.NamedTemporaryFile(delete=False)
                         temp_files.append(temp_file.name)
-                        download_file(asset['download_url'], temp_file.name)
+                        download_file(asset['browser_download_url'], temp_file.name)
                         
                         # 计算hash
                         file_hash = get_file_hash(temp_file.name)
@@ -366,7 +366,7 @@ jobs:
             <h2>Usage</h2>
             <p>Add this server to your LXD client:</p>
             <div class="code">
-                <code>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public</code>
+                <code>lxc remote add myserver https://lxdimages.spiritlhl.net --protocol=simplestreams</code>
             </div>
             
             <h2>Available Files</h2>
