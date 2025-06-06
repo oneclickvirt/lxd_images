@@ -10,229 +10,125 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y jq curl
 
-      - name: Fetch Release Assets
+      - name: Fetch release assets
         run: |
+          echo "Fetching release assets..."
           mkdir -p temp
-          curl -s "https://api.github.com/repos/oneclickvirt/lxd_images/releases" > temp/releases.json
-          jq -r '.[] | select(.tag_name=="processed") | .assets' temp/releases.json > temp/assets.json
 
-      - name: Process Image Information
+          curl -s "https://api.github.com/repos/oneclickvirt/lxd_images/releases" \
+            | jq -r '.[] | select(.tag_name=="processed") | .assets // empty' > temp/assets.json
+
+          if [ "$(jq length temp/assets.json)" -gt 0 ]; then
+            echo "Found $(jq length temp/assets.json) assets"
+          else
+            echo "[]" > temp/assets.json
+            echo "No assets found"
+          fi
+
+      - name: Process images
         run: |
-          mkdir -p temp
-          jq -r '
-            .[] |
-            select(.name | test("^[a-z0-9]+-[0-9a-z\\.-]+-[a-z0-9]+-[a-z]+-rootfs\\.squashfs$")) |
-            {
-              name: .name,
-              rootfs_url: .browser_download_url,
-              rootfs_size: .size,
-              lxd_name: (.name | sub("-rootfs\\.squashfs$"; "-lxd.tar.xz"))
-            }
-          ' temp/assets.json > temp/rootfs_list.json
+          echo "Processing image information..."
 
-          jq -n --slurpfile rootfs temp/rootfs_list.json --slurpfile assets temp/assets.json '
-            $rootfs[] |
-            . as $r |
-            ($r.name | capture("^(?<os>[a-z0-9]+)-(?<version>[0-9a-z\\.-]+)-(?<arch>[a-z0-9]+)-(?<variant>[a-z]+)-rootfs\\.squashfs$")) as $parsed |
-            ($assets[0] | map(select(.name == $r.lxd_name)) | .[0]) as $lxd |
-            {
-              os: $parsed.os,
-              version: $parsed.version,
-              arch: $parsed.arch,
-              variant: $parsed.variant,
-              rootfs_url: $r.rootfs_url,
-              rootfs_size: $r.rootfs_size,
-              lxd_url: $lxd.browser_download_url,
-              lxd_size: $lxd.size,
-              rootfs_sha256: "unknown",
-              lxd_sha256: "unknown",
-              combined_sha256: "unknown"
-            }
-          ' > temp/processed_images.json
+          jq -n \
+            --slurpfile assets temp/assets.json '
+            $assets[0]
+            | map(
+                select(.name | test("^[a-z0-9]+-[0-9a-z\\.-]+-[a-z0-9]+-[a-z]+-(rootfs\\.squashfs|lxd\\.tar\\.xz)$"))
+                | {
+                    name: .name,
+                    url: .browser_download_url,
+                    size: .size
+                  }
+              )
+            | group_by(.name | capture("^(?<os>[a-z0-9]+)-(?<version>[0-9a-z\\.-]+)-(?<arch>[a-z0-9]+)-(?<variant>[a-z]+)-(rootfs|lxd)\\.").os + "-" + .name | capture("^(?<os>[a-z0-9]+)-(?<version>[0-9a-z\\.-]+)-(?<arch>[a-z0-9]+)-(?<variant>[a-z]+)-").variant + "-" + .name | capture("^(?<os>[a-z0-9]+)-(?<version>[0-9a-z\\.-]+)-(?<arch>[a-z0-9]+)-(?<variant>[a-z]+)-(?<type>rootfs|lxd)\\.").type)
+            | map({
+                os: .[0].name | capture("^(?<os>[a-z0-9]+)-").os,
+                version: .[0].name | capture("^[a-z0-9]+-(?<version>[0-9a-z\\.-]+)-").version,
+                arch: .[0].name | capture("^[a-z0-9]+-[0-9a-z\\.-]+-(?<arch>[a-z0-9]+)-").arch,
+                variant: .[0].name | capture("^[a-z0-9]+-[0-9a-z\\.-]+-[a-z0-9]+-(?<variant>[a-z]+)-").variant,
+                items: map({
+                  type: (.name | endswith("rootfs.squashfs") | if . then "rootfs" else "lxd" end),
+                  url: .url,
+                  size: .size
+                })
+              })
+            ' > temp/processed_images.json
 
-      - name: Generate Simplestreams Structure
+          echo "Processed $(jq length temp/processed_images.json) image entries"
+
+      - name: Generate Simplestreams index + images.json
         run: |
           mkdir -p pages/streams/v1
-          current_time=$(date -u +"%Y%m%d_%H%M")
-          jq -n --slurpfile images temp/processed_images.json --arg updated "$current_time" '
-            {
-              "datatype": "image-downloads",
-              "format": "products:1.0",
-              "products": (
-                $images |
-                group_by(.os) |
-                map({
-                  key: .[0].os,
-                  value: {
-                    "arch": (map(.arch) | unique | sort),
-                    "release": .[0].os,
-                    "os": .[0].os,
-                    "versions": (
-                      group_by(.version) |
-                      map({
-                        key: .[0].version,
-                        value: {
-                          "items": (
-                            group_by(.arch) |
-                            map({
-                              key: .[0].arch,
-                              value: (
-                                group_by(.variant) |
-                                map({
-                                  key: .[0].variant,
-                                  value: {
-                                    "ftype": "squashfs",
-                                    "os": .[0].os,
-                                    "release": .[0].version,
-                                    "version": .[0].version,
-                                    "arch": .[0].arch,
-                                    "variant": .[0].variant,
-                                    "combined_sha256": .[0].combined_sha256,
-                                    "path": ("images/" + .[0].os + "/" + .[0].version + "/" + .[0].arch + "/" + .[0].variant + "/"),
-                                    "versions": {
-                                      ($updated): {
-                                        "items": {
-                                          "lxd.tar.xz": {
-                                            "ftype": "lxd.tar.xz",
-                                            "size": .[0].lxd_size,
-                                            "sha256": .[0].lxd_sha256,
-                                            "path": ("redirect/lxd/" + (.lxd_url | @uri))
-                                          },
-                                          "rootfs.squashfs": {
-                                            "ftype": "squashfs",
-                                            "size": .[0].rootfs_size,
-                                            "sha256": .[0].rootfs_sha256,
-                                            "path": ("redirect/rootfs/" + (.rootfs_url | @uri))
-                                          }
-                                        }
-                                      }
-                                    }
-                                  }
-                                }) | from_entries
-                              )
-                            }) | from_entries
-                          )
-                        }
-                      }) | from_entries
-                    )
-                  }
-                }) | from_entries
-              )
-            }
-          ' > pages/streams/v1/products.json
 
-          cat > pages/streams/v1/index.json << EOF
+          timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "Using timestamp: $timestamp"
+
+          cat > pages/streams/v1/index.json <<EOF
           {
             "index": {
               "images": {
-                "datatype": "image-downloads",
-                "path": "streams/v1/products.json",
-                "format": "products:1.0"
+                "path": "streams/v1/images.json",
+                "format": "simplestreams.images:1.0"
               }
             },
-            "format": "index:1.0"
+            "format": "index:1.0",
+            "updated_at": "$timestamp"
           }
           EOF
 
-      - name: Create Redirect Pages
-        run: |
-          mkdir -p pages/redirect/{lxd,rootfs}
-          jq -c '.[]' temp/processed_images.json | while read -r image; do
-            lxd_url=$(echo "$image" | jq -r '.lxd_url')
-            rootfs_url=$(echo "$image" | jq -r '.rootfs_url')
-            lxd_encoded=$(echo "$lxd_url" | sed 's|:|%3A|g; s|/|%2F|g; s|?|%3F|g; s|&|%26|g')
-            rootfs_encoded=$(echo "$rootfs_url" | sed 's|:|%3A|g; s|/|%2F|g; s|?|%3F|g; s|&|%26|g')
-            cat > "pages/redirect/lxd/$lxd_encoded" << EOL
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta http-equiv="refresh" content="0; url=$lxd_url">
-            <meta name="robots" content="noindex">
-            <title>Redirecting...</title>
-          </head>
-          <body>
-            <p>Redirecting to <a href="$lxd_url">$lxd_url</a>...</p>
-            <script>window.location.href = "$lxd_url";</script>
-          </body>
-          </html>
-          EOL
-            cat > "pages/redirect/rootfs/$rootfs_encoded" << EOL
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta http-equiv="refresh" content="0; url=$rootfs_url">
-            <meta name="robots" content="noindex">
-            <title>Redirecting...</title>
-          </head>
-          <body>
-            <p>Redirecting to <a href="$rootfs_url">$rootfs_url</a>...</p>
-            <script>window.location.href = "$rootfs_url";</script>
-          </body>
-          </html>
-          EOL
-          done
+          jq -n --slurpfile images temp/processed_images.json --arg updated "$timestamp" '
+          {
+            format: "simplestreams.images:1.0",
+            updated_at: $updated,
+            images: (
+              $images[0] | map({
+                os: .os,
+                release: .version,
+                arch: .arch,
+                variant: .variant,
+                updated_at: $updated,
+                items: (
+                  map({key: .type, value: { url: .url, size: .size } }) | from_entries
+                )
+              })
+            )
+          }
+          ' > pages/streams/v1/images.json
 
-      - name: Generate Web Interface
+      - name: Generate simple web page
         run: |
           mkdir -p pages
-          cat > pages/index.html << 'EOF'
+          cat > pages/index.html <<EOF
           <!DOCTYPE html>
-          <html lang="zh-CN">
+          <html lang="en">
           <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>LXD Images Repository - Simplestreams</title>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+            <title>LXD Images Repository</title>
           </head>
           <body>
-              <h1>🐧 LXD Images Repository</h1>
-              <p>基于 Simplestreams 协议的 LXD 容器镜像仓库，提供各种 Linux 发行版的容器镜像。</p>
-              <h2>📚 使用指南</h2>
-              <pre>lxc remote add spiritlhl-images https://oneclickvirt.github.io/lxd_images --protocol=simplestreams --public</pre>
-              <h2>📋 可用镜像</h2>
-              <div id="images-container">加载中...</div>
-              <script>
-                  fetch('./streams/v1/products.json')
-                      .then(response => response.json())
-                      .then(data => {
-                          const container = document.getElementById('images-container');
-                          container.innerHTML = JSON.stringify(data, null, 2);
-                      })
-                      .catch(error => {
-                          const container = document.getElementById('images-container');
-                          container.innerHTML = '加载失败: ' + error;
-                      });
-              </script>
+            <h1>LXD Images Repository (Simplestreams)</h1>
+            <p>Images available via <code>simplestreams</code> protocol:</p>
+            <pre>lxc remote add spiritlhl-images https://oneclickvirt.github.io/lxd_images --protocol=simplestreams --public</pre>
+            <p><a href="./streams/v1/index.json">index.json</a></p>
+            <p><a href="./streams/v1/images.json">images.json</a></p>
           </body>
           </html>
           EOF
-          echo "lxdimages.spiritlhl.net" >> pages/CNAME
 
-      - name: Validate Generated Files
+      - name: Validate output
         run: |
-          echo "=== Validating Simplestreams Files ==="
-          if [ -f pages/streams/v1/products.json ]; then
-            echo "✅ products.json generated"
-            echo "Product count: $(jq '.products | length' pages/streams/v1/products.json)"
-            echo "Product list: $(jq -r '.products | keys[]' pages/streams/v1/products.json | tr '\n' ', ' | sed 's/,$//')"
-          else
-            echo "❌ products.json not found"
-          fi
-          if [ -f pages/streams/v1/index.json ]; then
-            echo "✅ index.json generated"
-          else
-            echo "❌ index.json not found"
-          fi
-          echo "=== Redirect Files Statistics ==="
-          echo "LXD redirects: $(find pages/redirect/lxd -type f 2>/dev/null | wc -l)"
-          echo "Rootfs redirects: $(find pages/redirect/rootfs -type f 2>/dev/null | wc -l)"
+          echo "=== Validation ==="
+          jq . pages/streams/v1/index.json
+          jq . pages/streams/v1/images.json
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
@@ -241,4 +137,4 @@ jobs:
           publish_dir: ./pages
           publish_branch: gh-pages
           force_orphan: true
-          cname: true
+          cname: false
