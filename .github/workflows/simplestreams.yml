@@ -211,7 +211,7 @@ jobs:
 
       - name: 生成 Simplestreams JSON
         run: |
-          mkdir -p pages/images/streams/v1
+          mkdir -p pages/streams/v1
           echo "Getting existing assets from processed release..."
           echo "[]" > all_assets.json
           processed_assets_response=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[] | select(.tag_name=="processed") | .assets // empty')
@@ -269,8 +269,8 @@ jobs:
           fi
           if [ "$(jq length all_assets.json)" -eq 0 ]; then
             echo "No assets found, creating empty structure"
-            echo '{"index": {"images": {}}}' > pages/images/streams/v1/index.json
-            echo '{"products": {}}' > pages/images/streams/v1/products.json
+            echo '{"index": {"images": {}}}' > pages/streams/v1/index.json
+            echo '{"products": {}}' > pages/streams/v1/products.json
             exit 0
           fi
           jq -n --slurpfile assets all_assets.json '
@@ -341,7 +341,7 @@ jobs:
                 | from_entries
               )
             }
-          ' > pages/images/streams/v1/products.json
+          ' > pages/streams/v1/products.json
           jq '{
             index: {
               images: (
@@ -354,12 +354,12 @@ jobs:
                 | from_entries
               )
             }
-          }' pages/images/streams/v1/products.json > pages/images/streams/v1/index.json
+          }' pages/streams/v1/products.json > pages/streams/v1/index.json
           echo "Generated Simplestreams JSON files:"
           echo "products.json:"
-          cat pages/images/streams/v1/products.json | jq .
+          cat pages/streams/v1/products.json | jq .
           echo "index.json:"
-          cat pages/images/streams/v1/index.json | jq .
+          cat pages/streams/v1/index.json | jq .
 
       - name: 生成网页界面
         run: |
@@ -422,7 +422,7 @@ jobs:
               <script>
                   async function loadImages() {
                       try {
-                          const response = await fetch('./images/streams/v1/products.json');
+                          const response = await fetch('./streams/v1/products.json');
                           if (!response.ok) {
                               throw new Error(`HTTP error! status: ${response.status}`);
                           }
