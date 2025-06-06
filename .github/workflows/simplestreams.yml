@@ -111,7 +111,7 @@ jobs:
                 "backend": "filesystem",
                 "path": "./build"
             },
-            "images": []
+            "products": []
         }
         
         for asset in assets:
@@ -134,8 +134,8 @@ jobs:
                 file_type = "tar.xz"
             
             image_config = {
-                "name": f"{os_name}",
-                "version": version,
+                "os": f"{os_name}",
+                "release": version,
                 "arch": arch,
                 "url": download_url,
                 "size": file_size,
@@ -143,9 +143,9 @@ jobs:
                 "aliases": [f"{os_name}/{version}", f"{os_name}/{version}/{arch}"]
             }
             
-            config["images"].append(image_config)
+            config["products"].append(image_config)
         
-        print(f"Generated config for {len(config['images'])} images")
+        print(f"Generated config for {len(config['products'])} images")
         
         with open("simplestreams-config.yaml", "w") as f:
             yaml.dump(config, f, default_flow_style=False)
@@ -153,9 +153,9 @@ jobs:
         print("Generated simplestreams-config.yaml")
         
         summary = {
-            "total_images": len(config["images"]),
-            "architectures": list(set(img["arch"] for img in config["images"])),
-            "operating_systems": list(set(img["name"] for img in config["images"])),
+            "total_images": len(config["products"]),
+            "architectures": list(set(img["arch"] for img in config["products"])),
+            "operating_systems": list(set(img["os"] for img in config["products"])),
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "source_release": f"{REPO_OWNER}/{REPO_NAME}/releases/tag/{RELEASE_TAG}"
         }
