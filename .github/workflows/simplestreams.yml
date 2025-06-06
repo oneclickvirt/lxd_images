@@ -289,17 +289,22 @@ jobs:
                   async function loadImages() {
                       try {
                           const response = await fetch('./images/streams/v1/products.json');
+                          if (!response.ok) {
+                              throw new Error(`HTTP error! status: ${response.status}`);
+                          }
                           const data = await response.json();
+                          console.log('Loaded data:', data);
                           displayImages(data.products);
                       } catch (error) {
-                          document.getElementById('images-container').innerHTML = '<p>加载镜像列表失败</p>';
+                          console.error('Error loading images:', error);
+                          document.getElementById('images-container').innerHTML = '<p>加载镜像列表失败: ' + error.message + '</p>';
                       }
                   }
                   
                   function displayImages(products) {
                       const container = document.getElementById('images-container');
                       
-                      if (Object.keys(products).length === 0) {
+                      if (!products || Object.keys(products).length === 0) {
                           container.innerHTML = '<p>暂无可用镜像</p>';
                           return;
                       }
@@ -339,11 +344,15 @@ jobs:
                       container.innerHTML = `<div class="image-grid">${imageCards}</div>`;
                   }
                   
-                  loadImages();
+                  // 页面加载完成后执行
+                  document.addEventListener('DOMContentLoaded', loadImages);
               </script>
           </body>
           </html>
           EOF
+
+          # 创建CNAME文件用于自定义域名
+          echo "lxdimages.spiritlhl.net" > pages/CNAME
 
       - name: 部署 GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
