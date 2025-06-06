@@ -326,13 +326,13 @@ jobs:
                                     key: .[0].arch,
                                     value: {
                                       versions: (
-                                        group_by(.variant)
+                                        group_by(.variant | tostring)
                                         | map({
                                             key: .[0].variant,
                                             value: {
                                               items: {
-                                                rootfs: .[0][0].rootfs_url,
-                                                lxd: .[0][0].lxd_url
+                                                rootfs: .[0].rootfs_url,
+                                                lxd: .[0].lxd_url
                                               }
                                             }
                                           })
