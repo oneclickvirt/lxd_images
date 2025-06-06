@@ -1,4 +1,4 @@
-name: Build LXD Images Repository
+name: Build Simplestreams
 
 on:
   schedule:
@@ -18,165 +18,100 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq curl
 
-      - name: 生成 Simplestreams JSON
+      - name: 获取资产信息
+        run: |
+          echo "Fetching release assets..."
+          mkdir -p temp
+          
+          # 获取 processed release 的资产
+          processed_assets=$(curl -s "https://api.github.com/repos/oneclickvirt/lxd_images/releases" | \
+            jq -r '.[] | select(.tag_name=="processed") | .assets // empty')
+          
+          if [ "$processed_assets" != "null" ] && [ "$processed_assets" != "empty" ] && [ -n "$processed_assets" ]; then
+            echo "$processed_assets" > temp/assets.json
+            echo "Found $(jq length temp/assets.json) assets"
+          else
+            echo "No assets found, creating empty assets file"
+            echo "[]" > temp/assets.json
+          fi
+
+      - name: 处理镜像信息
+        run: |
+          echo "Processing image information..."
+          
+          # 创建处理脚本
+          cat > process_images.jq << 'EOF'
+          [
+            .[] | 
+            select(.name | test("^[a-z0-9]+-[0-9a-z\\.-]+-[a-z0-9]+-[a-z]+-rootfs\\.squashfs$")) |
+            {
+              name: .name,
+              rootfs_url: .browser_download_url,
+              rootfs_size: .size,
+              lxd_name: (.name | sub("-rootfs\\.squashfs$"; "-lxd.tar.xz"))
+            }
+          ] |
+          map(
+            . as $rootfs |
+            ($rootfs.name | capture("^(?<os>[a-z0-9]+)-(?<version>[0-9a-z\\.-]+)-(?<arch>[a-z0-9]+)-(?<variant>[a-z]+)-rootfs\\.squashfs$")) as $parsed |
+            if $parsed then
+              $rootfs + $parsed + {
+                lxd_info: (
+                  input_filename as $assets_file |
+                  $assets_file | 
+                  map(select(.name == $rootfs.lxd_name)) | 
+                  if length > 0 then .[0] else null end
+                )
+              }
+            else
+              empty
+            end
+          ) |
+          map(
+            select(.lxd_info != null) |
+            {
+              os: .os,
+              version: .version,
+              arch: .arch,
+              variant: .variant,
+              rootfs_url: .rootfs_url,
+              rootfs_size: .rootfs_size,
+              lxd_url: .lxd_info.browser_download_url,
+              lxd_size: .lxd_info.size,
+              rootfs_sha256: "unknown",
+              lxd_sha256: "unknown",
+              combined_sha256: "unknown"
+            }
+          )
+          EOF
+          
+          # 处理资产信息
+          if [ "$(jq length temp/assets.json)" -gt 0 ]; then
+            jq -f process_images.jq temp/assets.json > temp/processed_images.json
+            echo "Processed $(jq length temp/processed_images.json) image pairs"
+          else
+            echo "[]" > temp/processed_images.json
+          fi
+
+      - name: 生成 Simplestreams 结构
         run: |
           mkdir -p pages/streams/v1
-          echo "Getting existing assets from processed release..."
-          echo "[]" > all_assets.json
-          processed_assets_response=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[] | select(.tag_name=="processed") | .assets // empty')
-          if [ "$processed_assets_response" != "null" ] && [ "$processed_assets_response" != "empty" ] && [ -n "$processed_assets_response" ]; then
-            echo "$processed_assets_response" > existing_assets_array.json
-            if [ "$(jq length existing_assets_array.json)" -gt 0 ]; then
-              jq -r '.[] | select(.name | test("^[a-z0-9]+-[0-9a-z\\.-]+-[a-z0-9]+-[a-z]+-rootfs\\.squashfs$")) | @base64' existing_assets_array.json | while IFS= read -r encoded_asset; do
-                if [ -z "$encoded_asset" ]; then
-                  continue
-                fi
-                asset=$(echo "$encoded_asset" | base64 -d)
-                name=$(echo "$asset" | jq -r '.name')
-                rootfs_url=$(echo "$asset" | jq -r '.browser_download_url')
-                rootfs_size=$(echo "$asset" | jq -r '.size')
-                echo "Processing existing asset: $name"
-                if [[ "$name" =~ ^([a-z0-9]+)-([0-9a-z\.\-]+)-([a-z0-9]+)-([a-z]+)-rootfs\.squashfs$ ]]; then
-                  os="${BASH_REMATCH[1]}"
-                  version="${BASH_REMATCH[2]}"
-                  arch="${BASH_REMATCH[3]}"
-                  variant="${BASH_REMATCH[4]}"
-                  lxd_name="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
-                  lxd_info=$(jq -r --arg lxd_name "$lxd_name" '.[] | select(.name == $lxd_name) | {url: .browser_download_url, size: .size} // empty' existing_assets_array.json)
-                  lxd_url=$(echo "$lxd_info" | jq -r '.url // empty')
-                  lxd_size=$(echo "$lxd_info" | jq -r '.size // empty')
-                  if [ -n "$lxd_url" ] && [ "$lxd_url" != "null" ] && [ "$lxd_url" != "empty" ]; then
-                    echo "Found existing asset pair: $name and $lxd_name"
-                    temp_asset=$(jq -n --arg os "$os" \
-                       --arg version "$version" \
-                       --arg arch "$arch" \
-                       --arg variant "$variant" \
-                       --arg rootfs_url "$rootfs_url" \
-                       --arg lxd_url "$lxd_url" \
-                       --arg rootfs_size "$rootfs_size" \
-                       --arg lxd_size "$lxd_size" \
-                       '{
-                         os: $os,
-                         version: $version,
-                         arch: $arch,
-                         variant: $variant,
-                         rootfs_url: $rootfs_url,
-                         lxd_url: $lxd_url,
-                         rootfs_size: ($rootfs_size | tonumber),
-                         lxd_size: ($lxd_size | tonumber),
-                         rootfs_sha256: "unknown",
-                         lxd_sha256: "unknown",
-                         combined_sha256: "unknown"
-                       }')
-                    echo "$temp_asset" >> temp_assets.jsonl
-                  fi
-                fi
-              done
-              if [ -f temp_assets.jsonl ]; then
-                jq -s '.' temp_assets.jsonl > temp_existing_assets.json
-                jq -s '.[0] + .[1]' all_assets.json temp_existing_assets.json > all_assets_temp.json
-                mv all_assets_temp.json all_assets.json
-                rm -f temp_assets.jsonl temp_existing_assets.json
-              fi
-            fi
-          else
-            echo "No existing assets found in processed release"
-          fi
-          if [ -f /tmp/processed_assets.json ] && [ "$(jq length /tmp/processed_assets.json)" -gt 0 ]; then
-            jq -s '.[0] + .[1]' all_assets.json /tmp/processed_assets.json > combined_assets.json
-            mv combined_assets.json all_assets.json
-          fi
-          if [ "$(jq length all_assets.json)" -eq 0 ]; then
-            echo "No assets found, creating empty structure"
-            echo '{
-              "datatype": "image-downloads",
-              "format": "products:1.0",
-              "products": {}
-            }' > pages/streams/v1/products.json
-            echo '{
-              "index": {
-                "images": {
-                  "datatype": "image-downloads",
-                  "path": "streams/v1/products.json",
-                  "format": "products:1.0"
-                }
-              },
-              "format": "index:1.0"
-            }' > pages/streams/v1/index.json
-            exit 0
-          fi
-          current_time=$(date -u +"%Y%m%d_%H:%M")
-          jq -n --slurpfile assets all_assets.json --arg updated "$current_time" '
-            {
-              "datatype": "image-downloads",
-              "format": "products:1.0",
-              "products": (
-                $assets[0]
-                | group_by(.os)
-                | map({
-                    key: .[0].os,
-                    value: {
-                      "arch": (map(.arch) | unique),
-                      "release": .[0].os,
-                      "os": .[0].os,
-                      "versions": (
-                        group_by(.version)
-                        | map({
-                            key: .[0].version,
-                            value: {
-                              "items": (
-                                group_by(.arch)
-                                | map({
-                                    key: .[0].arch,
-                                    value: (
-                                      group_by(.variant)
-                                      | map({
-                                          key: .[0].variant,
-                                          value: {
-                                            "ftype": "squashfs",
-                                            "os": .[0].os,
-                                            "release": .[0].version,
-                                            "version": .[0].version,
-                                            "arch": .[0].arch,
-                                            "variant": .[0].variant,
-                                            "combined_sha256": .[0].combined_sha256,
-                                            "path": ("images/" + .[0].os + "/" + .[0].version + "/" + .[0].arch + "/" + .[0].variant + "/"),
-                                            "versions": {
-                                              ($updated): {
-                                                "items": {
-                                                  "lxd.tar.xz": {
-                                                    "ftype": "lxd.tar.xz",
-                                                    "size": .[0].lxd_size,
-                                                    "sha256": .[0].lxd_sha256,
-                                                    "path": ("images/" + .[0].os + "/" + .[0].version + "/" + .[0].arch + "/" + .[0].variant + "/" + $updated + "/lxd.tar.xz")
-                                                  },
-                                                  "rootfs.squashfs": {
-                                                    "ftype": "squashfs",
-                                                    "size": .[0].rootfs_size,
-                                                    "sha256": .[0].rootfs_sha256,
-                                                    "path": ("images/" + .[0].os + "/" + .[0].version + "/" + .[0].arch + "/" + .[0].variant + "/" + $updated + "/rootfs.squashfs")
-                                                  }
-                                                }
-                                              }
-                                            }
-                                          }
-                                        })
-                                      | from_entries
-                                    )
-                                  })
-                                | from_entries
-                              )
-                            }
-                          })
-                        | from_entries
-                      )
-                    }
-                  })
-                | from_entries
-              )
-            }
-          ' > pages/streams/v1/products.json
-          echo '{
+          
+          if [ "$(jq length temp/processed_images.json)" -eq 0 ]; then
+            echo "No valid image pairs found, creating empty structure"
+            
+            # 创建空的 products.json
+            cat > pages/streams/v1/products.json << 'EOF'
+          {
+            "datatype": "image-downloads",
+            "format": "products:1.0",
+            "products": {}
+          }
+          EOF
+            
+            # 创建 index.json
+            cat > pages/streams/v1/index.json << 'EOF'
+          {
             "index": {
               "images": {
                 "datatype": "image-downloads",
@@ -185,21 +120,146 @@ jobs:
               }
             },
             "format": "index:1.0"
-          }' > pages/streams/v1/index.json
+          }
+          EOF
+            exit 0
+          fi
           
-          mkdir -p pages/streams/v1/images
-          jq -r --arg updated "$current_time" '
-            .[] |
-            "mkdir -p pages/streams/v1/images/\(.os)/\(.version)/\(.arch)/\(.variant)/\($updated);" +
-            "ln -sf \(.rootfs_url) pages/streams/v1/images/\(.os)/\(.version)/\(.arch)/\(.variant)/\($updated)/rootfs.squashfs;" +
-            "ln -sf \(.lxd_url) pages/streams/v1/images/\(.os)/\(.version)/\(.arch)/\(.variant)/\($updated)/lxd.tar.xz"
-          ' all_assets.json | bash
+          # 生成当前时间戳
+          current_time=$(date -u +"%Y%m%d_%H%M")
+          echo "Using timestamp: $current_time"
           
-          echo "Generated Simplestreams JSON files:"
-          echo "products.json:"
-          cat pages/streams/v1/products.json | jq .
-          echo "index.json:"
-          cat pages/streams/v1/index.json | jq .
+          # 生成 products.json
+          jq -n --slurpfile images temp/processed_images.json --arg updated "$current_time" '
+          {
+            "datatype": "image-downloads", 
+            "format": "products:1.0",
+            "products": (
+              $images[0] |
+              group_by(.os) |
+              map({
+                key: .[0].os,
+                value: {
+                  "arch": (map(.arch) | unique | sort),
+                  "release": .[0].os,
+                  "os": .[0].os,
+                  "versions": (
+                    group_by(.version) |
+                    map({
+                      key: .[0].version,
+                      value: {
+                        "items": (
+                          group_by(.arch) |
+                          map({
+                            key: .[0].arch,
+                            value: (
+                              group_by(.variant) |
+                              map({
+                                key: .[0].variant,
+                                value: {
+                                  "ftype": "squashfs",
+                                  "os": .[0].os,
+                                  "release": .[0].version,
+                                  "version": .[0].version,
+                                  "arch": .[0].arch,
+                                  "variant": .[0].variant,
+                                  "combined_sha256": .[0].combined_sha256,
+                                  "path": ("images/" + .[0].os + "/" + .[0].version + "/" + .[0].arch + "/" + .[0].variant + "/"),
+                                  "versions": {
+                                    ($updated): {
+                                      "items": {
+                                        "lxd.tar.xz": {
+                                          "ftype": "lxd.tar.xz",
+                                          "size": .[0].lxd_size,
+                                          "sha256": .[0].lxd_sha256,
+                                          "path": ("redirect/lxd/" + (.[0].lxd_url | @uri))
+                                        },
+                                        "rootfs.squashfs": {
+                                          "ftype": "squashfs", 
+                                          "size": .[0].rootfs_size,
+                                          "sha256": .[0].rootfs_sha256,
+                                          "path": ("redirect/rootfs/" + (.[0].rootfs_url | @uri))
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }) |
+                              from_entries
+                            )
+                          }) |
+                          from_entries
+                        )
+                      }
+                    }) |
+                    from_entries
+                  )
+                }
+              }) |
+              from_entries
+            )
+          }' > pages/streams/v1/products.json
+          
+          # 生成 index.json
+          cat > pages/streams/v1/index.json << 'EOF'
+          {
+            "index": {
+              "images": {
+                "datatype": "image-downloads",
+                "path": "streams/v1/products.json", 
+                "format": "products:1.0"
+              }
+            },
+            "format": "index:1.0"
+          }
+          EOF
+
+      - name: 创建重定向处理器
+        run: |
+          # 创建重定向目录结构
+          mkdir -p pages/redirect/{lxd,rootfs}
+          
+          # 生成重定向页面模板函数
+          generate_redirect_page() {
+            local url="$1"
+            local filename="$2"
+            
+            cat > "$filename" << EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta http-equiv="refresh" content="0; url=$url">
+            <meta name="robots" content="noindex">
+            <title>Redirecting...</title>
+          </head>
+          <body>
+            <p>Redirecting to <a href="$url">$url</a>...</p>
+            <script>window.location.href = "$url";</script>
+          </body>
+          </html>
+          EOF
+          }
+          
+          # 为每个镜像文件创建重定向页面
+          if [ -f temp/processed_images.json ]; then
+            jq -r '.[] | @base64' temp/processed_images.json | while IFS= read -r line; do
+              if [ -n "$line" ]; then
+                decoded=$(echo "$line" | base64 -d)
+                lxd_url=$(echo "$decoded" | jq -r '.lxd_url')
+                rootfs_url=$(echo "$decoded" | jq -r '.rootfs_url')
+                
+                # URL 编码处理
+                lxd_encoded=$(echo "$lxd_url" | sed 's|:|%3A|g; s|/|%2F|g; s|?|%3F|g; s|&|%26|g')
+                rootfs_encoded=$(echo "$rootfs_url" | sed 's|:|%3A|g; s|/|%2F|g; s|?|%3F|g; s|&|%26|g')
+                
+                # 生成重定向文件
+                generate_redirect_page "$lxd_url" "pages/redirect/lxd/$lxd_encoded"
+                generate_redirect_page "$rootfs_url" "pages/redirect/rootfs/$rootfs_encoded"
+                
+                echo "Created redirects for: $(echo "$decoded" | jq -r '.os')-$(echo "$decoded" | jq -r '.version')-$(echo "$decoded" | jq -r '.arch')-$(echo "$decoded" | jq -r '.variant')"
+              fi
+            done
+          fi
 
       - name: 生成网页界面
         run: |
@@ -209,128 +269,221 @@ jobs:
           <head>
               <meta charset="UTF-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>LXD Images Repository</title>
+              <title>LXD Images Repository - Simplestreams</title>
               <style>
-                  body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
-                  h1 { color: #333; border-bottom: 2px solid #ddd; padding-bottom: 10px; }
-                  h2 { color: #666; margin-top: 30px; }
-                  .container { max-width: 1200px; margin: 0 auto; }
-                  .image-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; margin: 20px 0; }
-                  .image-card { border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
-                  .image-card h3 { margin-top: 0; color: #333; }
-                  .version-list { margin: 10px 0; }
-                  .version-item { margin: 5px 0; padding: 10px; background: #f5f5f5; border-radius: 3px; }
-                  .arch-item { margin: 8px 0; padding: 8px; background: #fff; border: 1px solid #e0e0e0; border-radius: 3px; }
-                  .download-links { margin: 5px 0; }
-                  .download-links a { margin-right: 10px; padding: 4px 8px; background: #007cba; color: white; text-decoration: none; border-radius: 3px; font-size: 12px; }
-                  .download-links a:hover { background: #005a8b; }
-                  .variants { margin-top: 8px; font-size: 12px; }
-                  .variants .variant-item { margin: 4px 0; padding: 4px 8px; background: #e8f4f8; border-radius: 2px; }
-                  .usage-section { background: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0; }
-                  .usage-examples { background: #fff; padding: 15px; border-radius: 3px; margin: 10px 0; }
-                  pre { background: #f4f4f4; padding: 10px; border-radius: 3px; overflow-x: auto; font-size: 14px; }
-                  .note { background: #fffbf0; padding: 10px; border-left: 4px solid #ffa500; margin: 10px 0; }
+                  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; line-height: 1.6; background: #f5f5f5; }
+                  .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                  h1 { color: #333; border-bottom: 3px solid #007cba; padding-bottom: 15px; margin-bottom: 30px; }
+                  h2 { color: #555; margin-top: 35px; margin-bottom: 20px; }
+                  .usage-section { background: #f8f9fa; padding: 25px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #007cba; }
+                  .usage-examples { background: white; padding: 20px; border-radius: 5px; margin: 15px 0; border: 1px solid #e0e0e0; }
+                  pre { background: #2d3748; color: #e2e8f0; padding: 15px; border-radius: 5px; overflow-x: auto; font-family: 'Consolas', 'Monaco', monospace; margin: 10px 0; }
+                  .highlight-command { background: #007cba; color: white; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+                  .image-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 25px; margin: 30px 0; }
+                  .image-card { border: 1px solid #ddd; padding: 20px; border-radius: 8px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+                  .image-card h3 { margin-top: 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+                  .version-list { margin: 15px 0; }
+                  .version-item { margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 5px; border-left: 3px solid #007cba; }
+                  .arch-item { margin: 12px 0; padding: 12px; background: white; border: 1px solid #e0e0e0; border-radius: 5px; }
+                  .variants { margin-top: 10px; }
+                  .variant-item { margin: 8px 0; padding: 8px 12px; background: #e8f4f8; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+                  .download-links a { margin-left: 10px; padding: 4px 8px; background: #28a745; color: white; text-decoration: none; border-radius: 3px; font-size: 11px; transition: background 0.3s; }
+                  .download-links a:hover { background: #1e7e34; }
+                  .note { background: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 20px 0; border-radius: 4px; }
+                  .error { background: #f8d7da; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0; border-radius: 4px; color: #721c24; }
+                  .success { background: #d4edda; padding: 15px; border-left: 4px solid #28a745; margin: 20px 0; border-radius: 4px; color: #155724; }
+                  .loading { text-align: center; padding: 40px; color: #666; }
+                  .status-indicator { display: inline-block; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+                  .status-online { background: #d4edda; color: #155724; }
+                  .status-offline { background: #f8d7da; color: #721c24; }
               </style>
           </head>
           <body>
               <div class="container">
-                  <h1>LXD Images Repository</h1>
-                  <p>本仓库提供各种 Linux 发行版的 LXD 容器镜像。</p>
+                  <h1>🐧 LXD Images Repository</h1>
+                  <p>基于 Simplestreams 协议的 LXD 容器镜像仓库，提供各种 Linux 发行版的容器镜像。</p>
+                  
                   <div class="usage-section">
-                      <h2>使用方法</h2>
-                      <p>添加此镜像源到您的 LXD 配置：</p>
-                      <pre>lxc remote add spiritlhl-images http://lxdimages.spiritlhl.net --protocol=simplestreams --public</pre>
-                      <div class="usage-examples">
-                          <p><strong>基本使用：</strong></p>
-                          <pre>lxc launch spiritlhl-images:debian/11 my-container</pre>
-                          <p><strong>指定架构：</strong></p>
-                          <pre>lxc launch spiritlhl-images:debian/11/arm64 my-arm-container</pre>
-                          <p><strong>指定特定变体：</strong></p>
-                          <pre>lxc launch spiritlhl-images:debian/11/amd64/default my-default-container</pre>
+                      <h2>📚 使用指南</h2>
+                      
+                      <h3>1. 添加镜像源</h3>
+                      <p>将此仓库添加为 LXD 远程镜像源：</p>
+                      <pre>lxc remote add spiritlhl-images https://oneclickvirt.github.io/lxd_images --protocol=simplestreams --public</pre>
+                      
+                      <div class="note">
+                          <strong>💡 提示：</strong> 如果遇到 HTTPS 证书问题，可以临时使用 <code>--accept-certificate</code> 参数。
                       </div>
-                      <p>列出可用镜像：</p>
-                      <pre>lxc image list spiritlhl-images:</pre>
+                      
+                      <h3>2. 基本使用方法</h3>
+                      <div class="usage-examples">
+                          <p><strong>列出所有可用镜像：</strong></p>
+                          <pre>lxc image list spiritlhl-images:</pre>
+                          
+                          <p><strong>启动容器（自动选择架构）：</strong></p>
+                          <pre>lxc launch spiritlhl-images:debian/11 my-debian-container</pre>
+                          
+                          <p><strong>指定架构启动：</strong></p>
+                          <pre>lxc launch spiritlhl-images:ubuntu/20.04/arm64 my-arm-container</pre>
+                          
+                          <p><strong>指定变体启动：</strong></p>
+                          <pre>lxc launch spiritlhl-images:centos/8/amd64/default my-centos-container</pre>
+                      </div>
+                      
+                      <h3>3. 高级用法</h3>
+                      <div class="usage-examples">
+                          <p><strong>仅下载镜像（不启动容器）：</strong></p>
+                          <pre>lxc image copy spiritlhl-images:debian/11 local: --alias my-debian-image</pre>
+                          
+                          <p><strong>查看镜像详细信息：</strong></p>
+                          <pre>lxc image info spiritlhl-images:debian/11</pre>
+                          
+                          <p><strong>从镜像创建容器但不启动：</strong></p>
+                          <pre>lxc init spiritlhl-images:debian/11 my-container</pre>
+                      </div>
                   </div>
-                  <h2>可用镜像</h2>
-                  <div id="images-container">
-                      <p>加载中...</p>
+                  
+                  <h2>📋 可用镜像</h2>
+                  <div id="status-indicator"></div>
+                  <div id="images-container" class="loading">
+                      <p>🔄 正在加载镜像列表...</p>
                   </div>
               </div>
+              
               <script>
                   async function loadImages() {
+                      const statusDiv = document.getElementById('status-indicator');
+                      const container = document.getElementById('images-container');
+                      
                       try {
+                          statusDiv.innerHTML = '<span class="status-indicator status-online">🟢 服务在线</span>';
+                          
                           const response = await fetch('./streams/v1/products.json');
                           if (!response.ok) {
-                              throw new Error(`HTTP error! status: ${response.status}`);
+                              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                           }
+                          
                           const data = await response.json();
-                          console.log('Loaded data:', data);
+                          console.log('Loaded Simplestreams data:', data);
+                          
+                          if (!data.products || Object.keys(data.products).length === 0) {
+                              container.innerHTML = '<div class="note"><p>📦 暂无可用镜像，请稍后再试。</p></div>';
+                              return;
+                          }
+                          
                           displayImages(data.products);
+                          
                       } catch (error) {
                           console.error('Error loading images:', error);
-                          document.getElementById('images-container').innerHTML = '<p>加载镜像列表失败: ' + error.message + '</p>';
+                          statusDiv.innerHTML = '<span class="status-indicator status-offline">🔴 服务离线</span>';
+                          container.innerHTML = `
+                              <div class="error">
+                                  <h3>❌ 加载失败</h3>
+                                  <p>无法加载镜像列表: ${error.message}</p>
+                                  <p>请检查网络连接或稍后重试。</p>
+                              </div>
+                          `;
                       }
                   }
+                  
                   function displayImages(products) {
                       const container = document.getElementById('images-container');
-                      if (!products || Object.keys(products).length === 0) {
-                          container.innerHTML = '<p>暂无可用镜像</p>';
-                          return;
-                      }
+                      
                       const imageCards = Object.entries(products).map(([productId, product]) => {
+                          const architectures = product.arch.join(', ');
+                          
                           const versions = Object.entries(product.versions).map(([version, versionData]) => {
-                              const architectures = Object.entries(versionData.items).map(([arch, archData]) => {
+                              const archItems = Object.entries(versionData.items).map(([arch, archData]) => {
                                   const variants = Object.entries(archData).map(([variant, variantData]) => {
-                                      const latestVersion = Object.keys(variantData.versions)[0];
-                                      const items = variantData.versions[latestVersion].items;
+                                      const latestTimestamp = Object.keys(variantData.versions)[0];
+                                      const items = variantData.versions[latestTimestamp]?.items || {};
+                                      
                                       return `
                                           <div class="variant-item">
-                                              <strong>${variant}:</strong>
-                                              <a href="${items['rootfs.squashfs'].path}" download style="margin-left: 5px; font-size: 11px;">rootfs</a>
-                                              <a href="${items['lxd.tar.xz'].path}" download style="margin-left: 5px; font-size: 11px;">metadata</a>
+                                              <span><strong>${variant}</strong> (${arch})</span>
+                                              <div class="download-links">
+                                                  ${items['rootfs.squashfs'] ? `<a href="${items['rootfs.squashfs'].path}" target="_blank">rootfs (${(items['rootfs.squashfs'].size / 1024 / 1024).toFixed(1)}MB)</a>` : ''}
+                                                  ${items['lxd.tar.xz'] ? `<a href="${items['lxd.tar.xz'].path}" target="_blank">metadata (${(items['lxd.tar.xz'].size / 1024).toFixed(1)}KB)</a>` : ''}
+                                              </div>
                                           </div>
                                       `;
                                   }).join('');
-                                  return `
-                                      <div class="arch-item">
-                                          <strong>${arch}</strong>
-                                          <div class="variants">
-                                              <strong>可用变体：</strong>
-                                              ${variants}
-                                          </div>
-                                      </div>
-                                  `;
+                                  
+                                  return variants;
                               }).join('');
+                              
                               return `
                                   <div class="version-item">
-                                      <strong>版本: ${version}</strong>
-                                      ${architectures}
+                                      <strong>📦 版本: ${version}</strong>
+                                      <div class="variants">
+                                          ${archItems}
+                                      </div>
                                   </div>
                               `;
                           }).join('');
+                          
                           return `
                               <div class="image-card">
-                                  <h3>${productId}</h3>
-                                  <p>使用方式: <code>lxc launch spiritlhl-images:${productId} container-name</code></p>
+                                  <h3>🐧 ${productId}</h3>
+                                  <p><strong>支持架构:</strong> ${architectures}</p>
+                                  <p><strong>LXD 使用:</strong> <span class="highlight-command">lxc launch spiritlhl-images:${productId} container-name</span></p>
                                   <div class="version-list">
                                       ${versions}
                                   </div>
                               </div>
                           `;
                       }).join('');
-                      container.innerHTML = `<div class="image-grid">${imageCards}</div>`;
+                      
+                      container.innerHTML = `
+                          <div class="success">
+                              <p>✅ 成功加载 ${Object.keys(products).length} 个镜像系列</p>
+                          </div>
+                          <div class="image-grid">${imageCards}</div>
+                      `;
                   }
+                  
+                  // 页面加载完成后自动加载镜像
                   document.addEventListener('DOMContentLoaded', loadImages);
+                  
+                  // 每5分钟自动刷新一次
+                  setInterval(loadImages, 5 * 60 * 1000);
               </script>
           </body>
           </html>
           EOF
-          echo "lxdimages.spiritlhl.net" > pages/CNAME
+          echo "lxdimages.spiritlhl.net" >> pages/CNAME
 
-      - name: 部署 GitHub Pages
+      - name: 验证生成的文件
+        run: |
+          echo "=== 验证生成的 Simplestreams 文件 ==="
+          
+          if [ -f pages/streams/v1/products.json ]; then
+            echo "✅ products.json 已生成"
+            echo "产品数量: $(jq '.products | length' pages/streams/v1/products.json)"
+            echo "产品列表: $(jq -r '.products | keys[]' pages/streams/v1/products.json | tr '\n' ', ' | sed 's/,$//')"
+          else
+            echo "❌ products.json 未生成"
+          fi
+          
+          if [ -f pages/streams/v1/index.json ]; then
+            echo "✅ index.json 已生成"
+          else
+            echo "❌ index.json 未生成"
+          fi
+          
+          echo "=== 重定向文件统计 ==="
+          echo "LXD 重定向文件: $(find pages/redirect/lxd -type f 2>/dev/null | wc -l)"
+          echo "Rootfs 重定向文件: $(find pages/redirect/rootfs -type f 2>/dev/null | wc -l)"
+          
+          echo "=== Simplestreams 数据预览 ==="
+          if [ -f pages/streams/v1/products.json ] && [ "$(jq '.products | length' pages/streams/v1/products.json)" -gt 0 ]; then
+            jq -r '.products | to_entries | .[0] | "示例产品: \(.key)"' pages/streams/v1/products.json
+          fi
+
+      - name: 部署到 GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./pages
           publish_branch: gh-pages
           force_orphan: true
+          cname: true
