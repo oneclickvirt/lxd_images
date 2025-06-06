@@ -1,14 +1,7 @@
 name: Build and Deploy SimpleStreams Index
 
 on:
-  schedule:
-    - cron: '0 */6 * * *'
   workflow_dispatch:
-  push:
-    branches:
-      - main
-  release:
-    types: [published]
 
 jobs:
   build-and-deploy:
@@ -81,13 +74,17 @@ jobs:
               return hashlib.sha256(url.encode()).hexdigest()
           
           def get_file_info(asset, item_type):
-              url = f'{BASE_URL}/{asset["name"]}'
+              # 使用相对路径指向重定向页面
+              relative_path = f'download/{asset["name"]}'
               return {
                   'ftype': item_type,
                   'size': asset.get('size', 0),
-                  'path': url,
-                  'sha256': calculate_sha256_from_url(url)
+                  'path': relative_path,
+                  'sha256': calculate_sha256_from_url(f'{BASE_URL}/{asset["name"]}')
               }
+          
+          # 存储下载映射信息
+          download_mapping = {}
           
           products = {}
           
@@ -107,7 +104,11 @@ jobs:
               
               if not rootfs_asset:
                   continue
-                  
+              
+              # 记录下载映射
+              download_mapping[lxd_asset['name']] = f'{BASE_URL}/{lxd_asset["name"]}'
+              download_mapping[rootfs_asset['name']] = f'{BASE_URL}/{rootfs_asset["name"]}'
+              
               product_name = f'{distro}:{version}:{arch}'
               
               if version == 'current':
@@ -160,6 +161,7 @@ jobs:
           }
           
           os.makedirs('build/streams/v1', exist_ok=True)
+          os.makedirs('build/download', exist_ok=True)
           
           with open('build/streams/v1/index.json', 'w') as f:
               json.dump(index_data, f, indent=2, separators=(',', ': '))
@@ -167,8 +169,29 @@ jobs:
           with open('build/streams/v1/images.json', 'w') as f:
               json.dump(images_data, f, indent=2, separators=(',', ': '))
           
-          print(f"Generated index with {len(products)} products")
+          # 生成重定向页面
+          for filename, url in download_mapping.items():
+              redirect_html = f'''<!DOCTYPE html>
+          <html>
+          <head>
+              <meta charset="utf-8">
+              <title>Redirecting...</title>
+              <meta http-equiv="refresh" content="0; url={url}">
+              <script>
+                  window.location.href = "{url}";
+              </script>
+          </head>
+          <body>
+              <p>If you are not redirected automatically, <a href="{url}">click here</a>.</p>
+          </body>
+          </html>'''
+              
+              with open(f'build/download/{filename}', 'w') as f:
+                  f.write(redirect_html)
           
+          print(f"Generated index with {len(products)} products and {len(download_mapping)} redirect pages")
+          
+          # 验证生成的文件
           with open('build/streams/v1/index.json', 'r') as f:
               test_index = json.load(f)
               print("Index JSON validation passed")
@@ -186,6 +209,7 @@ jobs:
           
       - name: Generate HTML frontend
         run: |
+          # [前端生成代码保持不变]
           python3 << 'EOF'
           import json
           import os
@@ -252,14 +276,14 @@ jobs:
                       margin: 0.5rem 0;
                   }
                   .warning-box {
-                      background: #fff3cd;
-                      border: 1px solid #ffeaa7;
+                      background: #d1ecf1;
+                      border: 1px solid #bee5eb;
                       padding: 1rem;
                       border-radius: 5px;
                       margin: 1rem 0;
                   }
                   .warning-box h3 {
-                      color: #856404;
+                      color: #0c5460;
                       margin-top: 0;
                   }
                   .stats {
@@ -357,8 +381,8 @@ jobs:
                   <pre><code>lxc launch spiritlhl:ubuntu:22.04:amd64 my-container</code></pre>
                   
                   <div class="warning-box">
-                      <h3>⚠️ 重要说明</h3>
-                      <p>此镜像仓库使用 GitHub Pages 托管 SimpleStreams 索引，镜像文件直接链接到 GitHub Releases。由于 GitHub Pages 的限制，我们使用完整的下载 URL 作为文件路径。</p>
+                      <h3>ℹ️ 技术说明</h3>
+                      <p>此镜像仓库使用 GitHub Pages 托管 SimpleStreams 索引。为了符合 LXD 的相对路径要求，我们创建了重定向页面来处理镜像文件的下载请求。</p>
                   </div>
               </div>
               
@@ -451,4 +475,4 @@ jobs:
           force_orphan: true
           user_name: 'github-actions[bot]'
           user_email: 'github-actions[bot]@users.noreply.github.com'
-          commit_message: 'Deploy SimpleStreams index with direct URLs'
+          commit_message: 'Deploy SimpleStreams index with redirect pages'
