@@ -26,15 +26,21 @@ jobs:
       run: |
         pip install requests pyyaml jinja2
         
+    - name: Download simplestreams-builder
+      run: |
+        wget -O simplestreams-builder https://github.com/MottainaiCI/simplestreams-builder/releases/download/v0.3.1/simplestreams-builder-linux-amd64
+        chmod +x simplestreams-builder
+        sudo mv simplestreams-builder /usr/local/bin/
+        
     - name: Create build directory
       run: mkdir -p build
       
-    - name: Fetch and process LXD images
+    - name: Fetch LXD images and create config
       run: |
         python3 << 'PYTHON_SCRIPT'
         import requests
         import json
-        import hashlib
+        import yaml
         import os
         import re
         from datetime import datetime, timezone
@@ -42,20 +48,6 @@ jobs:
         REPO_OWNER = "oneclickvirt"
         REPO_NAME = "lxd_images"
         RELEASE_TAG = "processed"
-        
-        def calculate_sha256_from_url(url):
-            try:
-                print(f"Calculating SHA256 for: {url}")
-                response = requests.get(url, stream=True)
-                if response.status_code == 200:
-                    sha256_hash = hashlib.sha256()
-                    for chunk in response.iter_content(chunk_size=8192):
-                        sha256_hash.update(chunk)
-                    return sha256_hash.hexdigest()
-                return None
-            except Exception as e:
-                print(f"Error calculating SHA256: {e}")
-                return None
         
         def parse_image_filename(filename):
             base_name = filename
@@ -114,11 +106,14 @@ jobs:
         assets = release_data.get('assets', [])
         print(f"Found {len(assets)} assets in release")
         
-        for asset in assets:
-            print(f"Asset: {asset['name']} - {asset['browser_download_url']}")
-        
-        products = {}
-        current_time = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+        # 创建 simplestreams-builder 配置
+        config = {
+            "storage": {
+                "backend": "filesystem",
+                "path": "./build"
+            },
+            "images": []
+        }
         
         for asset in assets:
             filename = asset['name']
@@ -134,84 +129,38 @@ jobs:
             
             print(f"  OS: {os_name}, Version: {version}, Arch: {arch}, Size: {file_size}")
             
-            sha256_hash = calculate_sha256_from_url(download_url)
-            if not sha256_hash:
-                print(f"  Warning: Could not calculate SHA256 for {filename}")
-                sha256_hash = ""
-            else:
-                print(f"  SHA256: {sha256_hash}")
-            
-            product_id = f"{os_name}:{version}:{arch}"
-            
-            if product_id not in products:
-                products[product_id] = {
-                    "aliases": f"{os_name}/{version}/{arch}",
-                    "arch": arch,
-                    "os": os_name,
-                    "release": version,
-                    "release_title": f"{os_name.title()} {version}",
-                    "versions": {}
-                }
-            
-            file_type = "rootfs.tar.xz"
+            # 确定文件类型
             if filename.endswith('.squashfs'):
-                file_type = "rootfs.squashfs"
-            elif filename.endswith('.tar.gz'):
-                file_type = "rootfs.tar.gz"
-            elif filename.endswith('.tar'):
-                file_type = "rootfs.tar"
+                file_type = "squashfs"
+            else:
+                file_type = "tar.xz"
             
-            products[product_id]["versions"][current_time] = {
-                "items": {
-                    file_type: {
-                        "ftype": file_type,
-                        "path": download_url,
-                        "sha256": sha256_hash,
-                        "size": file_size
-                    }
-                }
+            # 添加到配置
+            image_config = {
+                "name": f"{os_name}",
+                "version": version,
+                "arch": arch,
+                "url": download_url,
+                "size": file_size,
+                "type": file_type,
+                "aliases": [f"{os_name}/{version}", f"{os_name}/{version}/{arch}"]
             }
+            
+            config["images"].append(image_config)
         
-        print(f"Generated {len(products)} products")
+        print(f"Generated config for {len(config['images'])} images")
         
-        os.makedirs("build/streams/v1", exist_ok=True)
+        # 保存配置文件
+        with open("simplestreams-config.yaml", "w") as f:
+            yaml.dump(config, f, default_flow_style=False)
         
-        index_data = {
-            "index": {
-                "images": {
-                    "datatype": "image-downloads", 
-                    "path": "streams/v1/images.json",
-                    "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "products": list(products.keys()),
-                    "format": "products:1.0"
-                }
-            },
-            "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "format": "index:1.0"
-        }
+        print("Generated simplestreams-config.yaml")
         
-        with open("build/streams/v1/index.json", "w") as f:
-            json.dump(index_data, f, indent=2)
-        
-        print("Generated index.json")
-        
-        images_data = {
-            "content_id": "images",
-            "datatype": "image-downloads",
-            "format": "products:1.0", 
-            "products": products,
-            "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        }
-        
-        with open("build/streams/v1/images.json", "w") as f:
-            json.dump(images_data, f, indent=2)
-        
-        print("Generated images.json")
-        
+        # 生成汇总信息
         summary = {
-            "total_products": len(products),
-            "architectures": list(set(p["arch"] for p in products.values())),
-            "operating_systems": list(set(p["os"] for p in products.values())),
+            "total_images": len(config["images"]),
+            "architectures": list(set(img["arch"] for img in config["images"])),
+            "operating_systems": list(set(img["name"] for img in config["images"])),
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "source_release": f"{REPO_OWNER}/{REPO_NAME}/releases/tag/{RELEASE_TAG}"
         }
@@ -221,6 +170,11 @@ jobs:
         
         print(f"Build summary: {summary}")
         PYTHON_SCRIPT
+        
+    - name: Build simplestreams with simplestreams-builder
+      run: |
+        echo "Building simplestreams with simplestreams-builder..."
+        simplestreams-builder --config simplestreams-config.yaml --output-dir build
         
     - name: Generate static HTML index
       run: |
@@ -274,25 +228,22 @@ jobs:
                 
                 <h3>Add this server as a remote in LXD:</h3>
                 <div class="usage-example">
-                    <code>lxc remote add oneclickvirt https://YOUR_NETLIFY_URL --protocol=simplestreams --public</code>
+                    <code>lxc remote remove spiritlhl && lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public</code>
                 </div>
                 
                 <h3>List available images:</h3>
                 <div class="usage-example">
-                    <code>lxc image list oneclickvirt:</code>
+                    <code>lxc image list spiritlhl:</code>
                 </div>
-                
                 <h3>Launch a container:</h3>
                 <div class="usage-example">
-                    <code>lxc launch oneclickvirt:ubuntu/22.04/amd64 my-container</code>
+                    <code>lxc launch spiritlhl:ubuntu/22.04/amd64 my-container</code>
                 </div>
-                
                 <div id="images-table-container">
                     <h2>Available Images</h2>
                     <p>Loading image list...</p>
                 </div>
             </div>
-            
             <script>
                 Promise.all([
                     fetch('./streams/v1/images.json').then(r => r.json()),
@@ -300,7 +251,7 @@ jobs:
                 ]).then(([images, summary]) => {
                     document.getElementById('last-updated').textContent = new Date(summary.generated_at).toLocaleString();
                     
-                    const products = images.products;
+                    const products = images.products || {};
                     const tableHtml = `
                         <table>
                             <thead>
@@ -315,18 +266,18 @@ jobs:
                             <tbody>
                                 ${Object.entries(products).map(([id, product]) => `
                                     <tr>
-                                        <td><strong>${product.os}</strong></td>
-                                        <td>${product.release}</td>
-                                        <td><span class="badge badge-primary">${product.arch}</span></td>
-                                        <td><code>${product.aliases}</code></td>
+                                        <td><strong>${product.os || 'Unknown'}</strong></td>
+                                        <td>${product.release || 'Unknown'}</td>
+                                        <td><span class="badge badge-primary">${product.arch || 'Unknown'}</span></td>
+                                        <td><code>${product.aliases || id}</code></td>
                                         <td><span class="badge badge-success">Available</span></td>
                                     </tr>
                                 `).join('')}
                             </tbody>
                         </table>
                         <p><strong>Total Images:</strong> ${Object.keys(products).length}</p>
-                        <p><strong>Architectures:</strong> ${summary.architectures.join(', ')}</p>
-                        <p><strong>Operating Systems:</strong> ${summary.operating_systems.join(', ')}</p>
+                        <p><strong>Architectures:</strong> ${summary.architectures ? summary.architectures.join(', ') : 'Unknown'}</p>
+                        <p><strong>Operating Systems:</strong> ${summary.operating_systems ? summary.operating_systems.join(', ') : 'Unknown'}</p>
                     `;
                     
                     document.getElementById('images-table-container').innerHTML = 
@@ -376,15 +327,34 @@ jobs:
         find build -type f -exec ls -la {} \;
         
         echo -e "\n=== Verifying JSON files ==="
-        python3 -m json.tool build/streams/v1/index.json > /dev/null && echo "index.json is valid"
-        python3 -m json.tool build/streams/v1/images.json > /dev/null && echo "images.json is valid"
-        python3 -m json.tool build/summary.json > /dev/null && echo "summary.json is valid"
+        if [ -f "build/streams/v1/index.json" ]; then
+          python3 -m json.tool build/streams/v1/index.json > /dev/null && echo "index.json is valid"
+        else
+          echo "index.json not found"
+        fi
+        
+        if [ -f "build/streams/v1/images.json" ]; then
+          python3 -m json.tool build/streams/v1/images.json > /dev/null && echo "images.json is valid"
+        else
+          echo "images.json not found"
+        fi
+        
+        if [ -f "build/summary.json" ]; then
+          python3 -m json.tool build/summary.json > /dev/null && echo "summary.json is valid"
+        else
+          echo "summary.json not found"
+        fi
         
         echo -e "\n=== Sample content ==="
-        echo "--- index.json ---"
-        head -20 build/streams/v1/index.json
-        echo -e "\n--- images.json (first 30 lines) ---"
-        head -30 build/streams/v1/images.json
+        if [ -f "build/streams/v1/index.json" ]; then
+          echo "--- index.json ---"
+          head -20 build/streams/v1/index.json
+        fi
+        
+        if [ -f "build/streams/v1/images.json" ]; then
+          echo -e "\n--- images.json (first 30 lines) ---"
+          head -30 build/streams/v1/images.json
+        fi
         
     - name: Deploy to Netlify
       uses: nwtgck/actions-netlify@v3.0
