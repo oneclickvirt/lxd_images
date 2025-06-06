@@ -148,7 +148,7 @@ jobs:
             cd "$temp_dir"
             
             echo "Downloading $name..."
-            if curl -L -o image.zip "$url" && unzip -q image.zip; then
+            if curl --retry 3 --retry-delay 5 -L -o image.zip "$url" && unzip -q image.zip; then
               if [ -f rootfs.squashfs ] && [ -f lxd.tar.xz ]; then
                 mv rootfs.squashfs "$rootfs_file"
                 mv lxd.tar.xz "$lxd_file"
