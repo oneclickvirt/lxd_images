@@ -1,192 +1,279 @@
-name: Build & Deploy SimpleStreams from GitHub Releases
+name: Build SimpleStreams with simplestreams-builder
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    
     steps:
-      # 1. Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # 2. Set up Python for fetching release assets and generating inputs
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
-      # 3. Install Python dependencies
-      - name: Install Python dependencies
-        run: |
-          pip install requests pyyaml
-
-      # 4. Fetch GitHub Release assets, generate per-product ssb.json and tree.yml under build/
-      - name: Generate inputs for simplestreams-builder
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          python3 << 'EOF'
-          import os, requests, json, yaml, hashlib
-          from datetime import datetime, timezone
-
-          # Configuration
-          REPO = 'oneclickvirt/lxd_images'
-          TAG = 'processed'
-          BASE_URL = f'https://github.com/{REPO}/releases/download/{TAG}'
-          OUT = 'build'
-
-          PREFIX = ""
-          IMAGES_PATH = "streams/v1"
-          DATATYPE = "image-downloads"
-          FORMAT = "products:1.0"
-
-          # Helpers
-          def parse_filename(name):
-              if name.endswith('-lxd.tar.xz'):
-                  base = name[:-11]
-              elif name.endswith('-rootfs.squashfs'):
-                  base = name[:-15]
-              else:
-                  return None
-              parts = base.split('-')
-              if len(parts) < 4:
-                  return None
-              return dict(os=parts[0], release=parts[1],
-                          arch=parts[2], variant=parts[3], name=base)
-
-          def sha256_placeholder():
-              return hashlib.sha256(b'placeholder').hexdigest()
-
-          # Fetch release info
-          headers = {'Authorization': f'token {os.getenv("GITHUB_TOKEN","")}'}
-          resp = requests.get(f'https://api.github.com/repos/{REPO}/releases/tags/{TAG}', headers=headers)
-          resp.raise_for_status()
-          assets = resp.json().get('assets', [])
-
-          # Prepare output dirs
-          os.makedirs(OUT, exist_ok=True)
-          products = []
-          timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
-
-          # Pair up lxd and rootfs assets
-          lxd_assets = [a for a in assets if a['name'].endswith('-lxd.tar.xz')]
-          rootfs_map = {a['name']: a for a in assets if a['name'].endswith('-rootfs.squashfs')}
-
-          for lxd in lxd_assets:
-              info = parse_filename(lxd['name'])
-              if not info:
-                  continue
-              root_name = f"{info['name']}-rootfs.squashfs"
-              root = rootfs_map.get(root_name)
-              if not root:
-                  continue
-
-              # Build product directory under build/
-              parts = [info['os'], info['release'], info['arch']]
-              if info['variant'] != 'default':
-                  parts.append(info['variant'])
-              prod_dir = os.path.join(OUT, *parts)
-              os.makedirs(prod_dir, exist_ok=True)
-
-              # Create ssb.json
-              ssb = {
-                  "version": timestamp,
-                  "items": {
-                      "lxd.tar.xz": {
-                          "size": lxd.get('size', 0),
-                          "path": f"download/{lxd['name']}",
-                          "sha256": sha256_placeholder()
-                      },
-                      "rootfs.squashfs": {
-                          "size": root.get('size', 0),
-                          "path": f"download/{root['name']}",
-                          "sha256": sha256_placeholder()
-                      }
-                  }
-              }
-              with open(os.path.join(prod_dir, 'ssb.json'), 'w') as f:
-                  json.dump(ssb, f, indent=2, sort_keys=True)
-
-              # Build aliases
-              base_alias = f"{info['os']}/{info['release']}"
-              if info['arch'] != 'amd64':
-                  base_alias += f"/{info['arch']}"
-              aliases = [base_alias]
-              if info['variant'] != 'default':
-                  aliases.append(base_alias + f"/{info['variant']}")
-
-              products.append({
-                  "name": info['name'] + (f"-{info['variant']}" if info['variant']!='default' else ""),
-                  "os": info['os'],
-                  "arch": info['arch'],
-                  "release": info['release'],
-                  "release_title": f"{info['os'].title()} {info['release']}",
-                  "directory": "/".join(parts),
-                  "days": 1,
-                  "aliases": aliases
-              })
-
-          # Write tree.yml under build/
-          tree = {
-              "prefix": PREFIX,
-              "images_path": IMAGES_PATH,
-              "datatype": DATATYPE,
-              "format": FORMAT,
-              "products": products
-          }
-          with open(os.path.join(OUT, 'tree.yml'), 'w') as f:
-              yaml.safe_dump(tree, f, sort_keys=False)
-          EOF
-
-      # 5. Set up Go and install simplestreams-builder
-      - name: Set up Go
+        
+      - name: Setup Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.20'
-
+          go-version: '1.21'
+          
       - name: Install simplestreams-builder
         run: |
           go install github.com/MottainaiCI/simplestreams-builder@latest
-          echo "$HOME/go/bin" >> $GITHUB_PATH
-
-      # 6. Build images.json and index.json in build/
+          
+      - name: Create tree configuration
+        run: |
+          mkdir -p build/config
+          cat > build/config/tree.yml << 'EOF'
+          prefix: ""
+          images_path: "streams/v1"
+          datatype: "image-downloads"
+          format: "products:1.0"
+          
+          products:
+            - name: "debian:11:amd64:default"
+              arch: "amd64"
+              release: "11"
+              os: "debian"
+              release_title: "Debian 11"
+              directory: "debian/11/amd64/default"
+              prefix_path: ""
+              days: 30
+              aliases: "debian/11,debian/bullseye,11"
+              
+            - name: "ubuntu:22.04:amd64:default"
+              arch: "amd64"
+              release: "22.04"
+              os: "ubuntu"
+              release_title: "Ubuntu 22.04 LTS"
+              directory: "ubuntu/22.04/amd64/default"
+              prefix_path: ""
+              days: 30
+              aliases: "ubuntu/22.04,ubuntu/jammy,22.04"
+              
+            - name: "fedora:40:amd64:default"
+              arch: "amd64"
+              release: "40"
+              os: "fedora"
+              release_title: "Fedora 40"
+              directory: "fedora/40/amd64/default"
+              prefix_path: ""
+              days: 30
+              aliases: "fedora/40,40"
+          EOF
+          
+      - name: Fetch GitHub Release Assets
+        run: |
+          python3 << 'EOF'
+          import requests
+          import json
+          import os
+          from datetime import datetime, timezone
+          
+          GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', '')
+          REPO = 'oneclickvirt/lxd_images'
+          TAG = 'processed'
+          BASE_URL = f'https://github.com/{REPO}/releases/download/{TAG}'
+          
+          headers = {}
+          if GITHUB_TOKEN:
+              headers['Authorization'] = f'token {GITHUB_TOKEN}'
+              
+          response = requests.get(f'https://api.github.com/repos/{REPO}/releases/tags/{TAG}', headers=headers)
+          if response.status_code != 200:
+              print(f"Error: {response.status_code}")
+              exit(1)
+              
+          release_data = response.json()
+          assets = release_data.get('assets', [])
+          
+          def parse_filename(filename):
+              if filename.endswith('-lxd.tar.xz'):
+                  base_name = filename.replace('-lxd.tar.xz', '')
+              elif filename.endswith('-rootfs.squashfs'):
+                  base_name = filename.replace('-rootfs.squashfs', '')
+              else:
+                  return None, None, None, None
+              
+              parts = base_name.split('-')
+              if len(parts) >= 4:
+                  return parts[0], parts[1], parts[2], parts[3]
+              return None, None, None, None
+          
+          # 按产品组织资产
+          products = {}
+          
+          lxd_files = [asset for asset in assets if asset['name'].endswith('-lxd.tar.xz')]
+          rootfs_files = [asset for asset in assets if asset['name'].endswith('-rootfs.squashfs')]
+          
+          current_time = datetime.now(timezone.utc)
+          version_id = current_time.strftime('%Y%m%d_%H%M')
+          
+          redirects_rules = []
+          
+          for lxd_asset in lxd_files:
+              distro, version, arch, variant = parse_filename(lxd_asset['name'])
+              if not all([distro, version, arch, variant]):
+                  continue
+                  
+              rootfs_name = lxd_asset['name'].replace('-lxd.tar.xz', '-rootfs.squashfs')
+              rootfs_asset = next((a for a in rootfs_files if a['name'] == rootfs_name), None)
+              
+              if not rootfs_asset:
+                  continue
+              
+              # 产品目录结构
+              product_key = f"{distro}:{version}:{arch}:{variant}"
+              product_dir = f"build/{distro}/{version}/{arch}/{variant}"
+              
+              if product_key not in products:
+                  products[product_key] = {
+                      'dir': product_dir,
+                      'versions': []
+                  }
+              
+              # 创建版本目录
+              version_dir = f"{product_dir}/{version_id}"
+              os.makedirs(version_dir, exist_ok=True)
+              
+              # 创建 ssb.json 文件 (simplestreams-builder 需要的元数据文件)
+              ssb_data = {
+                  "path": f"{distro}/{version}/{arch}/{variant}/{version_id}",
+                  "combined_disk_sha256": "placeholder_sha256_for_lxd",
+                  "combined_disk_size": lxd_asset.get('size', 0),
+                  "combined_rootxz_sha256": "placeholder_sha256_for_rootfs", 
+                  "combined_rootxz_size": rootfs_asset.get('size', 0),
+                  "lxd_path": f"download/{lxd_asset['name']}",
+                  "rootfs_path": f"download/{rootfs_asset['name']}",
+                  "meta": {
+                      "creation_date": current_time.strftime('%Y%m%d_%H:%M'),
+                      "expiry_date": "20301231_23:59",
+                      "os": distro,
+                      "release": version,
+                      "architecture": arch,
+                      "variant": variant if variant != 'default' else 'default'
+                  }
+              }
+              
+              with open(f"{version_dir}/ssb.json", 'w') as f:
+                  json.dump(ssb_data, f, indent=2)
+              
+              products[product_key]['versions'].append(version_id)
+              
+              # 添加重定向规则
+              redirects_rules.append(f'/download/{lxd_asset["name"]} {BASE_URL}/{lxd_asset["name"]} 302')
+              redirects_rules.append(f'/download/{rootfs_asset["name"]} {BASE_URL}/{rootfs_asset["name"]} 302')
+          
+          # 保存产品信息供后续步骤使用
+          with open('build/products.json', 'w') as f:
+              json.dump(products, f, indent=2)
+          
+          # 创建重定向文件
+          with open('build/_redirects', 'w') as f:
+              for rule in redirects_rules:
+                  f.write(rule + '\n')
+              f.write('/* /index.html 200\n')
+          
+          print(f"Prepared {len(products)} products for simplestreams-builder")
+          EOF
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Build versions manifests
+        run: |
+          cd build
+          python3 << 'EOF'
+          import json
+          import subprocess
+          import os
+          
+          with open('products.json', 'r') as f:
+              products = json.load(f)
+          
+          for product_name, product_info in products.items():
+              print(f"Building manifest for {product_name}")
+              
+              # 为每个产品构建版本清单
+              cmd = [
+                  'simplestreams-builder',
+                  'build-versions-manifest',
+                  '-c', 'config/tree.yml',
+                  '-t', '.',
+                  '-p', product_name,
+                  '-s', '.'
+              ]
+              
+              try:
+                  result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                  print(f"Successfully built manifest for {product_name}")
+              except subprocess.CalledProcessError as e:
+                  print(f"Error building manifest for {product_name}: {e.stderr}")
+          EOF
+          
       - name: Build images.json
         run: |
-          simplestreams-builder build-images-file --config build/tree.yml --target-dir build
-
+          cd build
+          simplestreams-builder build-images-file \
+            -c config/tree.yml \
+            -t . \
+            -s .
+            
       - name: Build index.json
         run: |
-          simplestreams-builder build-index --config build/tree.yml --target-dir build
-
-      # 7. Generate a simple HTML landing page
-      - name: Create index.html
+          cd build
+          simplestreams-builder build-index \
+            -c config/tree.yml \
+            -t . \
+            -s .
+            
+      - name: Create HTML
         run: |
           cat > build/index.html << 'EOF'
           <!DOCTYPE html>
-          <html><head><meta charset="utf-8"><title>SimpleStreams Index</title></head>
+          <html>
+          <head>
+              <title>LXD Images - SimpleStreams</title>
+              <style>
+                  body { font-family: Arial, sans-serif; padding: 20px; }
+                  pre { background: #f0f0f0; padding: 15px; border-radius: 5px; }
+                  .command { color: #0066cc; }
+              </style>
+          </head>
           <body>
-            <h1>SimpleStreams from GitHub Releases</h1>
-            <p>Use:</p>
-            <pre>lxc remote add spiritlhl https://<your-domain>/ --protocol simplestreams --public</pre>
-            <ul>
-              <li><a href="streams/v1/index.json">Index</a></li>
-              <li><a href="streams/v1/images.json">Images</a></li>
-            </ul>
+              <h1>LXD Images Repository</h1>
+              <p>Built with simplestreams-builder</p>
+              
+              <h2>Setup</h2>
+              <pre class="command">lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public</pre>
+              
+              <h2>Usage Examples</h2>
+              <pre class="command">
+          # List available images
+          lxc image list spiritlhl:
+          
+          # Launch containers using aliases
+          lxc launch spiritlhl:debian/11 my-debian
+          lxc launch spiritlhl:ubuntu/22.04 my-ubuntu
+          lxc launch spiritlhl:fedora/40 my-fedora
+              </pre>
+              
+              <h2>API Endpoints</h2>
+              <ul>
+                  <li><a href="streams/v1/index.json">SimpleStreams Index</a></li>
+                  <li><a href="streams/v1/images.json">Images Metadata</a></li>
+              </ul>
           </body>
           </html>
           EOF
-
-      # 8. Generate Netlify configuration
+          
       - name: Create netlify.toml
         run: |
-          cat > netlify.toml << 'EOF'
+          cat > build/netlify.toml << 'EOF'
           [build]
-            publish = "build"
-
+            publish = "."
+          
           [[headers]]
             for = "/streams/v1/*"
             [headers.values]
@@ -194,18 +281,17 @@ jobs:
               Cache-Control = "public, max-age=300"
               Access-Control-Allow-Origin = "*"
               Access-Control-Allow-Methods = "GET, HEAD"
-
+              
           [[headers]]
             for = "/download/*"
             [headers.values]
               Cache-Control = "public, max-age=86400"
           EOF
 
-      # 9. Deploy to Netlify
-      - name: Deploy to Netlify
+      - name: Deploy to Netlify  
         uses: nwtgck/actions-netlify@v3.0
         with:
-          publish-dir: 'build'
+          publish-dir: './build'
           production-branch: main
           github-token: ${{ secrets.GITHUB_TOKEN }}
         env:
