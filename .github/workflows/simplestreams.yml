@@ -218,7 +218,6 @@ jobs:
       #       rm -rf "$temp_dir"
       #     done
       #     mv processed_assets.json /tmp/processed_assets.json
-
       - name: 生成 Simplestreams JSON
         run: |
           mkdir -p pages/streams/v1
@@ -243,33 +242,35 @@ jobs:
                   arch="${BASH_REMATCH[3]}"
                   variant="${BASH_REMATCH[4]}"
                   lxd_name="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
-                  lxd_info=$(jq -r --arg lxd_name "$lxd_name" '.[] | select(.name == $lxd_name) | {url: .browser_download_url, size: .size} // empty' existing_assets_array.json)
-                  lxd_url=$(echo "$lxd_info" | jq -r '.url // empty')
-                  lxd_size=$(echo "$lxd_info" | jq -r '.size // empty')
-                  if [ -n "$lxd_url" ] && [ "$lxd_url" != "null" ] && [ "$lxd_url" != "empty" ]; then
-                    echo "Found existing asset pair: $name and $lxd_name"
-                    temp_asset=$(jq -n --arg os "$os" \
-                       --arg version "$version" \
-                       --arg arch "$arch" \
-                       --arg variant "$variant" \
-                       --arg rootfs_url "$rootfs_url" \
-                       --arg lxd_url "$lxd_url" \
-                       --arg rootfs_size "$rootfs_size" \
-                       --arg lxd_size "$lxd_size" \
-                       '{
-                         os: $os,
-                         version: $version,
-                         arch: $arch,
-                         variant: $variant,
-                         rootfs_url: $rootfs_url,
-                         lxd_url: $lxd_url,
-                         rootfs_size: ($rootfs_size | tonumber),
-                         lxd_size: ($lxd_size | tonumber),
-                         rootfs_sha256: "unknown",
-                         lxd_sha256: "unknown",
-                         combined_sha256: "unknown"
-                       }')
-                    echo "$temp_asset" >> temp_assets.jsonl
+                  lxd_info=$(jq -r --arg lxd_name "$lxd_name" '.[] | select(.name == $lxd_name) | {url: .browser_download_url, size: .size}' existing_assets_array.json)
+                  if [ -n "$lxd_info" ] && echo "$lxd_info" | jq empty 2>/dev/null; then
+                    lxd_url=$(echo "$lxd_info" | jq -r '.url // empty')
+                    lxd_size=$(echo "$lxd_info" | jq -r '.size // empty')
+                    if [ -n "$lxd_url" ] && [ "$lxd_url" != "null" ] && [ "$lxd_url" != "empty" ]; then
+                      echo "Found existing asset pair: $name and $lxd_name"
+                      temp_asset=$(jq -n --arg os "$os" \
+                         --arg version "$version" \
+                         --arg arch "$arch" \
+                         --arg variant "$variant" \
+                         --arg rootfs_url "$rootfs_url" \
+                         --arg lxd_url "$lxd_url" \
+                         --arg rootfs_size "$rootfs_size" \
+                         --arg lxd_size "$lxd_size" \
+                         '{
+                           os: $os,
+                           version: $version,
+                           arch: $arch,
+                           variant: $variant,
+                           rootfs_url: $rootfs_url,
+                           lxd_url: $lxd_url,
+                           rootfs_size: ($rootfs_size | tonumber),
+                           lxd_size: ($lxd_size | tonumber),
+                           rootfs_sha256: "unknown",
+                           lxd_sha256: "unknown",
+                           combined_sha256: "unknown"
+                         }')
+                      echo "$temp_asset" >> temp_assets.jsonl
+                    fi
                   fi
                 fi
               done
@@ -387,7 +388,7 @@ jobs:
             },
             "format": "index:1.0"
           }' > pages/streams/v1/index.json
-          
+      
           mkdir -p pages/streams/v1/images
           jq -r --slurpfile assets all_assets.json --arg updated "$current_time" '
             $assets[0][] |
@@ -395,12 +396,13 @@ jobs:
             "ln -sf \(.rootfs_url) pages/streams/v1/images/\(.os)/\(.version)/\(.arch)/\(.variant)/\($updated)/rootfs.squashfs;" +
             "ln -sf \(.lxd_url) pages/streams/v1/images/\(.os)/\(.version)/\(.arch)/\(.variant)/\($updated)/lxd.tar.xz"
           ' all_assets.json | bash
-          
+      
           echo "Generated Simplestreams JSON files:"
           echo "products.json:"
           cat pages/streams/v1/products.json | jq .
           echo "index.json:"
           cat pages/streams/v1/index.json | jq .
+
 
       - name: 生成网页界面
         run: |
