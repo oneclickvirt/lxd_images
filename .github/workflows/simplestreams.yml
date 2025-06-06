@@ -339,13 +339,13 @@ jobs:
                   <div class="usage-section">
                       <h2>使用方法</h2>
                       <p>添加此镜像源到您的 LXD 配置：</p>
-                      <pre>lxc remote add local-images http://lxdimages.spiritlhl.net --protocol=simplestreams --public</pre>
+                      <pre>lxc remote add spiritlhl-images http://lxdimages.spiritlhl.net --protocol=simplestreams --public</pre>
                       
                       <p>列出可用镜像：</p>
-                      <pre>lxc image list local-images:</pre>
+                      <pre>lxc image list spiritlhl-images:</pre>
                       
                       <p>使用镜像创建容器：</p>
-                      <pre>lxc launch local-images:PRODUCT_ID container-name</pre>
+                      <pre>lxc launch spiritlhl-images:PRODUCT_ID container-name</pre>
                   </div>
                   
                   <h2>可用镜像</h2>
