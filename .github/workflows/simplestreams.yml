@@ -279,7 +279,12 @@ jobs:
                  versions: {}
                }')
             serial=$(date -u +%Y%m%d%H%M%S)
-            product_obj=$(echo "$product_obj" | jq --arg serial "$serial" --argjson rItem "$rootfs_item" --argjson lItem "$lxd_item" '.versions += {($serial): {items: {"root.squashfs": $rItem, "lxd.tar.xz": $lItem}}}')
+            product_obj=$(echo "$product_obj" | jq \
+              --arg serial "$serial" \
+              --argjson rItem "$(echo "$rootfs_item" | jq -c '.')" \
+              --argjson lItem "$(echo "$lxd_item" | jq -c '.')" \
+              '.versions += {($serial): {items: {"root.squashfs": $rItem, "lxd.tar.xz": $lItem}}}'
+            )
             echo "$(jq -n --arg key "$product_key" --argjson val "$product_obj" '{($key): $val}')" >> product_objs.jsonl
           done < rootfs_list.json
           jq -s 'reduce .[] as $item ({}; . * $item)' product_objs.jsonl > products_obj.json
