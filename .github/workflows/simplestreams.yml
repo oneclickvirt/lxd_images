@@ -434,7 +434,7 @@ jobs:
           EOF
           echo "lxdimages.spiritlhl.net" > pages/CNAME
       - name: 部署 GitHub Pages
-        uses:peaceir/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./pages
