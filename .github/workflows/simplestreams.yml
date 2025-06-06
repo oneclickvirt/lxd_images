@@ -1,273 +1,157 @@
-name: 构建LXD镜像源
+name: Build and Deploy Simplestreams
+
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 0 * * *'
 
 jobs:
-  build:
+  build-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v3
+    - name: Checkout repo
+      uses: actions/checkout@v4
 
-      - name: 设置Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
 
-      - name: 安装依赖
-        run: |
-          npm install axios fs-extra dayjs crypto-js
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests PyGithub
 
-      - name: 创建目录结构
-        run: |
-          mkdir -p public/streams/v1
+    - name: Get release assets
+      id: get_assets
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        import os, requests, json, datetime
+        from github import Github
 
-      - name: 获取镜像信息并生成simplestreams文件
-        run: |
-          cat > generate.js << 'EOF'
-          const axios = require('axios');
-          const fs = require('fs-extra');
-          const path = require('path');
-          const dayjs = require('dayjs');
-          const crypto = require('crypto-js');
+        g = Github(os.environ['GITHUB_TOKEN'])
+        repo = g.get_repo("oneclickvirt/lxd_images")
+        release = repo.get_release("processed")
+        assets = release.get_assets()
 
-          async function getReleasesInfo() {
-            try {
-              const response = await axios.get('https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed');
-              return response.data.assets.map(asset => ({
-                name: asset.name,
-                url: asset.browser_download_url,
-                size: asset.size,
-                updated: dayjs(asset.updated_at).format('YYYY-MM-DD'),
-                createdAt: asset.created_at,
-                updatedAt: asset.updated_at
-              }));
-            } catch (error) {
-              console.error('获取发布数据失败:', error);
-              throw error;
+        asset_data = []
+        for asset in assets:
+          if asset.name.endswith('.json'):
+            asset_info = {
+              "name": asset.name,
+              "url": asset.browser_download_url,
+              "size": asset.size
             }
-          }
+            asset_data.append(asset_info)
 
-          function parseImageName(name) {
-            const parts = name.replace(/\.tar\.gz$/, '').split('-');
-            return {
-              os: parts[0] || 'unknown',
-              release: parts[1] || 'unknown',
-              version: parts[2] || '',
-              arch: parts[3] || 'amd64',
-            };
-          }
+        with open('assets.json', 'w') as f:
+          json.dump(asset_data, f)
 
-          async function generateIndex(assets) {
-            const products = {};
-            
-            assets.forEach(asset => {
-              const productId = asset.name.replace(/\.tar\.gz$/, '');
-              const imageInfo = parseImageName(productId);
-              
-              products[productId] = {
-                aliases: productId,
-                arch: imageInfo.arch,
-                os: imageInfo.os,
-                release: imageInfo.release,
-                release_title: `${imageInfo.os} ${imageInfo.release}`,
-                version: imageInfo.version,
-                versions: [asset.updated],
-                path: "streams/v1/images.json"
-              };
-            });
+        print(f"::set-output name=asset_count::{len(asset_data)}")
+      shell: python
 
-            const indexJson = {
-              format: "index:1.0",
-              index: {
-                "images": {
-                  datatype: "image-downloads",
-                  path: "streams/v1/images.json",
-                  updated: dayjs().format('YYYY-MM-DDTHH:mm:ss.SSSZ'),
-                  products: products,
-                  format: "products:1.0"
-                }
-              }
-            };
+    - name: Process metadata
+      run: |
+        import json, os
 
-            fs.writeJsonSync('public/streams/v1/index.json', indexJson, { spaces: 2 });
-          }
+        with open('assets.json') as f:
+          assets = json.load(f)
 
-          async function generateImages(assets) {
-            const products = {};
-            
-            assets.forEach(asset => {
-              const productId = asset.name.replace(/\.tar\.gz$/, '');
-              const date = asset.updated;
-              
-              products[productId] = products[productId] || {
-                aliases: productId,
-                versions: {}
-              };
-              
-              products[productId].versions[date] = {
-                items: {
-                  root: {
-                    size: asset.size,
-                    path: asset.url,
-                    ftype: "lxd.tar.gz",
-                    sha256: ""
-                  }
-                }
-              };
-            });
+        products = {}
+        for asset in assets:
+          resp = requests.get(asset['url'])
+          data = resp.json()
+          os_name = data['properties']['os'].lower()
+          release = data['properties']['release']
+          arch = data['architecture']
+          creation_date = data['creation_date']
+          date_str = datetime.datetime.utcfromtimestamp(creation_date).strftime('%Y%m%d')
+          product_key = f"{os_name}:{release}:{arch}"
 
-            const imagesJson = {
-              content_id: "images",
-              datatype: "image-downloads",
-              format: "products:1.0",
-              updated: dayjs().format('YYYY-MM-DDTHH:mm:ss.SSSZ'),
-              products: products
-            };
-
-            fs.writeJsonSync('public/streams/v1/images.json', imagesJson, { spaces: 2 });
-          }
-
-          async function generateWebPage(assets) {
-            const tableRows = assets.map(asset => {
-              const sizeInMB = (asset.size / (1024 * 1024)).toFixed(2);
-              return `
-                <tr>
-                  <td>${asset.name}</td>
-                  <td>${sizeInMB} MB</td>
-                  <td>${asset.updated}</td>
-                  <td><a href="${asset.url}" target="_blank">下载</a></td>
-                </tr>
-              `;
-            }).join('');
-
-            const html = `
-          <!DOCTYPE html>
-          <html lang="zh-CN">
-            <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>LXD 镜像仓库 - spiritlhl</title>
-              <style>
-                body {
-                  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                  line-height: 1.6;
-                  color: #333;
-                  max-width: 1200px;
-                  margin: 0 auto;
-                  padding: 20px;
-                }
-                h1, h2 {
-                  color: #0366d6;
-                }
-                table {
-                  width: 100%;
-                  border-collapse: collapse;
-                  margin: 20px 0;
-                }
-                th, td {
-                  padding: 12px 15px;
-                  text-align: left;
-                  border-bottom: 1px solid #ddd;
-                }
-                th {
-                  background-color: #f6f8fa;
-                }
-                tr:hover {
-                  background-color: #f6f8fa;
-                }
-                code {
-                  background-color: #f6f8fa;
-                  padding: 5px;
-                  border-radius: 3px;
-                  font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
-                }
-                .code-block {
-                  background-color: #f6f8fa;
-                  padding: 15px;
-                  border-radius: 5px;
-                  overflow-x: auto;
-                }
-                a {
-                  color: #0366d6;
-                  text-decoration: none;
-                }
-                a:hover {
-                  text-decoration: underline;
-                }
-                .footer {
-                  margin-top: 40px;
-                  text-align: center;
-                  color: #6a737d;
-                  font-size: 14px;
-                }
-              </style>
-            </head>
-            <body>
-              <h1>LXD 镜像仓库</h1>
-              
-              <h2>使用方法</h2>
-              <p>要将此仓库添加为LXD远程镜像源，请执行以下命令：</p>
-              <div class="code-block">
-                <code>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol=simplestreams</code>
-              </div>
-              
-              <p>然后，您可以使用以下命令启动容器：</p>
-              <div class="code-block">
-                <code>lxc launch spiritlhl:镜像名称 容器名称</code>
-              </div>
-              
-              <h2>可用镜像</h2>
-              <table>
-                <thead>
-                  <tr>
-                    <th>镜像名称</th>
-                    <th>大小</th>
-                    <th>更新日期</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${tableRows}
-                </tbody>
-              </table>
-              
-              <div class="footer">
-                <p>由 <a href="https://github.com/oneclickvirt/lxd_images" target="_blank">oneclickvirt/lxd_images</a> 提供 | 由 GitHub Pages 驱动</p>
-              </div>
-            </body>
-          </html>
-          `;
-
-            fs.writeFileSync('public/index.html', html);
-          }
-
-          async function main() {
-            try {
-              const assets = await getReleasesInfo();
-              await generateIndex(assets);
-              await generateImages(assets);
-              await generateWebPage(assets);
-              console.log('成功生成simplestreams文件和网页');
-            } catch (error) {
-              console.error('生成失败:', error);
-              process.exit(1);
+          if product_key not in products:
+            products[product_key] = {
+              "arch": arch,
+              "os": os_name,
+              "release": release,
+              "release_title": release,
+              "versions": {}
             }
-          }
 
-          main();
-          EOF
-          node generate.js
+          version_data = {"items": {}}
+          for ftype in ['rootfs.tar.xz', 'lxd.tar.xz']:
+            fname = f"{asset['name'].replace('.json', '')}/{ftype}"
+            version_data["items"][ftype] = {
+              "ftype": ftype,
+              "hash": f"sha256:{data['fingerprint']}",
+              "path": fname,
+              "size": data['size']
+            }
 
-      - name: 部署到GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          branch: gh-pages
-          folder: public
-          clean: true
+          products[product_key]["versions"][date_str] = version_data
 
-      - name: 设置自定义域名
-        run: |
-          echo "lxdimages.spiritlhl.net" > public/CNAME
+        images_json = {
+          "content_id": "images",
+          "datatype": "image-downloads",
+          "format": "products:1.0",
+          "products": products
+        }
+
+        index_json = {
+          "index": {
+            "images": {
+              "datatype": "image-downloads",
+              "path": "streams/v1/images.json",
+              "products": list(products.keys())
+            }
+          },
+          "format": "index:1.0"
+        }
+
+        os.makedirs('streams/v1', exist_ok=True)
+        with open('streams/v1/images.json', 'w') as f:
+          json.dump(images_json, f, indent=2)
+        with open('streams/v1/index.json', 'w') as f:
+          json.dump(index_json, f, indent=2)
+
+        with open('CNAME', 'w') as f:
+          f.write('lxdimages.spiritlhl.net')
+
+        html_content = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>LXD Image Repository</title>
+          <style>
+            body { font-family: sans-serif; margin: 20px; }
+            table { border-collapse: collapse; width: 100%; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f2f2f2; }
+          </style>
+        </head>
+        <body>
+          <h1>Available LXD Images</h1>
+          <table>
+            <tr><th>OS</th><th>Release</th><th>Architecture</th><th>Version</th></tr>
+        """
+        for pkey, pdata in products.items():
+          os_name, release, arch = pkey.split(':')
+          for version in pdata['versions']:
+            html_content += f"<tr><td>{os_name}</td><td>{release}</td><td>{arch}</td><td>{version}</td></tr>"
+        html_content += """
+          </table>
+          <p>Simplestreams URL: https://lxdimages.spiritlhl.net/streams/v1</p>
+        </body>
+        </html>
+        """
+        with open('index.html', 'w') as f:
+          f.write(html_content)
+      shell: python
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./
+        force_orphan: true
+        keep_files: false
