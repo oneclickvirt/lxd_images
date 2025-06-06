@@ -1,7 +1,14 @@
-name: Build and Deploy SimpleStreams Index
+name: Build and Deploy SimpleStreams Index to Netlify
 
 on:
+  schedule:
+    - cron: '0 */6 * * *'
   workflow_dispatch:
+  push:
+    branches:
+      - main
+  release:
+    types: [published]
 
 jobs:
   build-and-deploy:
@@ -22,7 +29,7 @@ jobs:
         run: |
           pip install requests jinja2 pyyaml
           
-      - name: Generate SimpleStreams index
+      - name: Generate SimpleStreams index and redirects
         run: |
           python3 << 'EOF'
           import requests
@@ -74,7 +81,7 @@ jobs:
               return hashlib.sha256(url.encode()).hexdigest()
           
           def get_file_info(asset, item_type):
-              # 使用相对路径指向重定向页面
+              # 使用相对路径
               relative_path = f'download/{asset["name"]}'
               return {
                   'ftype': item_type,
@@ -83,8 +90,8 @@ jobs:
                   'sha256': calculate_sha256_from_url(f'{BASE_URL}/{asset["name"]}')
               }
           
-          # 存储下载映射信息
-          download_mapping = {}
+          # 存储重定向规则
+          redirects_rules = []
           
           products = {}
           
@@ -105,9 +112,9 @@ jobs:
               if not rootfs_asset:
                   continue
               
-              # 记录下载映射
-              download_mapping[lxd_asset['name']] = f'{BASE_URL}/{lxd_asset["name"]}'
-              download_mapping[rootfs_asset['name']] = f'{BASE_URL}/{rootfs_asset["name"]}'
+              # 添加重定向规则
+              redirects_rules.append(f'/download/{lxd_asset["name"]} {BASE_URL}/{lxd_asset["name"]} 302')
+              redirects_rules.append(f'/download/{rootfs_asset["name"]} {BASE_URL}/{rootfs_asset["name"]} 302')
               
               product_name = f'{distro}:{version}:{arch}'
               
@@ -161,7 +168,6 @@ jobs:
           }
           
           os.makedirs('build/streams/v1', exist_ok=True)
-          os.makedirs('build/download', exist_ok=True)
           
           with open('build/streams/v1/index.json', 'w') as f:
               json.dump(index_data, f, indent=2, separators=(',', ': '))
@@ -169,27 +175,14 @@ jobs:
           with open('build/streams/v1/images.json', 'w') as f:
               json.dump(images_data, f, indent=2, separators=(',', ': '))
           
-          # 生成重定向页面
-          for filename, url in download_mapping.items():
-              redirect_html = f'''<!DOCTYPE html>
-          <html>
-          <head>
-              <meta charset="utf-8">
-              <title>Redirecting...</title>
-              <meta http-equiv="refresh" content="0; url={url}">
-              <script>
-                  window.location.href = "{url}";
-              </script>
-          </head>
-          <body>
-              <p>If you are not redirected automatically, <a href="{url}">click here</a>.</p>
-          </body>
-          </html>'''
-              
-              with open(f'build/download/{filename}', 'w') as f:
-                  f.write(redirect_html)
+          # 生成 Netlify _redirects 文件
+          with open('build/_redirects', 'w') as f:
+              for rule in redirects_rules:
+                  f.write(rule + '\n')
+              # 添加默认重定向到主页
+              f.write('/* /index.html 200\n')
           
-          print(f"Generated index with {len(products)} products and {len(download_mapping)} redirect pages")
+          print(f"Generated index with {len(products)} products and {len(redirects_rules)} redirect rules")
           
           # 验证生成的文件
           with open('build/streams/v1/index.json', 'r') as f:
@@ -199,17 +192,16 @@ jobs:
           with open('build/streams/v1/images.json', 'r') as f:
               test_images = json.load(f)
               print("Images JSON validation passed")
+              
+          print("Generated _redirects file with rules:")
+          with open('build/_redirects', 'r') as f:
+              print(f.read())
           EOF
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
-      - name: Create CNAME file
-        run: |
-          echo "lxdimages.spiritlhl.net" > build/CNAME
-          
       - name: Generate HTML frontend
         run: |
-          # [前端生成代码保持不变]
           python3 << 'EOF'
           import json
           import os
@@ -362,7 +354,7 @@ jobs:
           <body>
               <div class="header">
                   <h1>🐧 LXD Images Repository</h1>
-                  <p>高质量的 Linux 容器镜像集合，支持多架构</p>
+                  <p>高质量的 Linux 容器镜像集合，支持多架构 - 托管在 Netlify</p>
               </div>
               
               <div class="last-updated">
@@ -372,7 +364,7 @@ jobs:
               <div class="usage">
                   <h2>🚀 使用方法</h2>
                   <p><strong>步骤 1:</strong> 添加此镜像源到你的 LXD 客户端</p>
-                  <pre><code>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol=simplestreams --public</code></pre>
+                  <pre><code>lxc remote add spiritlhl https://YOUR_NETLIFY_DOMAIN.netlify.app --protocol=simplestreams --public</code></pre>
                   <p><strong>步骤 2:</strong> 验证远程源已添加</p>
                   <pre><code>lxc remote list</code></pre>
                   <p><strong>步骤 3:</strong> 查看可用镜像</p>
@@ -382,7 +374,7 @@ jobs:
                   
                   <div class="warning-box">
                       <h3>ℹ️ 技术说明</h3>
-                      <p>此镜像仓库使用 GitHub Pages 托管 SimpleStreams 索引。为了符合 LXD 的相对路径要求，我们创建了重定向页面来处理镜像文件的下载请求。</p>
+                      <p>此镜像仓库现在使用 Netlify 托管，支持真正的 HTTP 重定向。镜像文件通过 _redirects 规则自动重定向到 GitHub Release 的下载链接。</p>
                   </div>
               </div>
               
@@ -407,8 +399,8 @@ jobs:
                       <div class="stat-label">支持架构</div>
                   </div>
                   <div class="stat-card">
-                      <div class="stat-number">24/7</div>
-                      <div class="stat-label">自动更新</div>
+                      <div class="stat-number">Netlify</div>
+                      <div class="stat-label">真实重定向</div>
                   </div>
               </div>
               
@@ -454,7 +446,7 @@ jobs:
                   <p>🔗 <a href="https://github.com/oneclickvirt/lxd_images" target="_blank">GitHub Repository</a> | 
                   📊 <a href="streams/v1/index.json" target="_blank">SimpleStreams Index</a> | 
                   🗂️ <a href="streams/v1/images.json" target="_blank">Images Metadata</a></p>
-                  <p>由 <a href="https://github.com/spiritLHLS" target="_blank">spiritLHLS</a> 维护</p>
+                  <p>由 <a href="https://github.com/spiritLHLS" target="_blank">spiritLHLS</a> 维护 | 托管在 Netlify</p>
               </div>
           </body>
           </html>
@@ -465,14 +457,38 @@ jobs:
           
           print("Generated HTML frontend")
           EOF
+
+      - name: Create netlify.toml configuration
+        run: |
+          cat > build/netlify.toml << 'EOL'
+          [build]
+            publish = "."
           
-      - name: Deploy to gh-pages
-        uses: peaceiris/actions-gh-pages@v3
+          [build.environment]
+            NODE_VERSION = "18"
+          
+          [[headers]]
+            for = "/streams/v1/*"
+            [headers.values]
+              Content-Type = "application/json"
+              Cache-Control = "public, max-age=300"
+          
+          [[headers]]
+            for = "/download/*"
+            [headers.values]
+              Cache-Control = "no-cache"
+          EOL
+
+      - name: Deploy to Netlify
+        uses: nwtgck/actions-netlify@v3.0
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build
-          publish_branch: gh-pages
-          force_orphan: true
-          user_name: 'github-actions[bot]'
-          user_email: 'github-actions[bot]@users.noreply.github.com'
-          commit_message: 'Deploy SimpleStreams index with redirect pages'
+          publish-dir: './build'
+          production-branch: main
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          deploy-message: "Deploy SimpleStreams index with HTTP redirects"
+          enable-pull-request-comment: false
+          enable-commit-comment: true
+          overwrites-pull-request-comment: true
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
