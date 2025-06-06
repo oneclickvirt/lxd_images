@@ -159,31 +159,22 @@ jobs:
                     }
                 
                 file_key = f"{parsed['type']}.{parsed['extension']}"
-                images[image_key]['files'][file_key] = {
+                # 确保asset包含正确的字段名
+                asset_info = {
                     'name': asset['name'],
-                    'browser_download_url': asset['browser_download_url'],
+                    'download_url': asset['browser_download_url'],
                     'size': asset['size']
                 }
+                images[image_key]['files'][file_key] = asset_info
                 
             return images
 
-        def get_sha256_from_github(download_url):
-            """尝试从GitHub获取文件的SHA256，如果失败则返回占位符"""
-            try:
-                # 对于大文件，我们跳过SHA256计算以节省时间和带宽
-                # LXD客户端会在下载时重新验证
-                return "0" * 64  # 64位的0作为占位符
-            except:
-                return "0" * 64
-
         def create_directory_structure(images, build_dir):
-            """创建目录结构"""
+            """创建目录结构并下载必要的元数据"""
             current_time = datetime.datetime.utcnow()
             timestamp = current_time.strftime('%Y%m%d_%H:%M')
             
             for image_key, image_info in images.items():
-                print(f"Processing image: {image_key}")
-                
                 # 创建目录结构
                 image_dir = os.path.join(
                     build_dir, 'images',
@@ -197,36 +188,62 @@ jobs:
                 
                 # 处理文件
                 items = {}
+                temp_files = []
                 
-                for file_key, asset in image_info['files'].items():
-                    print(f"  Processing file: {asset['name']}")
-                    
-                    # 确定文件类型
-                    if asset['name'].endswith('-rootfs.squashfs'):
-                        ftype = 'root.squashfs'
-                        item_key = 'root.squashfs'
-                    elif asset['name'].endswith('-lxd.tar.xz'):
-                        ftype = 'lxd.tar.xz'
-                        item_key = 'lxd.tar.xz'
-                    elif asset['name'].endswith('.squashfs'):
-                        ftype = 'root.squashfs'
-                        item_key = 'root.squashfs'
-                    elif asset['name'].endswith('.tar.xz'):
-                        ftype = 'root.tar.xz'
-                        item_key = 'root.tar.xz'
-                    else:
-                        continue
+                try:
+                    for file_key, asset in image_info['files'].items():
+                        # 下载文件到临时位置计算hash
+                        temp_file = tempfile.NamedTemporaryFile(delete=False)
+                        temp_files.append(temp_file.name)
+                        download_file(asset['download_url'], temp_file.name)
                         
-                    items[item_key] = {
-                        'ftype': ftype,
-                        'path': asset['browser_download_url'],  # 直接使用GitHub的下载URL
-                        'size': asset['size'],
-                        'sha256': get_sha256_from_github(asset['browser_download_url']),
-                    }
+                        # 计算hash
+                        file_hash = get_file_hash(temp_file.name)
+                        
+                        # 添加到items
+                        if file_key.endswith('.squashfs'):
+                            ftype = 'root.squashfs'
+                        elif file_key.endswith('.tar.xz'):
+                            if 'lxd' in file_key:
+                                ftype = 'lxd.tar.xz'
+                            else:
+                                ftype = 'root.tar.xz'
+                        else:
+                            ftype = file_key
+                            
+                        items[file_key.replace('.', '_')] = {
+                            'ftype': ftype,
+                            'path': f"images/{image_info['os']}/{image_info['release']}/{image_info['arch']}/{image_info['variant']}/{timestamp}/{asset['name']}",
+                            'size': asset['size'],
+                            'sha256': file_hash,
+                        }
+                        
+                        # 如果是LXD tar文件，尝试解析metadata
+                        if 'lxd' in file_key and file_key.endswith('.tar.xz'):
+                            try:
+                                metadata = parse_metadata_from_tar(temp_file.name)
+                                if metadata:
+                                    # 更新镜像信息
+                                    if 'architecture' in metadata:
+                                        arch = metadata['architecture']
+                                        if arch == 'x86_64':
+                                            arch = 'amd64'
+                                        image_info['arch'] = arch
+                                    
+                                    if 'creation_date' in metadata:
+                                        creation_date = datetime.datetime.utcfromtimestamp(int(metadata['creation_date']))
+                                        timestamp = creation_date.strftime('%Y%m%d_%H:%M')
+                                        # 可能需要重新创建目录
+                            except Exception as e:
+                                print(f"Warning: Could not parse metadata from {asset['name']}: {e}")
                 
-                # 如果有lxd.tar.xz和root文件，计算combined_sha256
-                if 'lxd.tar.xz' in items and any(k.startswith('root.') for k in items.keys()):
-                    items['lxd.tar.xz']['combined_sha256'] = "0" * 64  # 占位符
+                finally:
+                    # 清理临时文件
+                    for temp_file in temp_files:
+                        try:
+                            os.unlink(temp_file)
+                        except:
+                            pass
                 
                 # 保存items.json
                 with open(os.path.join(image_dir, '.items.json'), 'w') as f:
