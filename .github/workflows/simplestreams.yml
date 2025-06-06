@@ -49,7 +49,6 @@ jobs:
 
       - name: 处理并上传解压文件
         env:
-          RELEASES_DATA: ${{ steps.get_releases.outputs.data }}
           PROCESSED_RELEASE_ID: ${{ steps.get_processed_release.outputs.release_id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -58,141 +57,114 @@ jobs:
           cd work
 
           # 创建临时文件存储已处理的资产信息
-          touch /tmp/processed_assets.json
-          echo "[]" > /tmp/processed_assets.json
+          echo "[]" > processed_assets.json
 
-          echo "$RELEASES_DATA" | jq -c '.[]' | while read -r release; do
-            tag_name=$(echo "$release" | jq -r '.tag_name')
-            # 跳过 processed Release 自己，避免递归
-            if [ "$tag_name" = "processed" ]; then
+          # 从文件读取 releases 数据而不是环境变量
+          # 过滤掉 processed release 并提取需要处理的 assets
+          cat ../releases.json | jq -r '
+            .[] | 
+            select(.tag_name != "processed") | 
+            .assets[] | 
+            select(.name | test("^[a-z0-9]+_[0-9a-z.-]+_[a-z0-9]+_[a-z0-9]+_[a-z]+\\.zip$")) |
+            @base64
+          ' > assets_to_process.txt
+
+          # 处理每个符合条件的 asset
+          while IFS= read -r encoded_asset; do
+            if [ -z "$encoded_asset" ]; then
               continue
             fi
-
-            echo "Processing release: $tag_name"
-            assets=$(echo "$release" | jq -c '.assets[]')
             
-            if [ -z "$assets" ]; then
-              echo "No assets found in release $tag_name"
-              continue
-            fi
+            asset=$(echo "$encoded_asset" | base64 -d)
+            name=$(echo "$asset" | jq -r '.name')
+            url=$(echo "$asset" | jq -r '.browser_download_url')
 
-            echo "$assets" | while read -r asset; do
-              name=$(echo "$asset" | jq -r '.name')
-              url=$(echo "$asset" | jq -r '.browser_download_url')
+            echo "Processing $name"
 
-              # 只处理 zip 文件，且符合命名格式
-              if [[ "$name" =~ ^([a-z0-9]+)_([0-9a-z\.\-]+)_([a-z0-9]+)_([a-z0-9]+)_([a-z]+)\.zip$ ]]; then
-                os="${BASH_REMATCH[1]}"
-                version="${BASH_REMATCH[2]}"
-                codename="${BASH_REMATCH[3]}"
-                arch="${BASH_REMATCH[4]}"
-                variant="${BASH_REMATCH[5]}"
+            # 解析文件名
+            if [[ "$name" =~ ^([a-z0-9]+)_([0-9a-z\.\-]+)_([a-z0-9]+)_([a-z0-9]+)_([a-z]+)\.zip$ ]]; then
+              os="${BASH_REMATCH[1]}"
+              version="${BASH_REMATCH[2]}"
+              codename="${BASH_REMATCH[3]}"
+              arch="${BASH_REMATCH[4]}"
+              variant="${BASH_REMATCH[5]}"
 
-                echo "Processing $name from release $tag_name"
+              # 创建唯一的临时工作目录
+              temp_dir="temp_${os}_${version}_${arch}_${variant}_$"
+              mkdir -p "$temp_dir"
+              cd "$temp_dir"
 
-                # 创建临时工作目录
-                temp_dir=$(mktemp -d)
-                cd "$temp_dir"
+              # 下载并解压
+              echo "Downloading $name..."
+              if curl -L -o image.zip "$url" && unzip -q image.zip; then
+                if [ -f rootfs.squashfs ] && [ -f lxd.tar.xz ]; then
+                  # 重命名文件
+                  rootfs_file="${os}-${version}-${arch}-${variant}-rootfs.squashfs"
+                  lxd_file="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
 
-                # 下载 zip
-                if ! curl -L -o image.zip "$url"; then
-                  echo "Failed to download $url"
-                  cd ../
-                  rm -rf "$temp_dir"
-                  continue
-                fi
+                  mv rootfs.squashfs "$rootfs_file"
+                  mv lxd.tar.xz "$lxd_file"
 
-                # 解压
-                if ! unzip -o image.zip; then
-                  echo "Failed to extract $name"
-                  cd ../
-                  rm -rf "$temp_dir"
-                  continue
-                fi
+                  # 上传文件
+                  echo "Uploading $rootfs_file..."
+                  rootfs_response=$(curl -s -X POST \
+                    -H "Authorization: token $GITHUB_TOKEN" \
+                    -H "Content-Type: application/octet-stream" \
+                    --data-binary @"$rootfs_file" \
+                    "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$rootfs_file")
 
-                # 检查必须文件是否存在
-                if [ ! -f rootfs.squashfs ] || [ ! -f lxd.tar.xz ]; then
-                  echo "Missing required files rootfs.squashfs or lxd.tar.xz in $name"
-                  cd ../
-                  rm -rf "$temp_dir"
-                  continue
-                fi
+                  echo "Uploading $lxd_file..."
+                  lxd_response=$(curl -s -X POST \
+                    -H "Authorization: token $GITHUB_TOKEN" \
+                    -H "Content-Type: application/octet-stream" \
+                    --data-binary @"$lxd_file" \
+                    "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$lxd_file")
 
-                # 重命名文件
-                rootfs_file="${os}-${version}-${arch}-${variant}-rootfs.squashfs"
-                lxd_file="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
+                  # 检查上传是否成功
+                  rootfs_url=$(echo "$rootfs_response" | jq -r '.browser_download_url // empty')
+                  lxd_url=$(echo "$lxd_response" | jq -r '.browser_download_url // empty')
 
-                mv rootfs.squashfs "$rootfs_file"
-                mv lxd.tar.xz "$lxd_file"
-
-                # 上传 rootfs 文件
-                echo "Uploading $rootfs_file ..."
-                rootfs_upload_response=$(curl -s -X POST \
-                  -H "Authorization: token $GITHUB_TOKEN" \
-                  -H "Content-Type: application/octet-stream" \
-                  --data-binary @"$rootfs_file" \
-                  "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$rootfs_file")
-
-                if echo "$rootfs_upload_response" | jq -e '.browser_download_url' > /dev/null; then
-                  rootfs_url=$(echo "$rootfs_upload_response" | jq -r '.browser_download_url')
-                  echo "Successfully uploaded $rootfs_file"
+                  if [ -n "$rootfs_url" ] && [ -n "$lxd_url" ]; then
+                    echo "Successfully uploaded both files for $name"
+                    
+                    # 记录成功处理的资产
+                    jq --arg os "$os" \
+                       --arg version "$version" \
+                       --arg arch "$arch" \
+                       --arg variant "$variant" \
+                       --arg rootfs_url "$rootfs_url" \
+                       --arg lxd_url "$lxd_url" \
+                       '. += [{
+                         os: $os,
+                         version: $version,
+                         arch: $arch,
+                         variant: $variant,
+                         rootfs_url: $rootfs_url,
+                         lxd_url: $lxd_url,
+                         product_id: "\($os)-\($version)-\($arch)-\($variant)"
+                       }]' ../processed_assets.json > ../processed_assets_temp.json
+                    
+                    mv ../processed_assets_temp.json ../processed_assets.json
+                  else
+                    echo "Failed to upload files for $name"
+                    echo "Rootfs response: $rootfs_response"
+                    echo "LXD response: $lxd_response"
+                  fi
                 else
-                  echo "Failed to upload $rootfs_file"
-                  echo "$rootfs_upload_response"
-                  cd ../
-                  rm -rf "$temp_dir"
-                  continue
+                  echo "Missing required files in $name"
                 fi
-
-                # 上传 lxd 文件
-                echo "Uploading $lxd_file ..."
-                lxd_upload_response=$(curl -s -X POST \
-                  -H "Authorization: token $GITHUB_TOKEN" \
-                  -H "Content-Type: application/octet-stream" \
-                  --data-binary @"$lxd_file" \
-                  "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$lxd_file")
-
-                if echo "$lxd_upload_response" | jq -e '.browser_download_url' > /dev/null; then
-                  lxd_url=$(echo "$lxd_upload_response" | jq -r '.browser_download_url')
-                  echo "Successfully uploaded $lxd_file"
-                else
-                  echo "Failed to upload $lxd_file"
-                  echo "$lxd_upload_response"
-                  cd ../
-                  rm -rf "$temp_dir"
-                  continue
-                fi
-
-                # 记录处理的资产信息
-                asset_info=$(jq -n \
-                  --arg os "$os" \
-                  --arg version "$version" \
-                  --arg arch "$arch" \
-                  --arg variant "$variant" \
-                  --arg rootfs_url "$rootfs_url" \
-                  --arg lxd_url "$lxd_url" \
-                  '{
-                    os: $os,
-                    version: $version,
-                    arch: $arch,
-                    variant: $variant,
-                    rootfs_url: $rootfs_url,
-                    lxd_url: $lxd_url,
-                    product_id: "\($os)-\($version)-\($arch)-\($variant)"
-                  }')
-
-                # 添加到已处理资产列表
-                jq --argjson new_asset "$asset_info" '. += [$new_asset]' /tmp/processed_assets.json > /tmp/processed_assets_temp.json
-                mv /tmp/processed_assets_temp.json /tmp/processed_assets.json
-
-                # 清理临时目录
-                cd ../
-                rm -rf "$temp_dir"
               else
-                echo "Skipping $name - doesn't match expected format"
+                echo "Failed to download or extract $name"
               fi
-            done
-          done
+
+              # 清理临时目录
+              cd ..
+              rm -rf "$temp_dir"
+            fi
+          done < assets_to_process.txt
+
+          # 将结果文件移动到根目录
+          mv processed_assets.json /tmp/processed_assets.json
 
       - name: 生成 Simplestreams JSON
         run: |
