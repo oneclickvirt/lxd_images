@@ -1,259 +1,201 @@
 name: Build and Deploy SimpleStreams Index to Netlify
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-          
+
       - name: Install dependencies
         run: |
           pip install requests jinja2 pyyaml
-          
-      - name: Generate SimpleStreams
+
+      - name: Generate SimpleStreams JSON
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 << 'EOF'
+          import os, json, hashlib
           import requests
-          import json
-          import hashlib
-          import os
           from datetime import datetime, timezone
-          
-          GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', '')
+
+          # Configuration
           REPO = 'oneclickvirt/lxd_images'
           TAG = 'processed'
           BASE_URL = f'https://github.com/{REPO}/releases/download/{TAG}'
-          
           headers = {}
-          if GITHUB_TOKEN:
-              headers['Authorization'] = f'token {GITHUB_TOKEN}'
-              
-          response = requests.get(f'https://api.github.com/repos/{REPO}/releases/tags/{TAG}', headers=headers)
-          if response.status_code != 200:
-              print(f"Error: {response.status_code}")
-              exit(1)
-              
-          release_data = response.json()
-          assets = release_data.get('assets', [])
-          
-          def parse_filename(filename):
-              if filename.endswith('-lxd.tar.xz'):
-                  base_name = filename.replace('-lxd.tar.xz', '')
-              elif filename.endswith('-rootfs.squashfs'):
-                  base_name = filename.replace('-rootfs.squashfs', '')
-              else:
-                  return None, None, None, None
-              
-              parts = base_name.split('-')
-              if len(parts) >= 4:
-                  return parts[0], parts[1], parts[2], parts[3]
-              return None, None, None, None
-          
-          def get_placeholder_sha256():
+          token = os.getenv('GITHUB_TOKEN')
+          if token:
+              headers['Authorization'] = f'token {token}'
+
+          # Fetch release assets
+          resp = requests.get(f'https://api.github.com/repos/{REPO}/releases/tags/{TAG}', headers=headers)
+          resp.raise_for_status()
+          assets = resp.json().get('assets', [])
+
+          # Helpers
+          def parse_name(name):
+              # expect distro-version-arch-variant-lxd.tar.xz
+              parts = name.rsplit('-', 4)
+              if len(parts) == 5 and parts[-1] == 'lxd.tar.xz':
+                  distro, version, arch, variant, _ = parts
+                  return distro, version, arch, variant
+              return (None,)*4
+
+          def sha256_placeholder():
               return hashlib.sha256(b'placeholder').hexdigest()
-          
+
+          # Collect assets
+          lxd_assets = [a for a in assets if a['name'].endswith('lxd.tar.xz')]
+          rootfs_assets = {a['name'].replace('-rootfs.squashfs',''): a for a in assets if a['name'].endswith('rootfs.squashfs')}
+
+          # Build products
+          now = datetime.now(timezone.utc)
+          ts = now.strftime('%a, %d %b %Y %H:%M:%S +0000')
+          version_id = now.strftime('%Y%m%d')
           products = {}
-          redirects_rules = []
-          
-          lxd_files = [asset for asset in assets if asset['name'].endswith('-lxd.tar.xz')]
-          rootfs_files = [asset for asset in assets if asset['name'].endswith('-rootfs.squashfs')]
-          
-          current_time = datetime.now(timezone.utc)
-          version_id = current_time.strftime('%Y%m%d')
-          
-          print(f"Processing {len(lxd_files)} LXD files")
-          
-          for lxd_asset in lxd_files:
-              distro, version, arch, variant = parse_filename(lxd_asset['name'])
-              if not all([distro, version, arch, variant]):
+          redirects = []
+
+          for l in lxd_assets:
+              distro, release, arch, variant = parse_name(l['name'])
+              if not distro:
                   continue
-                  
-              rootfs_name = lxd_asset['name'].replace('-lxd.tar.xz', '-rootfs.squashfs')
-              rootfs_asset = next((a for a in rootfs_files if a['name'] == rootfs_name), None)
-              
-              if not rootfs_asset:
+              key = f"{distro}:{release}:{arch}" + (f":{variant}" if variant != 'default' else '')
+              # find matching rootfs
+              root_key = l['name'].replace('-lxd.tar.xz','')
+              rf = rootfs_assets.get(root_key)
+              if not rf:
                   continue
-              
-              # 重定向规则
-              redirects_rules.append(f'/download/{lxd_asset["name"]} {BASE_URL}/{lxd_asset["name"]} 302')
-              redirects_rules.append(f'/download/{rootfs_asset["name"]} {BASE_URL}/{rootfs_asset["name"]} 302')
-              
-              # 修复：使用标准的产品命名格式
-              if variant == 'default':
-                  product_name = f'{distro}:{version}:{arch}'
-              else:
-                  product_name = f'{distro}:{version}:{arch}:{variant}'
-              
-              if product_name not in products:
-                  # 修复：简化别名结构，确保兼容性
-                  aliases = []
-                  
-                  # 基础别名
-                  if arch == 'amd64':
-                      aliases.extend([
-                          f'{distro}/{version}',
-                          f'{distro}/{version}/default' if variant == 'default' else f'{distro}/{version}/{variant}'
-                      ])
-                  else:
-                      aliases.extend([
-                          f'{distro}/{version}/{arch}',
-                          f'{distro}/{version}/{arch}/default' if variant == 'default' else f'{distro}/{version}/{arch}/{variant}'
-                      ])
-                  
-                  # 去重
-                  aliases = list(set(aliases))
-                  
-                  products[product_name] = {
-                      'aliases': ','.join(aliases),
-                      'arch': arch,
-                      'os': distro,
-                      'release': version,
-                      'versions': {}
+
+              # redirects
+              redirects.append(f"/download/{l['name']} {BASE_URL}/{l['name']} 302")
+              redirects.append(f"/download/{rf['name']} {BASE_URL}/{rf['name']} 302")
+
+              # aliases array
+              a = []
+              # base alias distro/release
+              a.append(f"{distro}/{release}")
+              # arch
+              a.append(f"{distro}/{release}/{arch}")
+              # variant if not default
+              if variant and variant != 'default':
+                  a.append(f"{distro}/{release}/{variant}")
+                  a.append(f"{distro}/{release}/{arch}/{variant}")
+              # dedupe
+              aliases = sorted(set(a))
+
+              # init product
+              if key not in products:
+                  products[key] = {
+                      "aliases": aliases,
+                      "os": distro,
+                      "arch": arch,
+                      "release": release,
+                      "versions": {}
                   }
-                  
-                  if variant != 'default':
-                      products[product_name]['variant'] = variant
-              
-              # 修复：使用正确的文件类型映射
+                  if variant and variant != 'default':
+                      products[key]["variant"] = variant
+
+              # items
               items = {
-                  'lxd.tar.xz': {
-                      'ftype': 'lxd.tar.xz',
-                      'size': lxd_asset.get('size', 0),
-                      'path': f'download/{lxd_asset["name"]}',
-                      'sha256': get_placeholder_sha256()
+                  "lxd.tar.xz": {
+                      "path": f"download/{l['name']}",
+                      "size": l.get('size', 0),
+                      "sha256": sha256_placeholder()
+                  },
+                  "rootfs.squashfs": {
+                      "path": f"download/{rf['name']}",
+                      "size": rf.get('size', 0),
+                      "sha256": sha256_placeholder()
                   }
               }
-              
-              # 修复：保持原始文件类型
-              if rootfs_asset['name'].endswith('.squashfs'):
-                  items['squashfs'] = {
-                      'ftype': 'squashfs',
-                      'size': rootfs_asset.get('size', 0),
-                      'path': f'download/{rootfs_asset["name"]}',
-                      'sha256': get_placeholder_sha256()
-                  }
-              
-              version_data = {
-                  'items': items
+
+              products[key]["versions"][version_id] = {"items": items}
+
+          # build JSON structures
+          index_json = {
+            "format": "index:1.0",
+            "updated": ts,
+            "index": {
+              "images": {
+                "datatype": "image-downloads",
+                "format": "products:1.0",
+                "path": "streams/v1/images.json",
+                "updated": ts
               }
-              
-              products[product_name]['versions'][version_id] = version_data
-              
-              print(f"Added: {product_name} with aliases: {','.join(aliases)}")
-          
-          current_time_str = current_time.strftime('%a, %d %b %Y %H:%M:%S +0000')
-          
-          # 标准 SimpleStreams 索引结构
-          index_data = {
-              'format': 'index:1.0',
-              'index': {
-                  'images': {
-                      'datatype': 'image-downloads',
-                      'path': 'streams/v1/images.json',
-                      'updated': current_time_str,
-                      'format': 'products:1.0'
-                  }
-              },
-              'updated': current_time_str
+            }
           }
-          
-          # 标准 SimpleStreams 图像数据结构
-          images_data = {
-              'content_id': 'images',
-              'datatype': 'image-downloads', 
-              'format': 'products:1.0',
-              'products': products,
-              'updated': current_time_str
+          images_json = {
+            "content_id": "images",
+            "datatype": "image-downloads",
+            "format": "products:1.0",
+            "license": "http://www.canonical.com/intellectual-property-policy",
+            "updated": ts,
+            "products": products
           }
-          
+
+          # write files
           os.makedirs('build/streams/v1', exist_ok=True)
-          
-          with open('build/streams/v1/index.json', 'w') as f:
-              json.dump(index_data, f, indent=2, sort_keys=True)
-              
-          with open('build/streams/v1/images.json', 'w') as f:
-              json.dump(images_data, f, indent=2, sort_keys=True)
-          
-          # _redirects文件
-          with open('build/_redirects', 'w') as f:
-              for rule in redirects_rules:
-                  f.write(rule + '\n')
-              f.write('/* /index.html 200\n')
-          
-          print(f"Generated {len(products)} products")
-          
-          # 调试输出
-          print("\n=== Debug Info ===")
-          for product_name, product in list(products.items())[:3]:
-              print(f"Product: {product_name}")
-              print(f"  Aliases: {product['aliases']}")
-              print(f"  Versions: {list(product['versions'].keys())}")
-              if product['versions']:
-                  version_key = list(product['versions'].keys())[0]
-                  print(f"  Items: {list(product['versions'][version_key]['items'].keys())}")
-          
+          with open('build/streams/v1/index.json','w') as f:
+              json.dump(index_json, f, indent=2)
+          with open('build/streams/v1/images.json','w') as f:
+              json.dump(images_json, f, indent=2)
+          with open('build/_redirects','w') as f:
+              for r in redirects:
+                  f.write(r + "\n")
+              f.write("/* /index.html 200\n")
+
+          print("Generated", len(products), "products")
           EOF
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Create HTML
+
+      - name: Create HTML landing page
         run: |
           cat > build/index.html << 'EOF'
           <!DOCTYPE html>
           <html>
           <head>
-              <title>LXD Images Repository</title>
-              <style>
-                  body { font-family: Arial, sans-serif; padding: 20px; }
-                  pre { background: #f0f0f0; padding: 15px; border-radius: 5px; }
-                  .command { color: #0066cc; }
-              </style>
+            <meta charset="utf-8">
+            <title>LXD Images – SimpleStreams</title>
           </head>
           <body>
-              <h1>LXD Images Repository</h1>
-              <p>SimpleStreams compatible image repository</p>
-              
-              <h2>Setup</h2>
-              <pre class="command">lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public</pre>
-              
-              <h2>Usage Examples</h2>
-              <pre class="command">
-          # List available images
+            <h1>LXD SimpleStreams Mirror</h1>
+            <p>使用以下命令添加镜像源：</p>
+            <pre>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public</pre>
+            <h2>示例</h2>
+            <pre>
+          # 列出镜像
           lxc image list spiritlhl:
-          
-          # Launch containers
+
+          # 启动容器
           lxc launch spiritlhl:debian/11 my-debian
-          lxc launch spiritlhl:ubuntu/22.04 my-ubuntu
-              </pre>
-              
-              <h2>API Endpoints</h2>
-              <ul>
-                  <li><a href="streams/v1/index.json">SimpleStreams Index</a></li>
-                  <li><a href="streams/v1/images.json">Images Metadata</a></li>
-              </ul>
+            </pre>
+            <ul>
+              <li><a href="streams/v1/index.json">streams/v1/index.json</a></li>
+              <li><a href="streams/v1/images.json">streams/v1/images.json</a></li>
+            </ul>
           </body>
           </html>
           EOF
-          
-      - name: Create netlify.toml
+
+      - name: Create Netlify config
         run: |
           cat > build/netlify.toml << 'EOF'
           [build]
             publish = "."
-          
+
           [[headers]]
             for = "/streams/v1/*"
             [headers.values]
@@ -261,14 +203,9 @@ jobs:
               Cache-Control = "public, max-age=300"
               Access-Control-Allow-Origin = "*"
               Access-Control-Allow-Methods = "GET, HEAD, OPTIONS"
-          
-          [[headers]]
-            for = "/download/*"
-            [headers.values]
-              Cache-Control = "public, max-age=86400"
           EOF
 
-      - name: Deploy to Netlify  
+      - name: Deploy to Netlify
         uses: nwtgck/actions-netlify@v3.0
         with:
           publish-dir: './build'
