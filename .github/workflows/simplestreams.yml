@@ -257,7 +257,6 @@ jobs:
               product_name="${product_name}:${variant}"
             fi
             product_key="${content_id_prefix}:${product_name}"
-            # Create items JSON
             rootfs_item=$(jq -n --arg ftype "squashfs" --arg path "$name" --arg sha "$rootfs_sha" --arg size_str "$size" '{ftype:$ftype, path:$path, sha256:$sha, size: ($size_str|tonumber)}')
             lxd_item=$(jq -n --arg ftype "lxd.tar.xz" --arg path "$lxd_name" --arg sha "$lxd_sha" --arg size_str "$lxd_size" '{ftype:$ftype, path:$path, sha256:$sha, size: ($size_str|tonumber)}')
             rootfs_item=$(echo "$rootfs_item" | jq --arg mirror "https://github.com/$REPO/releases/download/processed" '. + {mirrors: [$mirror]}')
@@ -285,7 +284,7 @@ jobs:
               --argjson lItem "$(echo "$lxd_item" | jq -c '.')" \
               '.versions += {($serial): {items: {"root.squashfs": $rItem, "lxd.tar.xz": $lItem}}}'
             )
-            echo "$(jq -n --arg key "$product_key" --argjson val "$product_obj" '{($key): $val}')" >> product_objs.jsonl
+            echo "$(jq -n --arg key "$product_key" --argjson val "$(echo "$product_obj" | jq -c '.')" '{($key): $val}')" >> product_objs.jsonl
           done < rootfs_list.json
           jq -s 'reduce .[] as $item ({}; . * $item)' product_objs.jsonl > products_obj.json
           now=$(LC_ALL=C date -u +"%a, %d %b %Y %H:%M:%S +0000")
