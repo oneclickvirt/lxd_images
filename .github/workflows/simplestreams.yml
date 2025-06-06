@@ -116,25 +116,44 @@ jobs:
               redirects_rules.append(f'/download/{lxd_asset["name"]} {BASE_URL}/{lxd_asset["name"]} 302')
               redirects_rules.append(f'/download/{rootfs_asset["name"]} {BASE_URL}/{rootfs_asset["name"]} 302')
               
-              product_name = f'{distro}:{version}:{arch}'
+              # 使用下划线而不是冒号作为产品名称
+              product_name = f'{distro}_{version}_{arch}'
               
-              # 修复别名配置 - 这里是关键问题
+              # 修复别名配置 - 使用正确的格式
               aliases_list = []
-              # 添加完整的产品名称作为别名
-              aliases_list.append(product_name)
+              
+              # 添加基本别名 - 使用斜杠分隔符
+              aliases_list.append({
+                  'name': f'{distro}/{version}',
+                  'description': f'{distro.title()} {version}'
+              })
+              
+              # 添加架构特定别名
+              aliases_list.append({
+                  'name': f'{distro}/{version}/{arch}',
+                  'description': f'{distro.title()} {version} {arch}'
+              })
               
               # 如果版本是 current，也添加不带版本的别名
               if version == 'current':
-                  short_alias = f'{distro}:{arch}'
-                  aliases_list.append(short_alias)
+                  aliases_list.append({
+                      'name': f'{distro}',
+                      'description': f'{distro.title()} current'
+                  })
+                  aliases_list.append({
+                      'name': f'{distro}/{arch}',
+                      'description': f'{distro.title()} {arch}'
+                  })
               
-              # 添加带版本的完整别名
-              if version != 'current':
-                  aliases_list.append(f'{distro}:{version}:{arch}')
+              # 添加冒号分隔的别名（向后兼容）
+              aliases_list.append({
+                  'name': f'{distro}:{version}:{arch}',
+                  'description': f'{distro.title()} {version} {arch} (legacy format)'
+              })
               
               if product_name not in products:
                   products[product_name] = {
-                      'aliases': ','.join(aliases_list),  # 修复：用逗号分隔的字符串
+                      'aliases': aliases_list,  # 修复：使用对象数组格式
                       'arch': arch,
                       'os': distro,
                       'release': version,
@@ -150,7 +169,7 @@ jobs:
                   }
               }
               
-              print(f"Processed {product_name} with aliases: {aliases_list}")
+              print(f"Processed {product_name} with {len(aliases_list)} aliases")
           
           update_time = current_time.strftime('%a, %d %b %Y %H:%M:%S') + ' +0000'
           
@@ -208,7 +227,9 @@ jobs:
           print("\n=== 生成的产品列表 ===")
           for product_name, product_info in products.items():
               print(f"产品: {product_name}")
-              print(f"  别名: {product_info['aliases']}")
+              print(f"  别名数量: {len(product_info['aliases'])}")
+              for alias in product_info['aliases']:
+                  print(f"    - {alias['name']}: {alias['description']}")
               print(f"  架构: {product_info['arch']}")
               print(f"  系统: {product_info['os']}")
               print(f"  版本: {product_info['release']}")
@@ -279,6 +300,11 @@ jobs:
                       margin-top: 5px;
                       border-radius: 3px;
                   }
+                  .aliases {
+                      color: #666;
+                      font-size: 0.9em;
+                      margin-top: 3px;
+                  }
               </style>
           </head>
           <body>
@@ -289,8 +315,10 @@ jobs:
                   <h2>Usage</h2>
                   <p>Add this image server to LXD:</p>
                   <pre>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public</pre>
-                  <p>Launch a container:</p>
-                  <pre>lxc launch spiritlhl:ubuntu:22.04:amd64 my-container</pre>
+                  <p>Launch a container using any of these formats:</p>
+                  <pre>lxc launch spiritlhl:debian/11 my-container
+          lxc launch spiritlhl:debian/11/amd64 my-container
+          lxc launch spiritlhl:debian:11:amd64 my-container</pre>
               </div>
               
               <div class="images">
@@ -298,13 +326,23 @@ jobs:
           """
           
           for product_name, product_info in sorted(images_data['products'].items()):
-              distro, version, arch = product_name.split(':')
-              html_content += f"""
-                  <div class="image-item">
-                      <div class="image-name">{distro} {version} ({arch})</div>
-                      <div class="image-cmd">lxc launch spiritlhl:{distro}:{version}:{arch} my-container</div>
-                  </div>
-              """
+              parts = product_name.split('_')
+              if len(parts) >= 3:
+                  distro, version, arch = parts[0], parts[1], parts[2]
+                  html_content += f"""
+                      <div class="image-item">
+                          <div class="image-name">{distro} {version} ({arch})</div>
+                          <div class="image-cmd">lxc launch spiritlhl:{distro}/{version}/{arch} my-container</div>
+                          <div class="aliases">Available aliases: """
+                  
+                  alias_names = [alias['name'] for alias in product_info.get('aliases', [])]
+                  html_content += ', '.join(alias_names[:3])  # 只显示前3个别名
+                  if len(alias_names) > 3:
+                      html_content += f' (+{len(alias_names)-3} more)'
+                  
+                  html_content += """</div>
+                      </div>
+                  """
           
           html_content += """
               </div>
