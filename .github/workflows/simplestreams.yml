@@ -64,7 +64,6 @@ jobs:
                   return parts[0], parts[1], parts[2], parts[3]
               return None, None, None, None
           
-          # 使用占位符SHA256 - 这是关键修复
           def get_placeholder_sha256():
               return hashlib.sha256(b'placeholder').hexdigest()
           
@@ -97,18 +96,21 @@ jobs:
               product_name = f'{distro}:{version}:{arch}:{variant}'
               
               if product_name not in products:
-                  # 关键修复：正确的别名格式
-                  aliases = [
+                  # 关键修复：aliases必须是逗号分隔的字符串！
+                  aliases_list = [
                       f'{distro}/{version}',
                       f'{distro}/{version}/{arch}',
                       f'{distro}:{version}:{arch}'
                   ]
                   
                   if variant != 'default':
-                      aliases.append(f'{distro}/{version}/{arch}/{variant}')
+                      aliases_list.append(f'{distro}/{version}/{arch}/{variant}')
+                  
+                  # 转换为逗号分隔的字符串
+                  aliases_string = ','.join(aliases_list)
                   
                   products[product_name] = {
-                      'aliases': aliases,  # 直接使用字符串数组，不是对象数组
+                      'aliases': aliases_string,  # 必须是字符串！
                       'arch': arch,
                       'os': distro,
                       'release': version,
@@ -122,18 +124,18 @@ jobs:
                           'ftype': 'lxd.tar.xz',
                           'size': lxd_asset.get('size', 0),
                           'path': f'download/{lxd_asset["name"]}',
-                          'sha256': get_placeholder_sha256()  # 使用占位符
+                          'sha256': get_placeholder_sha256()
                       },
                       'rootfs.squashfs': {
                           'ftype': 'squashfs',
                           'size': rootfs_asset.get('size', 0),
                           'path': f'download/{rootfs_asset["name"]}',
-                          'sha256': get_placeholder_sha256()  # 使用占位符
+                          'sha256': get_placeholder_sha256()
                       }
                   }
               }
               
-              print(f"Added: {product_name}")
+              print(f"Added: {product_name} with aliases: {aliases_string}")
           
           current_time_str = current_time.strftime('%a, %d %b %Y %H:%M:%S +0000')
           
@@ -176,11 +178,18 @@ jobs:
           
           print(f"Generated {len(products)} products with {len(redirects_rules)} redirects")
           
-          # 验证别名
-          print("\n=== 验证别名 ===")
-          for product_name, product in products.items():
-              if product['os'] == 'debian' and product['release'] == '11':
-                  print(f"Debian 11 aliases: {product['aliases']}")
+          # 验证JSON格式
+          print("\n=== 验证生成的JSON ===")
+          with open('build/streams/v1/images.json', 'r') as f:
+              test_data = json.load(f)
+              
+          # 检查debian镜像的别名格式
+          for product_name, product in test_data['products'].items():
+              if 'debian:11:' in product_name:
+                  print(f"Debian 11 product: {product_name}")
+                  print(f"Aliases type: {type(product['aliases'])}")
+                  print(f"Aliases value: {product['aliases']}")
+                  break
           
           EOF
         env:
