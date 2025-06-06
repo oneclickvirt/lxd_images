@@ -121,7 +121,7 @@ jobs:
                 
                 assets = []
                 for asset in release_data.get('assets', []):
-                    download_url = asset['browser_download_url']
+                    download_url = asset['download_url']
                     filename = asset['name']
                     size = asset['size']
                     
@@ -162,7 +162,7 @@ jobs:
                 # 确保asset包含正确的字段名
                 asset_info = {
                     'name': asset['name'],
-                    'download_url': asset['browser_download_url'],
+                    'download_url': asset['download_url'],
                     'size': asset['size']
                 }
                 images[image_key]['files'][file_key] = asset_info
