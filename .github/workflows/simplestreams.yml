@@ -204,7 +204,20 @@ jobs:
                 
                 # 查找对应的lxd文件
                 lxd_name="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
-                lxd_url=$(echo "$processed_assets" | jq -r --arg name "$lxd_name" 'select(.name == $name) | .browser_download_url // empty')
+                lxd_url=""
+                
+                # 在所有processed_assets中查找匹配的lxd文件
+                while IFS= read -r lxd_asset; do
+                  if [ -z "$lxd_asset" ] || [ "$lxd_asset" = "null" ]; then
+                    continue
+                  fi
+                  
+                  lxd_asset_name=$(echo "$lxd_asset" | jq -r '.name // empty')
+                  if [ "$lxd_asset_name" = "$lxd_name" ]; then
+                    lxd_url=$(echo "$lxd_asset" | jq -r '.browser_download_url // empty')
+                    break
+                  fi
+                done <<< "$processed_assets"
                 
                 if [ -n "$lxd_url" ]; then
                   echo "Found existing asset pair: $name and $lxd_name"
@@ -489,8 +502,6 @@ jobs:
                       
                       container.innerHTML = `<div class="image-grid">${imageCards}</div>`;
                   }
-                  
-                  // 页面加载完成后执行
                   document.addEventListener('DOMContentLoaded', loadImages);
               </script>
           </body>
