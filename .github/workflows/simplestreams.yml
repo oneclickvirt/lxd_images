@@ -1,266 +1,90 @@
-name: Build SimpleStreams
+name: Build Simplestreams and Deploy Pages
 
 on:
-  schedule:
-    - cron: '0 */6 * * *'
   workflow_dispatch:
-  release:
-    types: [published]
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  push:
+    branches:
+      - main
+      - master
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: 检出仓库
         uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Get Release Assets
+      - name: 获取 Releases 文件列表
         id: get_assets
         run: |
-          RELEASE_DATA=$(curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed")
-          echo "$RELEASE_DATA" > release.json
-          
-      - name: Generate SimpleStreams
-        run: |
-          mkdir -p streams/v1
-          TIMESTAMP=$(date -u +"%Y%m%dT%H%M%SZ")
-          UPDATED=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          
-          cat > streams/v1/index.json << 'EOF'
-          {
-            "index": {
-              "images": {
-                "datatype": "image-downloads",
-                "path": "streams/v1/images.json",
-                "updated": "UPDATED_PLACEHOLDER",
-                "products": ["ubuntu:18.04:amd64", "ubuntu:20.04:amd64", "ubuntu:22.04:amd64", "ubuntu:24.04:amd64", "ubuntu:18.04:arm64", "ubuntu:20.04:arm64", "ubuntu:22.04:arm64", "ubuntu:24.04:arm64", "debian:11:amd64", "debian:12:amd64", "debian:13:amd64", "debian:11:arm64", "debian:12:arm64", "debian:13:arm64", "almalinux:8:amd64", "almalinux:9:amd64", "almalinux:8:arm64", "almalinux:9:arm64", "rockylinux:8:amd64", "rockylinux:9:amd64", "rockylinux:8:arm64", "rockylinux:9:arm64", "oracle:8:amd64", "oracle:9:amd64", "oracle:8:arm64", "oracle:9:arm64", "fedora:40:amd64", "fedora:40:arm64", "archlinux:current:amd64", "archlinux:current:arm64", "gentoo:current:amd64", "gentoo:current:arm64"],
-                "format": "products:1.0"
-              }
-            },
-            "updated": "UPDATED_PLACEHOLDER",
-            "format": "index:1.0"
-          }
-          EOF
-          
-          sed -i "s/UPDATED_PLACEHOLDER/$UPDATED/g" streams/v1/index.json
-          
-          cat > generate_images.js << 'EOF'
-          const fs = require('fs');
-          const releaseData = JSON.parse(fs.readFileSync('release.json', 'utf8'));
-          
-          const images = {
-            "content_id": "images",
-            "datatype": "image-downloads",
-            "format": "products:1.0",
-            "products": {},
-            "updated": new Date().toISOString()
-          };
-          
-          const baseUrl = "https://github.com/oneclickvirt/lxd_images/releases/download/processed/";
-          
-          releaseData.assets.forEach(asset => {
-            const name = asset.name;
-            const parts = name.split('-');
-            
-            if (parts.length < 4) return;
-            
-            const os = parts[0];
-            const version = parts[1];
-            const arch = parts[2];
-            const variant = parts[3];
-            const fileType = name.endsWith('.tar.xz') ? 'lxd.tar.xz' : 'rootfs.squashfs';
-            
-            const productKey = `${os}:${version}:${arch}`;
-            
-            if (!images.products[productKey]) {
-              images.products[productKey] = {
-                "aliases": `${os}/${version}/${arch}`,
-                "arch": arch,
-                "os": os,
-                "release": version,
-                "release_title": `${os.charAt(0).toUpperCase() + os.slice(1)} ${version}`,
-                "version": "current",
-                "versions": {
-                  "current": {
-                    "items": {}
-                  }
-                }
-              };
-            }
-            
-            const itemKey = fileType === 'lxd.tar.xz' ? 'lxd.tar.xz' : 'rootfs.squashfs';
-            
-            images.products[productKey].versions.current.items[itemKey] = {
-              "ftype": fileType === 'lxd.tar.xz' ? "lxd.tar.xz" : "squashfs",
-              "path": name,
-              "sha256": "",
-              "size": asset.size || 0
-            };
-          });
-          
-          fs.writeFileSync('streams/v1/images.json', JSON.stringify(images, null, 2));
-          EOF
-          
-          node generate_images.js
+          API_URL="https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
+          curl -sSL $API_URL > release.json
+          jq -r '.assets[] | [.name, .browser_download_url] | @tsv' release.json > assets.tsv
 
-      - name: Create Frontend
+      - name: 安装 jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: 构建 simplestreams 数据
         run: |
-          cat > index.html << 'EOF'
+          mkdir -p gh-pages/streams/v1/images
+          INDEX_JSON="gh-pages/streams/v1/index.json"
+          IMAGES_JSON="gh-pages/streams/v1/images.json"
+          echo '{ "index": [ { "path": "streams/v1/images.json", "products": {} } ] }' > "$INDEX_JSON"
+          echo '{ "images": {}}' > "$IMAGES_JSON"
+          while IFS=$'\t' read -r name url; do
+            ext="${name##*.}"
+            base="${name%.*}"
+            [[ "$ext" == "tar" ]] && continue
+            if [[ "$ext" == "xz" || "$ext" == "gz" || "$ext" == "zst" ]]; then
+              img_name="${base%.*}"
+              format="$ext"
+              img_entry=$(jq -n \
+                --arg name "$img_name" \
+                --arg url "$url" \
+                --arg format "$format" \
+                --arg file "$name" \
+                '{'"\"$img_name\"": {
+                  "aliases": [],
+                  "ftype": $format,
+                  "path": $file,
+                  "download_url": $url,
+                  "sha256": "",
+                  "size": 0,
+                  "uploaded": "",
+                  "auto_update": false
+                }}')
+              jq ".images += $img_entry" "$IMAGES_JSON" > tmp.json && mv tmp.json "$IMAGES_JSON"
+              curl -sSL "$url" -o "gh-pages/streams/v1/images/$name"
+            fi
+          done < assets.tsv
+
+      - name: 生成前端 index.html
+        run: |
+          cat > gh-pages/index.html <<EOF
           <!DOCTYPE html>
-          <html lang="zh-CN">
+          <html lang="zh">
           <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>LXD Images - SimpleStreams Server</title>
-              <style>
-                  * { margin: 0; padding: 0; box-sizing: border-box; }
-                  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; }
-                  .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-                  .header { background: #fff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 30px; text-align: center; }
-                  .header h1 { color: #2d3748; margin-bottom: 10px; }
-                  .header p { color: #718096; font-size: 18px; }
-                  .usage { background: #fff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 30px; }
-                  .usage h2 { color: #2d3748; margin-bottom: 20px; }
-                  .code-block { background: #1a202c; color: #e2e8f0; padding: 20px; border-radius: 8px; font-family: 'Monaco', 'Consolas', monospace; font-size: 14px; overflow-x: auto; margin: 15px 0; }
-                  .images-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
-                  .image-card { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-                  .image-card h3 { color: #2d3748; margin-bottom: 10px; }
-                  .image-card .meta { color: #718096; font-size: 14px; margin-bottom: 15px; }
-                  .download-links { display: flex; gap: 10px; flex-wrap: wrap; }
-                  .download-links a { background: #4299e1; color: white; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-size: 14px; }
-                  .download-links a:hover { background: #3182ce; }
-                  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
-                  .stat-card { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
-                  .stat-number { font-size: 32px; font-weight: bold; color: #4299e1; }
-                  .stat-label { color: #718096; margin-top: 5px; }
-              </style>
+            <meta charset="UTF-8">
+            <title>LXD Simplestreams 镜像源</title>
           </head>
           <body>
-              <div class="container">
-                  <div class="header">
-                      <h1>🐧 LXD Images Repository</h1>
-                      <p>企业级 Linux 容器镜像仓库 - 支持 SimpleStreams 协议</p>
-                  </div>
-                  
-                  <div class="usage">
-                      <h2>📋 使用方法</h2>
-                      <p><strong>添加镜像源:</strong></p>
-                      <div class="code-block">lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol=simplestreams --public</div>
-                      
-                      <p><strong>查看可用镜像:</strong></p>
-                      <div class="code-block">lxc image list spiritlhl:</div>
-                      
-                      <p><strong>启动容器:</strong></p>
-                      <div class="code-block">lxc launch spiritlhl:ubuntu/22.04/amd64 my-container</div>
-                      
-                      <p><strong>SimpleStreams 端点:</strong></p>
-                      <div class="code-block">
-                          索引: https://lxdimages.spiritlhl.net/streams/v1/index.json<br>
-                          镜像: https://lxdimages.spiritlhl.net/streams/v1/images.json
-                      </div>
-                  </div>
-                  
-                  <div class="stats">
-                      <div class="stat-card">
-                          <div class="stat-number" id="total-images">-</div>
-                          <div class="stat-label">总镜像数</div>
-                      </div>
-                      <div class="stat-card">
-                          <div class="stat-number" id="total-os">-</div>
-                          <div class="stat-label">操作系统</div>
-                      </div>
-                      <div class="stat-card">
-                          <div class="stat-number" id="total-arch">2</div>
-                          <div class="stat-label">架构支持</div>
-                      </div>
-                      <div class="stat-card">
-                          <div class="stat-number">24/7</div>
-                          <div class="stat-label">服务可用</div>
-                      </div>
-                  </div>
-                  
-                  <div id="images-container"></div>
-              </div>
-              
-              <script>
-                  async function loadImages() {
-                      try {
-                          const response = await fetch('/streams/v1/images.json');
-                          const data = await response.json();
-                          
-                          const container = document.getElementById('images-container');
-                          const products = data.products;
-                          
-                          document.getElementById('total-images').textContent = Object.keys(products).length;
-                          
-                          const osSet = new Set();
-                          Object.keys(products).forEach(key => {
-                              const parts = key.split(':');
-                              osSet.add(parts[0]);
-                          });
-                          document.getElementById('total-os').textContent = osSet.size;
-                          
-                          const imagesHTML = Object.entries(products).map(([key, product]) => {
-                              const [os, version, arch] = key.split(':');
-                              const items = product.versions.current.items;
-                              
-                              const downloadLinks = Object.entries(items).map(([fileType, item]) => {
-                                  const url = `https://github.com/oneclickvirt/lxd_images/releases/download/processed/${item.path}`;
-                                  const size = item.size ? (item.size / 1024 / 1024).toFixed(1) + ' MB' : '';
-                                  return `<a href="${url}" target="_blank">${fileType} ${size}</a>`;
-                              }).join('');
-                              
-                              return `
-                                  <div class="image-card">
-                                      <h3>${product.release_title}</h3>
-                                      <div class="meta">架构: ${arch} | 版本: ${version} | 别名: ${product.aliases}</div>
-                                      <div class="download-links">${downloadLinks}</div>
-                                  </div>
-                              `;
-                          }).join('');
-                          
-                          container.innerHTML = `<div class="images-grid">${imagesHTML}</div>`;
-                      } catch (error) {
-                          console.error('加载镜像数据失败:', error);
-                      }
-                  }
-                  
-                  loadImages();
-              </script>
-          </body>
-          </html>
+            <h1>LXD 镜像源 - lxdimages.spiritlhl.net</h1>
+            <p>作为 LXD Simplestreams 镜像源，可直接通过 <code>https://lxdimages.spiritlhl.net/streams/v1/</code> 远程添加。</p>
+            <h2>文件列表</h2>
+            <ul>
           EOF
+          while IFS=$'\t' read -r name url; do
+            echo "<li><a href=\"streams/v1/images/$name\">$name</a></li>" >> gh-pages/index.html
+          done < assets.tsv
+          echo "</ul></body></html>" >> gh-pages/index.html
 
-      - name: Create CNAME
+      - name: 配置自定义域名
         run: |
-          echo "lxdimages.spiritlhl.net" > CNAME
+          echo "lxdimages.spiritlhl.net" > gh-pages/CNAME
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: 部署到 GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: '.'
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./gh-pages
+          publish_branch: gh-pages
