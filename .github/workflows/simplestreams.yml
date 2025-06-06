@@ -1,88 +1,44 @@
-name: Update Simplestreams Mirror
-
+name: build-simplestreams
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 0 * * *'
-
+  push:
+    tags:
+      - processed
 jobs:
-  update:
+  build:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout gh-pages
-      uses: actions/checkout@v4
-      with:
-        ref: gh-pages
-        path: gh-pages
-
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
-
-    - name: Download release assets
-      run: |
-        cd gh-pages
-        rm -rf streams
-        pip install requests
-        python -c "
-import requests
-tag = 'processed'
-owner = 'oneclickvirt'
-repo = 'lxd_images'
-release_url = f'https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}'
-release = requests.get(release_url).json()
-for asset in release['assets']:
-    url = asset['browser_download_url']
-    path = asset['name']
-    print(f'Downloading {path}')
-    r = requests.get(url)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, 'wb') as f:
-        f.write(r.content)
-        "
-
-    - name: Generate CNAME
-      run: |
-        cd gh-pages
-        echo 'lxdimages.spiritlhl.net' > CNAME
-
-    - name: Generate index.html
-      run: |
-        cd gh-pages
-        cat > index.html <<EOF
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>LXD Image Repository</title>
-            <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                h1, h2 { color: #333; }
-                pre { background: #f4f4f4; padding: 10px; border-radius: 5px; }
-                a { color: #0366d6; }
-            </style>
-        </head>
-        <body>
-            <h1>LXD Image Repository</h1>
-            <p>Simplestreams service URL: <code>https://lxdimages.spiritlhl.net/streams/v1</code></p>
-            
-            <h2>Usage</h2>
-            <pre>lxc remote add images https://lxdimages.spiritlhl.net --protocol=simplestreams</pre>
-            
-            <h2>Endpoints</h2>
-            <ul>
-                <li><a href="/streams/v1/index.json">index.json</a></li>
-                <li><a href="/streams/v1/images.json">images.json</a></li>
-            </ul>
-        </body>
-        </html>
-        EOF
-
-    - name: Commit changes
-      run: |
-        cd gh-pages
-        git config user.name "GitHub Actions"
-        git config user.email "actions@github.com"
-        git add .
-        git commit -m "Auto-update from release"
-        git push
+      - uses: actions/checkout@v3
+      - name: Download release assets
+        run: |
+          mkdir assets
+          gh release download processed --repo oneclickvirt/lxd_images --dir assets
+      - name: Generate simplestreams
+        run: |
+          mkdir -p public/streams/v1
+          python3 << 'EOF'
+import os,json,time,hashlib
+assets_dir='assets'
+base_url='https://lxdimages.spiritlhl.net'
+images=[]
+for root,dirs,files in os.walk(assets_dir):
+    for f in files:
+        path=os.path.join(root,f)
+        rel_path=os.path.relpath(path,assets_dir).replace('\\','/')
+        url=f"{base_url}/{rel_path}"
+        size=os.path.getsize(path)
+        h=hashlib.sha256(open(path,'rb').read()).hexdigest()
+        images.append({'filename':f,'path':rel_path,'size':size,'hash':h,'url':url})
+images_json={'metadata':{'timestamp':int(time.time())},'images':images}
+with open('public/streams/v1/images.json','w') as ef: json.dump(images_json,ef)
+index_data={'default':{'datatype':'images','path':'streams/v1/images.json','updated':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())}}
+with open('public/streams/v1/index.json','w') as jf: json.dump(index_data,jf)
+EOF
+      - name: Add CNAME
+        run: echo 'lxdimages.spiritlhl.net' > public/CNAME
+      - name: Copy assets
+        run: cp -r assets public/
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: public
