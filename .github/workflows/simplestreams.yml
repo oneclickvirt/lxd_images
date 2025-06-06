@@ -180,20 +180,23 @@ jobs:
             jq -r '.[] | select(.tag_name=="processed") | .assets[]?' 2>/dev/null || echo "")
           
           if [ -n "$processed_assets" ]; then
-            echo "$processed_assets" > existing_assets_raw.json
+            # 先将assets保存为数组到文件
+            echo "$processed_assets" | jq -s '.' > existing_assets_array.json
             
-            # 将每个asset对象分别处理
-            echo "$processed_assets" | jq -c '.' | while IFS= read -r asset; do
-              if [ -z "$asset" ] || [ "$asset" = "null" ]; then
+            # 创建临时文件来收集匹配的资产
+            echo "[]" > temp_existing_assets.json
+            
+            # 处理每个asset来查找rootfs文件
+            jq -r '.[] | select(.name | test("^[a-z0-9]+-[0-9a-z\\.-]+-[a-z0-9]+-[a-z]+-rootfs\\.squashfs$")) | @base64' existing_assets_array.json | while IFS= read -r encoded_asset; do
+              if [ -z "$encoded_asset" ]; then
                 continue
               fi
               
-              name=$(echo "$asset" | jq -r '.name // empty')
-              url=$(echo "$asset" | jq -r '.browser_download_url // empty')
+              asset=$(echo "$encoded_asset" | base64 -d)
+              name=$(echo "$asset" | jq -r '.name')
+              rootfs_url=$(echo "$asset" | jq -r '.browser_download_url')
               
-              if [ -z "$name" ] || [ -z "$url" ]; then
-                continue
-              fi
+              echo "Processing existing asset: $name"
               
               # 匹配rootfs文件模式: os-version-arch-variant-rootfs.squashfs
               if [[ "$name" =~ ^([a-z0-9]+)-([0-9a-z\.\-]+)-([a-z0-9]+)-([a-z]+)-rootfs\.squashfs$ ]]; then
@@ -204,29 +207,16 @@ jobs:
                 
                 # 查找对应的lxd文件
                 lxd_name="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
-                lxd_url=""
+                lxd_url=$(jq -r --arg name "$lxd_name" '.[] | select(.name == $name) | .browser_download_url // empty' existing_assets_array.json)
                 
-                # 在所有processed_assets中查找匹配的lxd文件
-                while IFS= read -r lxd_asset; do
-                  if [ -z "$lxd_asset" ] || [ "$lxd_asset" = "null" ]; then
-                    continue
-                  fi
-                  
-                  lxd_asset_name=$(echo "$lxd_asset" | jq -r '.name // empty')
-                  if [ "$lxd_asset_name" = "$lxd_name" ]; then
-                    lxd_url=$(echo "$lxd_asset" | jq -r '.browser_download_url // empty')
-                    break
-                  fi
-                done <<< "$processed_assets"
-                
-                if [ -n "$lxd_url" ]; then
+                if [ -n "$lxd_url" ] && [ "$lxd_url" != "null" ]; then
                   echo "Found existing asset pair: $name and $lxd_name"
-                  # 添加到资产列表
+                  # 添加到临时资产列表
                   jq --arg os "$os" \
                      --arg version "$version" \
                      --arg arch "$arch" \
                      --arg variant "$variant" \
-                     --arg rootfs_url "$url" \
+                     --arg rootfs_url "$rootfs_url" \
                      --arg lxd_url "$lxd_url" \
                      '. += [{
                        os: $os,
@@ -235,11 +225,15 @@ jobs:
                        variant: $variant,
                        rootfs_url: $rootfs_url,
                        lxd_url: $lxd_url
-                     }]' all_assets.json > all_assets_temp.json
-                  mv all_assets_temp.json all_assets.json
+                     }]' temp_existing_assets.json > temp_existing_assets_new.json
+                  mv temp_existing_assets_new.json temp_existing_assets.json
                 fi
               fi
             done
+            
+            # 将临时文件合并到all_assets.json
+            jq -s '.[0] + .[1]' all_assets.json temp_existing_assets.json > all_assets_temp.json
+            mv all_assets_temp.json all_assets.json
           else
             echo "No existing assets found in processed release"
           fi
@@ -502,6 +496,8 @@ jobs:
                       
                       container.innerHTML = `<div class="image-grid">${imageCards}</div>`;
                   }
+                  
+                  // 页面加载完成后执行
                   document.addEventListener('DOMContentLoaded', loadImages);
               </script>
           </body>
