@@ -1,200 +1,198 @@
-name: Build and Deploy SimpleStreams Index to Netlify
+name: Build & Deploy Simplestreams from GitHub Releases
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
+      # 1. Checkout the repo
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      # 2. Set up Python for fetching Release assets & generating tree.yml + ssb.json files
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      # 3. Install Python dependencies
+      - name: Install Python dependencies
         run: |
-          pip install requests jinja2 pyyaml
+          pip install requests pyyaml
 
-      - name: Generate SimpleStreams JSON
+      # 4. Fetch Release assets, generate per-product ssb.json + tree.yml
+      - name: Generate inputs for simplestreams-builder
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 << 'EOF'
-          import os, json, hashlib
-          import requests
+          import os, requests, json, yaml, hashlib
           from datetime import datetime, timezone
 
-          # Configuration
+          # --- Configuration ---
+          GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
           REPO = 'oneclickvirt/lxd_images'
           TAG = 'processed'
           BASE_URL = f'https://github.com/{REPO}/releases/download/{TAG}'
-          headers = {}
-          token = os.getenv('GITHUB_TOKEN')
-          if token:
-              headers['Authorization'] = f'token {token}'
+          PREFIX = ""
+          IMAGES_PATH = "streams/v1"
+          DATATYPE = "image-downloads"
+          FORMAT = "products:1.0"
 
-          # Fetch release assets
-          resp = requests.get(f'https://api.github.com/repos/{REPO}/releases/tags/{TAG}', headers=headers)
-          resp.raise_for_status()
-          assets = resp.json().get('assets', [])
-
-          # Helpers
-          def parse_name(name):
-              # expect distro-version-arch-variant-lxd.tar.xz
-              parts = name.rsplit('-', 4)
-              if len(parts) == 5 and parts[-1] == 'lxd.tar.xz':
-                  distro, version, arch, variant, _ = parts
-                  return distro, version, arch, variant
-              return (None,)*4
+          # --- Helper functions ---
+          def parse_filename(name):
+              # expected: os-release-arch-variant-lxd.tar.xz / -rootfs.squashfs
+              base = (name[:-11] if name.endswith('-lxd.tar.xz') else
+                      name[:-15] if name.endswith('-rootfs.squashfs') else None)
+              if not base:
+                  return None
+              parts = base.split('-')
+              if len(parts) < 4:
+                  return None
+              return {
+                  'os': parts[0],
+                  'release': parts[1],
+                  'arch': parts[2],
+                  'variant': parts[3],
+                  'name': base
+              }
 
           def sha256_placeholder():
               return hashlib.sha256(b'placeholder').hexdigest()
 
-          # Collect assets
-          lxd_assets = [a for a in assets if a['name'].endswith('lxd.tar.xz')]
-          rootfs_assets = {a['name'].replace('-rootfs.squashfs',''): a for a in assets if a['name'].endswith('rootfs.squashfs')}
+          # --- Fetch release data ---
+          headers = {'Authorization': f'token {GITHUB_TOKEN}'} if GITHUB_TOKEN else {}
+          resp = requests.get(f'https://api.github.com/repos/{REPO}/releases/tags/{TAG}', headers=headers)
+          resp.raise_for_status()
+          assets = resp.json().get('assets', [])
 
-          # Build products
-          now = datetime.now(timezone.utc)
-          ts = now.strftime('%a, %d %b %Y %H:%M:%S +0000')
-          version_id = now.strftime('%Y%m%d')
-          products = {}
-          redirects = []
+          # --- Build product entries and ssb.json files ---
+          products = []
+          timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
 
-          for l in lxd_assets:
-              distro, release, arch, variant = parse_name(l['name'])
-              if not distro:
+          # group LXD & rootfs assets
+          lxd_assets = [a for a in assets if a['name'].endswith('-lxd.tar.xz')]
+          rootfs_assets = {a['name']: a for a in assets if a['name'].endswith('-rootfs.squashfs')}
+
+          for lxd in lxd_assets:
+              info = parse_filename(lxd['name'])
+              if not info:
                   continue
-              key = f"{distro}:{release}:{arch}" + (f":{variant}" if variant != 'default' else '')
-              # find matching rootfs
-              root_key = l['name'].replace('-lxd.tar.xz','')
-              rf = rootfs_assets.get(root_key)
-              if not rf:
+              root_name = lxd['name'].replace('-lxd.tar.xz', '-rootfs.squashfs')
+              root = rootfs_assets.get(root_name)
+              if not root:
                   continue
 
-              # redirects
-              redirects.append(f"/download/{l['name']} {BASE_URL}/{l['name']} 302")
-              redirects.append(f"/download/{rf['name']} {BASE_URL}/{rf['name']} 302")
+              # determine product directory: os/release/arch[/variant]
+              variant = info['variant']
+              parts = [info['os'], info['release'], info['arch']]
+              if variant != 'default':
+                  parts.append(variant)
+              directory = os.path.join(*parts)
 
-              # aliases array
-              a = []
-              # base alias distro/release
-              a.append(f"{distro}/{release}")
-              # arch
-              a.append(f"{distro}/{release}/{arch}")
-              # variant if not default
-              if variant and variant != 'default':
-                  a.append(f"{distro}/{release}/{variant}")
-                  a.append(f"{distro}/{release}/{arch}/{variant}")
-              # dedupe
-              aliases = sorted(set(a))
+              os.makedirs(directory, exist_ok=True)
 
-              # init product
-              if key not in products:
-                  products[key] = {
-                      "aliases": aliases,
-                      "os": distro,
-                      "arch": arch,
-                      "release": release,
-                      "versions": {}
-                  }
-                  if variant and variant != 'default':
-                      products[key]["variant"] = variant
-
-              # items
-              items = {
-                  "lxd.tar.xz": {
-                      "path": f"download/{l['name']}",
-                      "size": l.get('size', 0),
-                      "sha256": sha256_placeholder()
-                  },
-                  "rootfs.squashfs": {
-                      "path": f"download/{rf['name']}",
-                      "size": rf.get('size', 0),
-                      "sha256": sha256_placeholder()
+              # create ssb.json
+              ssb = {
+                  "version": timestamp,
+                  "items": {
+                      "lxd.tar.xz": {
+                          "size": lxd.get('size', 0),
+                          "path": f"download/{lxd['name']}",
+                          "sha256": sha256_placeholder()
+                      },
+                      "rootfs.squashfs": {
+                          "size": root.get('size', 0),
+                          "path": f"download/{root['name']}",
+                          "sha256": sha256_placeholder()
+                      }
                   }
               }
+              with open(f"{directory}/ssb.json", "w") as f:
+                  json.dump(ssb, f, indent=2, sort_keys=True)
 
-              products[key]["versions"][version_id] = {"items": items}
+              # build aliases list
+              aliases = []
+              base_alias = f"{info['os']}/{info['release']}"
+              if info['arch'] != 'amd64':
+                  base_alias += f"/{info['arch']}"
+              aliases.append(base_alias)
+              if variant != 'default':
+                  aliases.append(base_alias + f"/{variant}")
 
-          # build JSON structures
-          index_json = {
-            "format": "index:1.0",
-            "updated": ts,
-            "index": {
-              "images": {
-                "datatype": "image-downloads",
-                "format": "products:1.0",
-                "path": "streams/v1/images.json",
-                "updated": ts
-              }
-            }
+              products.append({
+                  "name": info['name'] + (f"-{variant}" if variant != 'default' else ''),
+                  "os": info['os'],
+                  "arch": info['arch'],
+                  "release": info['release'],
+                  "release_title": f"{info['os'].title()} {info['release']}",
+                  "directory": directory.replace("\\","/"),
+                  "days": 1,
+                  "aliases": aliases
+              })
+
+          # --- Generate tree.yml ---
+          tree = {
+              "prefix": PREFIX,
+              "images_path": IMAGES_PATH,
+              "datatype": DATATYPE,
+              "format": FORMAT,
+              "products": products
           }
-          images_json = {
-            "content_id": "images",
-            "datatype": "image-downloads",
-            "format": "products:1.0",
-            "license": "http://www.canonical.com/intellectual-property-policy",
-            "updated": ts,
-            "products": products
-          }
-
-          # write files
-          os.makedirs('build/streams/v1', exist_ok=True)
-          with open('build/streams/v1/index.json','w') as f:
-              json.dump(index_json, f, indent=2)
-          with open('build/streams/v1/images.json','w') as f:
-              json.dump(images_json, f, indent=2)
-          with open('build/_redirects','w') as f:
-              for r in redirects:
-                  f.write(r + "\n")
-              f.write("/* /index.html 200\n")
-
-          print("Generated", len(products), "products")
+          with open("tree.yml", "w") as f:
+              yaml.safe_dump(tree, f, sort_keys=False)
           EOF
 
-      - name: Create HTML landing page
+      # 5. Install Go & simplestreams-builder
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.20'
+
+      - name: Install simplestreams-builder
         run: |
+          go install github.com/MottainaiCI/simplestreams-builder@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      # 6. Run simplestreams-builder to produce images.json & index.json
+      - name: Build images.json
+        run: |
+          simplestreams-builder build-images-file --config tree.yml
+
+      - name: Build index.json
+        run: |
+          simplestreams-builder build-index --config tree.yml
+
+      # 7. Create a simple HTML landing page
+      - name: Create index.html
+        run: |
+          mkdir -p build
           cat > build/index.html << 'EOF'
           <!DOCTYPE html>
           <html>
-          <head>
-            <meta charset="utf-8">
-            <title>LXD Images – SimpleStreams</title>
-          </head>
+          <head><meta charset="utf-8"><title>LXD SimpleStreams</title></head>
           <body>
-            <h1>LXD SimpleStreams Mirror</h1>
-            <p>使用以下命令添加镜像源：</p>
-            <pre>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public</pre>
-            <h2>示例</h2>
-            <pre>
-          # 列出镜像
-          lxc image list spiritlhl:
-
-          # 启动容器
-          lxc launch spiritlhl:debian/11 my-debian
-            </pre>
+            <h1>GitHub Release–based SimpleStreams</h1>
+            <pre><code>lxc remote add spiritlhl https://${
+              { secrets.NETLIFY_SITE_ID } }/ --protocol simplestreams --public</code></pre>
             <ul>
-              <li><a href="streams/v1/index.json">streams/v1/index.json</a></li>
-              <li><a href="streams/v1/images.json">streams/v1/images.json</a></li>
+              <li><a href="streams/v1/index.json">Index</a></li>
+              <li><a href="streams/v1/images.json">Images</a></li>
             </ul>
           </body>
           </html>
           EOF
 
-      - name: Create Netlify config
+      # 8. Generate Netlify config
+      - name: Create netlify.toml
         run: |
-          cat > build/netlify.toml << 'EOF'
+          cat > netlify.toml << 'EOF'
           [build]
-            publish = "."
+            publish = "build"
 
           [[headers]]
             for = "/streams/v1/*"
@@ -202,9 +200,15 @@ jobs:
               Content-Type = "application/json; charset=utf-8"
               Cache-Control = "public, max-age=300"
               Access-Control-Allow-Origin = "*"
-              Access-Control-Allow-Methods = "GET, HEAD, OPTIONS"
+              Access-Control-Allow-Methods = "GET, HEAD"
+
+          [[headers]]
+            for = "/download/*"
+            [headers.values]
+              Cache-Control = "public, max-age=86400"
           EOF
 
+      # 9. Deploy to Netlify
       - name: Deploy to Netlify
         uses: nwtgck/actions-netlify@v3.0
         with:
