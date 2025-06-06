@@ -21,9 +21,9 @@ jobs:
       - name: 获取资产信息
         run: |
           mkdir -p temp
-          processed_assets=$(curl -s "https://api.github.com/repos/oneclickvirt/lxd_images/releases" | \
-            jq -r '.[] | select(.tag_name=="processed") | .assets // empty')
-          if [ "$processed_assets" != "null" ] && [ "$processed_assets" != "empty" ] && [ -n "$processed_assets" ]; then
+          processed_assets=$(curl -s "https://api.github.com/repos/oneclickvirt/lxd_images/releases" | jq -r '.[] | select(.tag_name=="processed") | .assets // empty')
+          
+          if [ "$processed_assets" != "null" ] && [ -n "$processed_assets" ]; then
             echo "$processed_assets" > temp/assets.json
           else
             echo "[]" > temp/assets.json
@@ -31,221 +31,218 @@ jobs:
 
       - name: 处理镜像信息
         run: |
-          cat > process_images.jq << 'EOF'
+          jq -r '.[] | .name' temp/assets.json > temp/asset_names.txt
+          
+          jq -n '
           [
-            .[] | 
+            inputs | 
             select(.name | test("^[a-z0-9]+-[0-9a-z\\.-]+-[a-z0-9]+-[a-z]+-rootfs\\.squashfs$")) |
+            .name as $name |
             {
-              name: .name,
+              name: $name,
               rootfs_url: .browser_download_url,
               rootfs_size: .size,
-              lxd_name: (.name | sub("-rootfs\\.squashfs$"; "-lxd.tar.xz"))
+              lxd_name: ($name | sub("-rootfs\\.squashfs$"; "-lxd.tar.xz")),
+              lxd_url: (.[$name | sub("-rootfs\\.squashfs$"; "-lxd.tar.xz")] // null)
             }
           ] |
           map(
             . as $rootfs |
             ($rootfs.name | capture("^(?<os>[a-z0-9]+)-(?<version>[0-9a-z\\.-]+)-(?<arch>[a-z0-9]+)-(?<variant>[a-z]+)-rootfs\\.squashfs$")) as $parsed |
-            if $parsed then
+            if $parsed and $rootfs.lxd_url then
               $rootfs + $parsed + {
-                lxd_info: (
-                  input_filename as $assets_file |
-                  $assets_file | 
-                  map(select(.name == $rootfs.lxd_name)) | 
-                  if length > 0 then .[0] else null end
-                )
+                lxd_info: $rootfs.lxd_url
               }
             else
               empty
             end
-          ) |
-          map(
-            select(.lxd_info != null) |
-            {
-              os: .os,
-              version: .version,
-              arch: .arch,
-              variant: .variant,
-              rootfs_url: .rootfs_url,
-              rootfs_size: .rootfs_size,
-              lxd_url: .lxd_info.browser_download_url,
-              lxd_size: .lxd_info.size,
-              rootfs_sha256: "unknown",
-              lxd_sha256: "unknown",
-              combined_sha256: "unknown"
-            }
-          )
-          EOF
-          if [ "$(jq length temp/assets.json)" -gt 0 ]; then
-            jq -f process_images.jq temp/assets.json > temp/processed_images.json
-          else
-            echo "[]" > temp/processed_images.json
-          fi
+          )' temp/assets.json --rawfile names temp/asset_names.txt > temp/processed_images.json
+          
+          jq length temp/processed_images.json
 
       - name: 生成 Simplestreams 结构
         run: |
           mkdir -p pages/streams/v1
+          current_time=$(date -u +"%Y%m%d_%H%M")
+          
           if [ "$(jq length temp/processed_images.json)" -eq 0 ]; then
-            cat > pages/streams/v1/products.json << 'EOF'
-          {
-            "datatype": "image-downloads",
-            "format": "products:1.0",
-            "products": {}
-          }
-          EOF
-            cat > pages/streams/v1/index.json << 'EOF'
-          {
-            "index": {
-              "images": {
-                "datatype": "image-downloads",
-                "path": "streams/v1/products.json",
-                "format": "products:1.0"
-              }
-            },
-            "format": "index:1.0"
-          }
-          EOF
+            echo '{"datatype":"image-downloads","format":"products:1.0","products":{}}' > pages/streams/v1/products.json
+            echo '{"index":{"images":{"datatype":"image-downloads","path":"streams/v1/products.json","format":"products:1.0"}},"format":"index:1.0"}' > pages/streams/v1/index.json
             exit 0
           fi
-          current_time=$(date -u +"%Y%m%d_%H%M")
+          
           jq -n --slurpfile images temp/processed_images.json --arg updated "$current_time" '
           {
-            "datatype": "image-downloads", 
-            "format": "products:1.0",
-            "products": (
-              $images[0] |
-              group_by(.os) |
-              map({
-                key: .[0].os,
-                value: {
-                  "arch": (map(.arch) | unique | sort),
-                  "release": .[0].os,
-                  "os": .[0].os,
-                  "versions": (
-                    group_by(.version) |
-                    map({
-                      key: .[0].version,
-                      value: {
-                        "items": (
-                          group_by(.arch) |
-                          map({
-                            key: .[0].arch,
-                            value: (
-                              group_by(.variant) |
-                              map({
-                                key: .[0].variant,
-                                value: {
-                                  "ftype": "squashfs",
-                                  "os": .[0].os,
-                                  "release": .[0].version,
-                                  "version": .[0].version,
-                                  "arch": .[0].arch,
-                                  "variant": .[0].variant,
-                                  "combined_sha256": .[0].combined_sha256,
-                                  "path": ("images/" + .[0].os + "/" + .[0].version + "/" + .[0].arch + "/" + .[0].variant + "/"),
-                                  "versions": {
-                                    ($updated): {
-                                      "items": {
-                                        "lxd.tar.xz": {
-                                          "ftype": "lxd.tar.xz",
-                                          "size": .[0].lxd_size,
-                                          "sha256": .[0].lxd_sha256,
-                                          "path": ("redirect/lxd/" + (.[0].lxd_url | @uri))
-                                        },
-                                        "rootfs.squashfs": {
-                                          "ftype": "squashfs", 
-                                          "size": .[0].rootfs_size,
-                                          "sha256": .[0].rootfs_sha256,
-                                          "path": ("redirect/rootfs/" + (.[0].rootfs_url | @uri))
-                                        }
-                                      }
-                                    }
-                                  }
+            datatype: "image-downloads", 
+            format: "products:1.0",
+            products: ($images[0] | group_by(.os) | map({
+              key: .[0].os,
+              value: {
+                arch: (map(.arch) | unique | sort),
+                release: .[0].os,
+                os: .[0].os,
+                versions: (group_by(.version) | map({
+                  key: .[0].version,
+                  value: {
+                    items: (group_by(.arch) | map({
+                      key: .[0].arch,
+                      value: (group_by(.variant) | map({
+                        key: .[0].variant,
+                        value: {
+                          ftype: "squashfs",
+                          os: .[0].os,
+                          release: .[0].version,
+                          version: .[0].version,
+                          arch: .[0].arch,
+                          variant: .[0].variant,
+                          combined_sha256: "unknown",
+                          path: ("images/" + .[0].os + "/" + .[0].version + "/" + .[0].arch + "/" + .[0].variant + "/"),
+                          versions: {
+                            ($updated): {
+                              items: {
+                                "lxd.tar.xz": {
+                                  ftype: "lxd.tar.xz",
+                                  size: .[0].lxd_info.size,
+                                  sha256: "unknown",
+                                  path: ("redirect/lxd/" + (.[0].lxd_info.browser_download_url | @uri))
+                                },
+                                "rootfs.squashfs": {
+                                  ftype: "squashfs", 
+                                  size: .[0].rootfs_size,
+                                  sha256: "unknown",
+                                  path: ("redirect/rootfs/" + (.[0].rootfs_url | @uri))
                                 }
-                              }) |
-                              from_entries
-                            )
-                          }) |
-                          from_entries
-                        )
-                      }
-                    }) |
-                    from_entries
-                  )
-                }
-              }) |
-              from_entries
-            )
-          }' > pages/streams/v1/products.json
-          cat > pages/streams/v1/index.json << 'EOF'
-          {
-            "index": {
-              "images": {
-                "datatype": "image-downloads",
-                "path": "streams/v1/products.json",
-                "format": "products:1.0"
+                              }
+                            }
+                          }
+                        }
+                      }) | from_entries)
+                    }) | from_entries)
+                  }
+                }) | from_entries)
               }
-            },
-            "format": "index:1.0"
-          }
-          EOF
+            }) | from_entries)
+          }' > pages/streams/v1/products.json
+          
+          echo '{"index":{"images":{"datatype":"image-downloads","path":"streams/v1/products.json","format":"products:1.0"}},"format":"index:1.0"}' > pages/streams/v1/index.json
 
       - name: 创建重定向处理器
         run: |
           mkdir -p pages/redirect/{lxd,rootfs}
+          
           generate_redirect_page() {
-            local url="$1"
-            local filename="$2"
-            cat > "$filename" << EOF
+            cat <<EOF
           <!DOCTYPE html>
           <html>
           <head>
-            <meta http-equiv="refresh" content="0; url=$url">
+            <meta http-equiv="refresh" content="0; url=$1">
             <meta name="robots" content="noindex">
             <title>Redirecting...</title>
           </head>
           <body>
-            <p>Redirecting to <a href="$url">$url</a>...</p>
-            <script>window.location.href = "$url";</script>
+            <p>Redirecting to <a href="$1">$1</a>...</p>
+            <script>window.location.href = "$1";</script>
           </body>
           </html>
           EOF
           }
-          if [ -f temp/processed_images.json ]; then
-            jq -r '.[] | @base64' temp/processed_images.json | while IFS= read -r line; do
-              decoded=$(echo "$line" | base64 -d)
-              lxd_url=$(echo "$decoded" | jq -r '.lxd_url')
-              rootfs_url=$(echo "$decoded" | jq -r '.rootfs_url')
-              lxd_encoded=$(echo "$lxd_url" | sed 's|:|%3A|g; s|/|%2F|g; s|?|%3F|g; s|&|%26|g')
-              rootfs_encoded=$(echo "$rootfs_url" | sed 's|:|%3A|g; s|/|%2F|g; s|?|%3F|g; s|&|%26|g')
-              generate_redirect_page "$lxd_url" "pages/redirect/lxd/$lxd_encoded"
-              generate_redirect_page "$rootfs_url" "pages/redirect/rootfs/$rootfs_encoded"
-            done
-          fi
+          
+          jq -r '.[] | .rootfs_url, .lxd_info.browser_download_url' temp/processed_images.json | while read url; do
+            if [[ $url == *"rootfs"* ]]; then
+              echo "$(generate_redirect_page "$url")" > "pages/redirect/rootfs/$(echo "$url" | sed 's|[:/?&]|_|g')"
+            else
+              echo "$(generate_redirect_page "$url")" > "pages/redirect/lxd/$(echo "$url" | sed 's|[:/?&]|_|g')"
+            fi
+          done
 
       - name: 生成网页界面
         run: |
-          curl -sL https://raw.githubusercontent.com/spiritLHLS/lxd-images-frontend/main/index.html -o pages/index.html
-          echo "lxdimages.spiritlhl.net" >> pages/CNAME
-
-      - name: 验证生成的文件
-        run: |
-          if [ -f pages/streams/v1/products.json ]; then
-            echo "✅ products.json 已生成"
-            echo "产品数量: $(jq '.products | length' pages/streams/v1/products.json)"
-            echo "产品列表: $(jq -r '.products | keys[]' pages/streams/v1/products.json | tr '\n' ', ' | sed 's/,$//')"
-          else
-            echo "❌ products.json 未生成"
-          fi
-          if [ -f pages/streams/v1/index.json ]; then
-            echo "✅ index.json 已生成"
-          else
-            echo "❌ index.json 未生成"
-          fi
-          echo "LXD 重定向文件: $(find pages/redirect/lxd -type f 2>/dev/null | wc -l)"
-          echo "Rootfs 重定向文件: $(find pages/redirect/rootfs -type f 2>/dev/null | wc -l)"
-          if [ -f pages/streams/v1/products.json ] && [ "$(jq '.products | length' pages/streams/v1/products.json)" -gt 0 ]; then
-            jq -r '.products | to_entries | .[0] | "示例产品: \(.key)"' pages/streams/v1/products.json
-          fi
+          mkdir -p pages
+          cat > pages/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="zh-CN">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>LXD Images Repository</title>
+              <style>
+                  body { font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+                  .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                  h1 { color: #333; border-bottom: 3px solid #007cba; padding-bottom: 15px; }
+                  .usage-section { background: #f8f9fa; padding: 25px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #007cba; }
+                  pre { background: #2d3748; color: #e2e8f0; padding: 15px; border-radius: 5px; overflow-x: auto; }
+                  .image-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 25px; }
+                  .image-card { border: 1px solid #ddd; padding: 20px; border-radius: 8px; }
+                  .version-item { margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 5px; border-left: 3px solid #007cba; }
+                  .variant-item { margin: 8px 0; padding: 8px 12px; background: #e8f4f8; border-radius: 4px; display: flex; justify-content: space-between; }
+                  .download-links a { margin-left: 10px; padding: 4px 8px; background: #28a745; color: white; text-decoration: none; border-radius: 3px; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <h1>LXD Images Repository</h1>
+                  
+                  <div class="usage-section">
+                      <h2>使用指南</h2>
+                      <pre>lxc remote add spiritlhl-images https://oneclickvirt.github.io/lxd_images --protocol=simplestreams --public</pre>
+                  </div>
+                  
+                  <h2>可用镜像</h2>
+                  <div id="images-container">正在加载镜像列表...</div>
+              </div>
+              
+              <script>
+                  async function loadImages() {
+                      try {
+                          const response = await fetch('./streams/v1/products.json');
+                          const data = await response.json();
+                          
+                          if (!data.products) {
+                              document.getElementById('images-container').innerHTML = '暂无可用镜像';
+                              return;
+                          }
+                          
+                          let html = '<div class="image-grid">';
+                          for (const [productId, product] of Object.entries(data.products)) {
+                              html += `<div class="image-card">
+                                  <h3>${productId}</h3>
+                                  <p>支持架构: ${product.arch.join(', ')}</p>
+                                  <div class="version-list">`;
+                              
+                              for (const [version, versionData] of Object.entries(product.versions)) {
+                                  html += `<div class="version-item"><strong>版本: ${version}</strong>`;
+                                  
+                                  for (const [arch, archData] of Object.entries(versionData.items)) {
+                                      for (const [variant, variantData] of Object.entries(archData)) {
+                                          const ts = Object.keys(variantData.versions)[0];
+                                          const items = variantData.versions[ts].items;
+                                          
+                                          html += `<div class="variant-item">
+                                              <span>${variant} (${arch})</span>
+                                              <div class="download-links">
+                                                  <a href="${items['rootfs.squashfs'].path}">rootfs</a>
+                                                  <a href="${items['lxd.tar.xz'].path}">metadata</a>
+                                              </div>
+                                          </div>`;
+                                      }
+                                  }
+                                  html += '</div>';
+                              }
+                              html += '</div></div>';
+                          }
+                          html += '</div>';
+                          document.getElementById('images-container').innerHTML = html;
+                          
+                      } catch (error) {
+                          document.getElementById('images-container').innerHTML = '加载失败: ' + error.message;
+                      }
+                  }
+                  loadImages();
+              </script>
+          </body>
+          </html>
+          EOF
+          echo "lxdimages.spiritlhl.net" > pages/CNAME
 
       - name: 部署到 GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
