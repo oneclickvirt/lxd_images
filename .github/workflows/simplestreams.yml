@@ -167,7 +167,7 @@ jobs:
                   arch="${BASH_REMATCH[3]}"
                   variant="${BASH_REMATCH[4]}"
                   lxd_name="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
-                  lxd_url=$(jq -r --arg name "$lxd_name" '.[] | select(.name == $name) | .browser_download_url // empty' existing_assets_array.json)
+                  lxd_url=$(jq -r --arg lxd_name "$lxd_name" '.[] | select(.name == $lxd_name) | .browser_download_url // empty' existing_assets_array.json)
                   if [ -n "$lxd_url" ] && [ "$lxd_url" != "null" ] && [ "$lxd_url" != "empty" ]; then
                     echo "Found existing asset pair: $name and $lxd_name"
                     temp_asset=$(jq -n --arg os "$os" \
