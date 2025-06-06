@@ -106,7 +106,6 @@ jobs:
         assets = release_data.get('assets', [])
         print(f"Found {len(assets)} assets in release")
         
-        # 创建 simplestreams-builder 配置
         config = {
             "storage": {
                 "backend": "filesystem",
@@ -129,13 +128,11 @@ jobs:
             
             print(f"  OS: {os_name}, Version: {version}, Arch: {arch}, Size: {file_size}")
             
-            # 确定文件类型
             if filename.endswith('.squashfs'):
                 file_type = "squashfs"
             else:
                 file_type = "tar.xz"
             
-            # 添加到配置
             image_config = {
                 "name": f"{os_name}",
                 "version": version,
@@ -150,13 +147,11 @@ jobs:
         
         print(f"Generated config for {len(config['images'])} images")
         
-        # 保存配置文件
         with open("simplestreams-config.yaml", "w") as f:
             yaml.dump(config, f, default_flow_style=False)
         
         print("Generated simplestreams-config.yaml")
         
-        # 生成汇总信息
         summary = {
             "total_images": len(config["images"]),
             "architectures": list(set(img["arch"] for img in config["images"])),
@@ -174,7 +169,8 @@ jobs:
     - name: Build simplestreams with simplestreams-builder
       run: |
         echo "Building simplestreams with simplestreams-builder..."
-        simplestreams-builder --config simplestreams-config.yaml --output-dir build
+        cd build
+        simplestreams-builder --config ../simplestreams-config.yaml
         
     - name: Generate static HTML index
       run: |
