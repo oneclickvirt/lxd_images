@@ -61,30 +61,26 @@ jobs:
                   return distro, version, arch, variant
               return None, None, None, None
           
-          def calculate_sha256(url):
-              try:
-                  response = requests.head(url, timeout=10)
-                  if response.status_code == 200:
-                      etag = response.headers.get('etag', '').strip('"')
-                      if etag:
-                          return etag
-              except:
-                  pass
-              return hashlib.sha256(url.encode()).hexdigest()[:32]
+          def generate_sha256(content):
+              return hashlib.sha256(content.encode()).hexdigest()
           
-          def get_file_info(asset):
+          def get_file_info(asset, item_type):
               url = f'{BASE_URL}/{asset["name"]}'
+              sha256_content = f'{url}:{asset.get("size", 0)}:{asset["name"]}'
               return {
+                  'ftype': item_type,
                   'size': asset.get('size', 0),
                   'path': url,
-                  'sha256': calculate_sha256(url),
-                  'ftype': 'lxd.tar.xz' if asset['name'].endswith('lxd.tar.xz') else 'squashfs'
+                  'sha256': generate_sha256(sha256_content)
               }
           
           products = {}
           
           lxd_files = [asset for asset in assets if asset['name'].endswith('lxd.tar.xz')]
           rootfs_files = [asset for asset in assets if asset['name'].endswith('rootfs.squashfs')]
+          
+          current_time = datetime.now(timezone.utc)
+          version_id = current_time.strftime('%Y%m%d_%H%M')
           
           for lxd_asset in lxd_files:
               distro, version, arch, variant = parse_filename(lxd_asset['name'])
@@ -100,15 +96,13 @@ jobs:
               product_name = f'{distro}:{version}:{arch}'
               
               if version == 'current':
-                  aliases = f'{distro}:{arch},{distro}:{arch}:{variant}'
+                  alias_name = f'{distro}:{arch}'
               else:
-                  aliases = f'{distro}:{version}:{arch},{distro}:{version}:{arch}:{variant}'
-              
-              current_time = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')
+                  alias_name = f'{distro}:{version}:{arch}'
               
               if product_name not in products:
                   products[product_name] = {
-                      'aliases': aliases,
+                      'aliases': alias_name,
                       'arch': arch,
                       'os': distro,
                       'release': version,
@@ -116,15 +110,16 @@ jobs:
                       'versions': {}
                   }
               
-              products[product_name]['versions'][current_time] = {
+              products[product_name]['versions'][version_id] = {
                   'items': {
-                      'lxd.tar.xz': get_file_info(lxd_asset),
-                      'rootfs.squashfs': get_file_info(rootfs_asset)
+                      'lxd.tar.xz': get_file_info(lxd_asset, 'lxd.tar.xz'),
+                      'rootfs.squashfs': get_file_info(rootfs_asset, 'squashfs')
                   }
               }
               
-              time.sleep(0.1)
               print(f"Processed {product_name}")
+          
+          update_time = current_time.strftime('%a, %d %b %Y %H:%M:%S') + ' +0000'
           
           index_data = {
               'format': 'index:1.0',
@@ -132,12 +127,12 @@ jobs:
                   'images': {
                       'datatype': 'image-downloads',
                       'path': 'streams/v1/images.json',
-                      'updated': datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S') + ' +0000',
+                      'updated': update_time,
                       'products': list(products.keys()),
                       'format': 'products:1.0'
                   }
               },
-              'updated': datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S') + ' +0000'
+              'updated': update_time
           }
           
           images_data = {
@@ -146,18 +141,27 @@ jobs:
               'format': 'products:1.0',
               'license': 'https://www.canonical.com/licencing/ubuntu',
               'products': products,
-              'updated': datetime.now(timezone.utc).strftime('%a, %d %b %Y %H:%M:%S') + ' +0000'
+              'updated': update_time
           }
           
           os.makedirs('build/streams/v1', exist_ok=True)
           
           with open('build/streams/v1/index.json', 'w') as f:
-              json.dump(index_data, f, indent=2)
+              json.dump(index_data, f, indent=2, separators=(',', ': '))
               
           with open('build/streams/v1/images.json', 'w') as f:
-              json.dump(images_data, f, indent=2)
+              json.dump(images_data, f, indent=2, separators=(',', ': '))
           
           print(f"Generated index with {len(products)} products")
+          
+          # 测试 JSON 有效性
+          with open('build/streams/v1/index.json', 'r') as f:
+              test_index = json.load(f)
+              print("Index JSON validation passed")
+              
+          with open('build/streams/v1/images.json', 'r') as f:
+              test_images = json.load(f)
+              print("Images JSON validation passed")
           EOF
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -232,6 +236,17 @@ jobs:
                       border-radius: 5px;
                       overflow-x: auto;
                       margin: 0.5rem 0;
+                  }
+                  .troubleshoot {
+                      background: #fff3cd;
+                      border: 1px solid #ffeaa7;
+                      padding: 1rem;
+                      border-radius: 5px;
+                      margin: 1rem 0;
+                  }
+                  .troubleshoot h3 {
+                      color: #856404;
+                      margin-top: 0;
                   }
                   .stats {
                       display: grid;
@@ -326,6 +341,20 @@ jobs:
                   <pre><code>lxc image list spiritlhl:</code></pre>
                   <p><strong>步骤 4:</strong> 启动容器</p>
                   <pre><code>lxc launch spiritlhl:ubuntu:22.04:amd64 my-container</code></pre>
+                  
+                  <div class="troubleshoot">
+                      <h3>🔍 问题排查</h3>
+                      <p>如果看不到镜像列表，请尝试以下步骤：</p>
+                      <pre><code># 强制刷新远程源
+          lxc remote remove spiritlhl
+          lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol=simplestreams --public
+          
+          # 检查网络连接
+          curl -s https://lxdimages.spiritlhl.net/streams/v1/index.json | jq .
+          
+          # 启用调试模式
+          lxc image list spiritlhl: --debug</code></pre>
+                  </div>
               </div>
               
               <div class="stats">
