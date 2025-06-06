@@ -28,7 +28,7 @@ jobs:
         
     - name: Download simplestreams-builder
       run: |
-        wget -O simplestreams-builder https://github.com/MottainaiCI/simplestreams-builder/releases/download/v0.3.1/simplestreams-builder-linux-amd64
+        wget -O simplestreams-builder https://github.com/MottainaiCI/simplestreams-builder/releases/download/v0.3.1/simplestreams-builder-v0.3.1-linux-amd64
         chmod +x simplestreams-builder
         sudo mv simplestreams-builder /usr/local/bin/
         
