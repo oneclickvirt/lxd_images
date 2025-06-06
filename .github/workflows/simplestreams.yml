@@ -46,28 +46,24 @@ jobs:
         import tarfile
         import tempfile
         import yaml
-
+        
         def download_file(url, local_path):
-            """下载文件到本地"""
             print(f"Downloading {url}")
             response = requests.get(url, stream=True)
             response.raise_for_status()
-            
             with open(local_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
             return local_path
-
+        
         def get_file_hash(filepath):
-            """计算文件SHA256"""
             hash_sha256 = hashlib.sha256()
             with open(filepath, "rb") as f:
                 for chunk in iter(lambda: f.read(4096), b""):
                     hash_sha256.update(chunk)
             return hash_sha256.hexdigest()
-
+        
         def parse_metadata_from_tar(tar_path):
-            """从tar.xz文件中解析metadata.yaml"""
             metadata = {}
             try:
                 with tarfile.open(tar_path, 'r:xz') as tar:
@@ -78,19 +74,16 @@ jobs:
                             content = metadata_file.read().decode('utf-8')
                             metadata = yaml.safe_load(content)
                     except KeyError:
-                        print(f"Warning: metadata.yaml not found in {tar_path}")
+                        pass
             except Exception as e:
-                print(f"Error parsing {tar_path}: {e}")
+                pass
             return metadata
-
+        
         def parse_filename(filename):
-            """解析文件名获取OS、版本、架构等信息"""
-            # 匹配模式: OS-VERSION-ARCH-VARIANT-TYPE.EXTENSION
             patterns = [
                 r'(\w+)-([^-]+)-(\w+)-([\w-]+)-(rootfs|lxd)\.(\w+(?:\.\w+)*)',
                 r'(\w+)-([^-]+)-(\w+)-(rootfs|lxd)\.(\w+(?:\.\w+)*)',
             ]
-            
             for pattern in patterns:
                 match = re.match(pattern, filename)
                 if match:
@@ -99,7 +92,6 @@ jobs:
                     else:
                         os_name, version, arch, file_type, ext = match.groups()
                         variant = 'default'
-                    
                     return {
                         'os': os_name,
                         'release': version,
@@ -109,46 +101,30 @@ jobs:
                         'extension': ext
                     }
             return None
-
+        
         def fetch_github_releases():
-            """获取GitHub releases中的文件"""
             url = "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
-            
             try:
                 response = requests.get(url)
                 response.raise_for_status()
                 release_data = response.json()
-                
                 assets = []
                 for asset in release_data.get('assets', []):
-                    download_url = asset['download_url']
                     filename = asset['name']
-                    size = asset['size']
-                    
-                    # 只处理我们关心的文件类型
                     if any(filename.endswith(ext) for ext in ['.squashfs', '.tar.xz']):
-                        assets.append({
-                            'name': filename,
-                            'download_url': download_url,
-                            'size': size
-                        })
-                
+                        assets.append(asset)
                 return assets
             except Exception as e:
                 print(f"Error fetching releases: {e}")
                 return []
-
+        
         def group_files_by_image(assets):
-            """将文件按镜像分组"""
             images = {}
-            
             for asset in assets:
                 parsed = parse_filename(asset['name'])
                 if not parsed:
                     continue
-                    
                 image_key = f"{parsed['os']}:{parsed['release']}:{parsed['arch']}:{parsed['variant']}"
-                
                 if image_key not in images:
                     images[image_key] = {
                         'os': parsed['os'],
@@ -157,25 +133,19 @@ jobs:
                         'variant': parsed['variant'],
                         'files': {}
                     }
-                
                 file_key = f"{parsed['type']}.{parsed['extension']}"
-                # 确保asset包含正确的字段名
                 asset_info = {
                     'name': asset['name'],
-                    'download_url': asset['download_url'],
+                    'download_url': asset['browser_download_url'],
                     'size': asset['size']
                 }
                 images[image_key]['files'][file_key] = asset_info
-                
             return images
-
+        
         def create_directory_structure(images, build_dir):
-            """创建目录结构并下载必要的元数据"""
             current_time = datetime.datetime.utcnow()
             timestamp = current_time.strftime('%Y%m%d_%H:%M')
-            
             for image_key, image_info in images.items():
-                # 创建目录结构
                 image_dir = os.path.join(
                     build_dir, 'images',
                     image_info['os'],
@@ -185,22 +155,14 @@ jobs:
                     timestamp
                 )
                 os.makedirs(image_dir, exist_ok=True)
-                
-                # 处理文件
                 items = {}
                 temp_files = []
-                
                 try:
                     for file_key, asset in image_info['files'].items():
-                        # 下载文件到临时位置计算hash
                         temp_file = tempfile.NamedTemporaryFile(delete=False)
                         temp_files.append(temp_file.name)
                         download_file(asset['download_url'], temp_file.name)
-                        
-                        # 计算hash
                         file_hash = get_file_hash(temp_file.name)
-                        
-                        # 添加到items
                         if file_key.endswith('.squashfs'):
                             ftype = 'root.squashfs'
                         elif file_key.endswith('.tar.xz'):
@@ -210,65 +172,48 @@ jobs:
                                 ftype = 'root.tar.xz'
                         else:
                             ftype = file_key
-                            
                         items[file_key.replace('.', '_')] = {
                             'ftype': ftype,
                             'path': f"images/{image_info['os']}/{image_info['release']}/{image_info['arch']}/{image_info['variant']}/{timestamp}/{asset['name']}",
                             'size': asset['size'],
                             'sha256': file_hash,
                         }
-                        
-                        # 如果是LXD tar文件，尝试解析metadata
                         if 'lxd' in file_key and file_key.endswith('.tar.xz'):
                             try:
                                 metadata = parse_metadata_from_tar(temp_file.name)
                                 if metadata:
-                                    # 更新镜像信息
                                     if 'architecture' in metadata:
                                         arch = metadata['architecture']
                                         if arch == 'x86_64':
                                             arch = 'amd64'
                                         image_info['arch'] = arch
-                                    
                                     if 'creation_date' in metadata:
                                         creation_date = datetime.datetime.utcfromtimestamp(int(metadata['creation_date']))
                                         timestamp = creation_date.strftime('%Y%m%d_%H:%M')
-                                        # 可能需要重新创建目录
                             except Exception as e:
-                                print(f"Warning: Could not parse metadata from {asset['name']}: {e}")
-                
+                                pass
                 finally:
-                    # 清理临时文件
                     for temp_file in temp_files:
                         try:
                             os.unlink(temp_file)
                         except:
                             pass
-                
-                # 保存items.json
                 with open(os.path.join(image_dir, '.items.json'), 'w') as f:
                     json.dump(items, f, indent=2)
-                
-                # 更新images字典
                 images[image_key]['timestamp'] = timestamp
                 images[image_key]['items'] = items
-                
             return images
-
+        
         def build_aliases(os_name, release, variant):
-            """构建别名"""
             aliases = [f"{os_name}/{release}/{variant}"]
             if variant == 'default':
                 aliases.append(f"{os_name}/{release}")
             return ','.join(aliases)
-
+        
         def generate_simplestreams(images, build_dir):
-            """生成simplestreams格式的JSON"""
             products = {}
-            
             for image_key, image_info in images.items():
                 product_key = f"{image_info['os']}:{image_info['release']}:{image_info['arch']}:{image_info['variant']}"
-                
                 products[product_key] = {
                     'aliases': build_aliases(image_info['os'], image_info['release'], image_info['variant']),
                     'arch': image_info['arch'],
@@ -282,16 +227,12 @@ jobs:
                         }
                     }
                 }
-            
-            # 生成images.json
             images_data = {
                 'content_id': 'images',
                 'datatype': 'image-downloads', 
                 'format': 'products:1.0',
                 'products': products
             }
-            
-            # 生成index.json
             index_data = {
                 'format': 'index:1.0',
                 'index': {
@@ -303,47 +244,33 @@ jobs:
                     }
                 }
             }
-            
-            # 创建目录并写入文件
             streams_dir = os.path.join(build_dir, 'streams', 'v1')
             os.makedirs(streams_dir, exist_ok=True)
-            
             with open(os.path.join(streams_dir, 'images.json'), 'w') as f:
                 json.dump(images_data, f, indent=2)
-                
             with open(os.path.join(streams_dir, 'index.json'), 'w') as f:
                 json.dump(index_data, f, indent=2)
-                
-            print("Simplestreams files generated successfully!")
-
+        
         def main():
             build_dir = './build'
-            
             print("Fetching GitHub releases...")
             assets = fetch_github_releases()
-            
             if not assets:
                 print("No assets found!")
                 return 1
-                
             print(f"Found {len(assets)} assets")
-            
             print("Grouping files by image...")
             images = group_files_by_image(assets)
-            
             print(f"Found {len(images)} images")
             for key in images.keys():
                 print(f"  - {key}")
-            
             print("Creating directory structure...")
             images = create_directory_structure(images, build_dir)
-            
             print("Generating simplestreams...")
             generate_simplestreams(images, build_dir)
-            
             print("Build completed successfully!")
             return 0
-
+        
         if __name__ == '__main__':
             exit(main())
         EOF
