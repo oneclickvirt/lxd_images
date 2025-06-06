@@ -169,8 +169,8 @@ jobs:
     - name: Build simplestreams with simplestreams-builder
       run: |
         echo "Building simplestreams with simplestreams-builder..."
-        cd build
-        simplestreams-builder --config ../simplestreams-config.yaml
+        simplestreams-builder build-images-file --config simplestreams-config.yaml --target-dir build
+        simplestreams-builder build-index --config simplestreams-config.yaml --target-dir build
         
     - name: Generate static HTML index
       run: |
