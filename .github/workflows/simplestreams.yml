@@ -137,8 +137,8 @@ jobs:
               redirects_rules.append(f'/download/{lxd_asset["name"]} {BASE_URL}/{lxd_asset["name"]} 302')
               redirects_rules.append(f'/download/{rootfs_asset["name"]} {BASE_URL}/{rootfs_asset["name"]} 302')
               
-              # 生成产品名称，包含variant以区分不同的变体
-              product_name = f'{distro}_{version}_{arch}_{variant}'
+              # 生成产品名称，使用冒号分隔格式
+              product_name = f'{distro}:{version}:{arch}:{variant}'
               
               # 生成别名 - 修改为逗号分隔的字符串格式
               aliases_list = []
