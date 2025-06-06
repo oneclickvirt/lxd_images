@@ -1,23 +1,11 @@
 name: Build and Deploy SimpleStreams Index
 
 on:
-  schedule:
-    - cron: '0 */6 * * *'
   workflow_dispatch:
-  push:
-    branches:
-      - main
-  release:
-    types: [published]
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
     
     environment:
       name: github-pages
