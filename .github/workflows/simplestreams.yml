@@ -58,9 +58,7 @@ jobs:
             select(.name | test("^[a-z0-9]+_[0-9a-z.-]+_[a-z0-9]+_[a-z0-9]+_[a-z]+\\.zip$")) |
             @base64
           ' > assets_to_process.txt
-          
           existing_assets=$(curl -s "https://api.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets")
-          
           while IFS= read -r encoded_asset; do
             if [ -z "$encoded_asset" ]; then
               continue
@@ -75,14 +73,12 @@ jobs:
               codename="${BASH_REMATCH[3]}"
               arch="${BASH_REMATCH[4]}"
               variant="${BASH_REMATCH[5]}"
-              
               rootfs_file="${os}-${version}-${arch}-${variant}-rootfs.squashfs"
               lxd_file="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
-              
               rootfs_asset_id=$(echo "$existing_assets" | jq -r --arg name "$rootfs_file" '.[] | select(.name == $name) | .id // empty')
               lxd_asset_id=$(echo "$existing_assets" | jq -r --arg name "$lxd_file" '.[] | select(.name == $name) | .id // empty')
-              
               if [ -n "$rootfs_asset_id" ]; then
+                sleep 1
                 echo "Deleting existing $rootfs_file..."
                 curl -s -X DELETE \
                   -H "Authorization: token $GITHUB_TOKEN" \
@@ -94,7 +90,7 @@ jobs:
                   -H "Authorization: token $GITHUB_TOKEN" \
                   "https://api.github.com/repos/$REPO/releases/assets/$lxd_asset_id"
               fi
-              
+              sleep 1
               jq --arg name "$name" \
                  --arg url "$url" \
                  --arg os "$os" \
@@ -116,7 +112,6 @@ jobs:
               mv files_to_upload_temp.json files_to_upload.json
             fi
           done < assets_to_process.txt
-          
           mv files_to_upload.json /tmp/files_to_upload.json
 
       - name: 等待API同步
