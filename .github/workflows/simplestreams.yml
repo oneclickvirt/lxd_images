@@ -14,55 +14,41 @@ jobs:
           sudo apt-get install -y jq unzip curl
 
       - name: 获取所有 Releases 信息
-        id: get_releases
         run: |
-          curl -s "https://api.github.com/repos/${{ github.repository }}/releases" > releases.json
-          echo "data=$(cat releases.json | jq -c .)" >> $GITHUB_OUTPUT
+          curl -s "https://api.github.com/repos/${{ github.repository }}/releases" -o releases.json
 
       - name: 创建或获取 processed Release ID
         id: get_processed_release
         run: |
-          existing_release=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[] | select(.tag_name=="processed") | .id // empty')
-          if [ -z "$existing_release" ]; then
-            release_response=$(curl -s -X POST \
+          processed=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[] | select(.tag_name=="processed") | .id')
+          if [ -z "$processed" ]; then
+            response=$(curl -s -X POST \
               -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               -H "Content-Type: application/json" \
               -d '{"tag_name":"processed","name":"Processed Assets","draft":false,"prerelease":false}' \
               "https://api.github.com/repos/${{ github.repository }}/releases")
-            processed_id=$(echo "$release_response" | jq -r '.id')
-            if [ "$processed_id" = "null" ] || [ -z "$processed_id" ]; then
-              echo "Failed to create release"
-              echo "$release_response"
-              exit 1
+            processed=$(echo "$response" | jq -r '.id')
+            if [ -z "$processed" ] || [ "$processed" = "null" ]; then
+              echo "Failed to create release"; echo "$response"; exit 1
             fi
-          else
-            processed_id=$existing_release
           fi
-          echo "release_id=$processed_id" >> $GITHUB_OUTPUT
+          echo "release_id=$processed" >> $GITHUB_OUTPUT
 
-      - name: 预处理和删除现有文件
+      - name: 预处理并删除现有文件
         env:
           PROCESSED_RELEASE_ID: ${{ steps.get_processed_release.outputs.release_id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          mkdir -p work
-          cd work
+          mkdir -p work && cd work
           echo "[]" > files_to_upload.json
-          cat ../releases.json | jq -r '
-            .[] |
-            select(.tag_name != "processed") |
-            .assets[] |
-            select(.name | test("^[a-z0-9]+_[0-9a-z.\\-]+_[a-z0-9]+_[a-z0-9]+_[a-z]+\\.zip$")) |
-            @base64
-          ' > assets_to_process.txt
+          jq -r '.[] | select(.tag_name != "processed") | .assets[] | select(.name | test("^[a-z0-9]+_[0-9a-z.-]+_[a-z0-9]+_[a-z0-9]+_[a-z]+\\.zip$")) | @base64' ../releases.json > assets_to_process.txt
           existing_assets=$(curl -s "https://api.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets")
           while IFS= read -r encoded_asset; do
             [ -z "$encoded_asset" ] && continue
             asset=$(echo "$encoded_asset" | base64 -d)
             name=$(echo "$asset" | jq -r '.name')
             url=$(echo "$asset" | jq -r '.browser_download_url')
-            echo "Processing $name"
             if [[ "$name" =~ ^([a-z0-9]+)_([0-9a-z\.\-]+)_([a-z0-9]+)_([a-z0-9]+)_([a-z]+)\.zip$ ]]; then
               os="${BASH_REMATCH[1]}"
               version="${BASH_REMATCH[2]}"
@@ -71,44 +57,33 @@ jobs:
               variant="${BASH_REMATCH[5]}"
               rootfs_file="${os}-${version}-${arch}-${variant}-rootfs.squashfs"
               lxd_file="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
-              rootfs_asset_id=$(echo "$existing_assets" | jq -r --arg name "$rootfs_file" '.[] | select(.name == $name) | .id // empty')
-              lxd_asset_id=$(echo "$existing_assets" | jq -r --arg name "$lxd_file" '.[] | select(.name == $name) | .id // empty')
+              rootfs_asset_id=$(echo "$existing_assets" | jq -r --arg name "$rootfs_file" '.[] | select(.name == $name) | .id')
+              lxd_asset_id=$(echo "$existing_assets" | jq -r --arg name "$lxd_file" '.[] | select(.name == $name) | .id')
               if [ -n "$rootfs_asset_id" ]; then
-                sleep 1
                 curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$REPO/releases/assets/$rootfs_asset_id"
+                sleep 1
               fi
               if [ -n "$lxd_asset_id" ]; then
                 curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/$REPO/releases/assets/$lxd_asset_id"
+                sleep 1
               fi
-              sleep 1
               jq --arg name "$name" \
                  --arg url "$url" \
                  --arg os "$os" \
                  --arg version "$version" \
+                 --arg codename "$codename" \
                  --arg arch "$arch" \
                  --arg variant "$variant" \
-                 --arg codename "$codename" \
                  --arg rootfs_file "$rootfs_file" \
                  --arg lxd_file "$lxd_file" \
-                 '. += [{
-                   name: $name,
-                   url: $url,
-                   os: $os,
-                   version: $version,
-                   arch: $arch,
-                   variant: $variant,
-                   codename: $codename,
-                   rootfs_file: $rootfs_file,
-                   lxd_file: $lxd_file
-                 }]' files_to_upload.json > files_to_upload_temp.json
+                 '. += [{name: $name, url: $url, os: $os, version: $version, codename: $codename, arch: $arch, variant: $variant, rootfs_file: $rootfs_file, lxd_file: $lxd_file}]' files_to_upload.json > files_to_upload_temp.json
               mv files_to_upload_temp.json files_to_upload.json
             fi
-          done < assets_to_process.txt
+          done
           mv files_to_upload.json /tmp/files_to_upload.json
 
       - name: 等待API同步
-        run: |
-          sleep 60
+        run: sleep 60
 
       - name: 处理并上传解压文件
         env:
@@ -116,44 +91,36 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          mkdir -p work
-          cd work
+          mkdir -p work && cd work
           echo "[]" > processed_assets.json
-          jq -r '.[] | @base64' /tmp/files_to_upload.json | while IFS= read -r encoded_file; do
-            [ -z "$encoded_file" ] && continue
-            file_info=$(echo "$encoded_file" | base64 -d)
-            name=$(echo "$file_info" | jq -r '.name')
-            url=$(echo "$file_info" | jq -r '.url')
-            os=$(echo "$file_info" | jq -r '.os')
-            version=$(echo "$file_info" | jq -r '.version')
-            arch=$(echo "$file_info" | jq -r '.arch')
-            variant=$(echo "$file_info" | jq -r '.variant')
-            codename=$(echo "$file_info" | jq -r '.codename')
-            rootfs_file=$(echo "$file_info" | jq -r '.rootfs_file')
-            lxd_file=$(echo "$file_info" | jq -r '.lxd_file')
+          jq -c '.[]' /tmp/files_to_upload.json | while IFS= read -r item; do
+            name=$(echo "$item" | jq -r '.name')
+            url=$(echo "$item" | jq -r '.url')
+            os=$(echo "$item" | jq -r '.os')
+            version=$(echo "$item" | jq -r '.version')
+            codename=$(echo "$item" | jq -r '.codename')
+            arch=$(echo "$item" | jq -r '.arch')
+            variant=$(echo "$item" | jq -r '.variant')
+            rootfs_file=$(echo "$item" | jq -r '.rootfs_file')
+            lxd_file=$(echo "$item" | jq -r '.lxd_file')
             temp_dir="temp_${os}_${version}_${arch}_${variant}_$$"
             mkdir -p "$temp_dir"
             cd "$temp_dir"
-            if curl --retry 3 --retry-delay 5 -L -o image.zip "$url" && unzip -q image.zip; then
+            echo "Downloading $name..."
+            if curl -L -o image.zip "$url" && unzip -q image.zip; then
               if [ -f rootfs.squashfs ] && [ -f lxd.tar.xz ]; then
                 mv rootfs.squashfs "$rootfs_file"
                 mv lxd.tar.xz "$lxd_file"
-                rootfs_sha=$(sha256sum "$rootfs_file" | cut -d ' ' -f1)
-                lxd_sha=$(sha256sum "$lxd_file" | cut -d ' ' -f1)
                 rootfs_size=$(stat -c%s "$rootfs_file")
                 lxd_size=$(stat -c%s "$lxd_file")
+                rootfs_sha256=$(sha256sum "$rootfs_file" | cut -d ' ' -f1)
+                lxd_sha256=$(sha256sum "$lxd_file" | cut -d ' ' -f1)
+                rootfs_md5=$(md5sum "$rootfs_file" | cut -d ' ' -f1)
+                lxd_md5=$(md5sum "$lxd_file" | cut -d ' ' -f1)
                 echo "Uploading $rootfs_file..."
-                rootfs_response=$(curl -s -X POST \
-                  -H "Authorization: token $GITHUB_TOKEN" \
-                  -H "Content-Type: application/octet-stream" \
-                  --data-binary @"$rootfs_file" \
-                  "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$rootfs_file")
+                rootfs_response=$(curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/octet-stream" --data-binary @"$rootfs_file" "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$rootfs_file")
                 echo "Uploading $lxd_file..."
-                lxd_response=$(curl -s -X POST \
-                  -H "Authorization: token $GITHUB_TOKEN" \
-                  -H "Content-Type: application/octet-stream" \
-                  --data-binary @"$lxd_file" \
-                  "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$lxd_file")
+                lxd_response=$(curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" -H "Content-Type: application/octet-stream" --data-binary @"$lxd_file" "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$lxd_file")
                 rootfs_url=$(echo "$rootfs_response" | jq -r '.browser_download_url // empty')
                 lxd_url=$(echo "$lxd_response" | jq -r '.browser_download_url // empty')
                 if [ -n "$rootfs_url" ] && [ -n "$lxd_url" ]; then
@@ -164,28 +131,17 @@ jobs:
                      --arg codename "$codename" \
                      --arg rootfs_url "$rootfs_url" \
                      --arg lxd_url "$lxd_url" \
-                     --arg rootfs_sha "$rootfs_sha" \
-                     --arg lxd_sha "$lxd_sha" \
-                     --arg rootfs_size "$rootfs_size" \
-                     --arg lxd_size "$lxd_size" \
-                     '. += [{
-                       os: $os,
-                       version: $version,
-                       arch: $arch,
-                       variant: $variant,
-                       codename: $codename,
-                       rootfs_url: $rootfs_url,
-                       lxd_url: $lxd_url,
-                       rootfs_sha256: $rootfs_sha,
-                       lxd_sha256: $lxd_sha,
-                       rootfs_size: ($rootfs_size | tonumber),
-                       lxd_size: ($lxd_size | tonumber)
-                     }]' ../processed_assets.json > ../processed_assets_temp.json
+                     --arg rootfs_size_str "$rootfs_size" \
+                     --arg lxd_size_str "$lxd_size" \
+                     --arg rootfs_sha256 "$rootfs_sha256" \
+                     --arg lxd_sha256 "$lxd_sha256" \
+                     --arg rootfs_md5 "$rootfs_md5" \
+                     --arg lxd_md5 "$lxd_md5" \
+                     '. += [{os: $os, version: $version, arch: $arch, variant: $variant, codename: $codename, rootfs_url: $rootfs_url, lxd_url: $lxd_url, rootfs_size: ($rootfs_size_str|tonumber), lxd_size: ($lxd_size_str|tonumber), rootfs_sha256: $rootfs_sha256, lxd_sha256: $lxd_sha256, rootfs_md5: $rootfs_md5, lxd_md5: $lxd_md5}]' ../processed_assets.json > ../processed_assets_temp.json
                   mv ../processed_assets_temp.json ../processed_assets.json
+                  echo "Uploaded $os $version $arch $variant"
                 else
                   echo "Failed to upload files for $name"
-                  echo "Rootfs response: $rootfs_response"
-                  echo "LXD response: $lxd_response"
                 fi
               else
                 echo "Missing required files in $name"
@@ -201,125 +157,130 @@ jobs:
       - name: 生成 Simplestreams JSON
         run: |
           mkdir -p pages/streams/v1
-          # 生成 index.json
-          cat > pages/streams/v1/index.json << 'EOF'
-          {
-            "index": {
-              "com.spiritlhl.cloud:released:download": {
-                "path": "streams/v1/com.spiritlhl.cloud:released:download.json",
-                "format": "products:1.0",
-                "updated": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-              }
-            }
-          }
-          EOF
-          # 处理 GitHub Releases 获取 assets
+          # 获取 processed release 的所有 assets
+          curl -s "https://api.github.com/repos/${{ github.repository }}/releases/${{ steps.get_processed_release.outputs.release_id }}/assets" > assets.json
           echo "[]" > all_assets.json
-          processed_assets_response=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" \
-            | jq '[ .[] | select(.tag_name=="processed") ] 
-              | if length > 0 then (.[0].assets // []) else [] end')
-          echo "$processed_assets_response" > existing_assets_array.json
-          jq -er '
-            .[]
-            | select(type=="object")
-            | select(.name | test("^[a-z0-9]+-[0-9a-z\\.-]+-[a-z0-9]+-[a-z]+-rootfs\\.squashfs$"))
-            | @base64
-          ' existing_assets_array.json || true | while IFS= read -r encoded_asset; do
-            [ -z "$encoded_asset" ] && continue
-            asset=$(echo "$encoded_asset" | base64 -d)
-            name=$(echo "$asset" | jq -r '.name')
-            rootfs_url=$(echo "$asset" | jq -r '.browser_download_url')
-            if [[ "$name" =~ ^([a-z0-9]+)-([0-9a-z\.\-]+)-([a-z0-9]+)-([a-z]+)-rootfs\.squashfs$ ]]; then
-              os="${BASH_REMATCH[1]}"
-              version="${BASH_REMATCH[2]}"
-              arch="${BASH_REMATCH[3]}"
-              variant="${BASH_REMATCH[4]}"
-              lxd_name="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
-              lxd_url=$(jq -r --arg lxd_name "$lxd_name" '
-                .[]
-                | select(type=="object")
-                | select(.name == $lxd_name)
-                | .browser_download_url // empty' existing_assets_array.json)
-              [ -z "$lxd_url" ] && continue
-              temp_asset=$(jq -n \
-                --arg os "$os" \
-                --arg version "$version" \
-                --arg arch "$arch" \
-                --arg variant "$variant" \
-                --arg rootfs_url "$rootfs_url" \
-                --arg lxd_url "$lxd_url" \
-                '{
-                  os: $os,
-                  version: $version,
-                  arch: $arch,
-                  variant: $variant,
-                  rootfs_url: $rootfs_url,
-                  lxd_url: $lxd_url
-                }')
-              echo "$temp_asset" >> temp_assets.jsonl
+          if [ "$(jq '. | length' assets.json)" -gt 0 ]; then
+            jq -r '.[] | select(.name | test("^[a-z0-9]+-[0-9a-z\\.-]+-[a-z0-9]+-[a-z]+-rootfs\\.squashfs$")) | @base64' assets.json | while IFS= read -r encoded; do
+              [ -z "$encoded" ] && continue
+              asset=$(echo "$encoded" | base64 -d)
+              name=$(echo "$asset" | jq -r '.name')
+              rootfs_url=$(echo "$asset" | jq -r '.browser_download_url')
+              rootfs_size=$(echo "$asset" | jq -r '.size')
+              if [[ "$name" =~ ^([a-z0-9]+)-([0-9a-z\.\-]+)-([a-z0-9]+)-([a-z]+)-rootfs\.squashfs$ ]]; then
+                os="${BASH_REMATCH[1]}"
+                version="${BASH_REMATCH[2]}"
+                arch="${BASH_REMATCH[3]}"
+                variant="${BASH_REMATCH[4]}"
+                lxd_name="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
+                lxd_url=$(jq -r --arg lxd_name "$lxd_name" '.[] | select(.name == $lxd_name) | .browser_download_url // empty' assets.json)
+                lxd_size=$(jq -r --arg lxd_name "$lxd_name" '.[] | select(.name == $lxd_name) | .size // empty' assets.json)
+                if [ -n "$lxd_url" ]; then
+                  jq -n --arg os "$os" \
+                        --arg version "$version" \
+                        --arg arch "$arch" \
+                        --arg variant "$variant" \
+                        --arg rootfs_url "$rootfs_url" \
+                        --arg lxd_url "$lxd_url" \
+                        --arg rootfs_size_str "$rootfs_size" \
+                        --arg lxd_size_str "$lxd_size" \
+                        '. += [{os: $os, version: $version, arch: $arch, variant: $variant, rootfs_url: $rootfs_url, lxd_url: $lxd_url, rootfs_size: ($rootfs_size_str|tonumber), lxd_size: ($lxd_size_str|tonumber)}]' >> temp_assets.jsonl
+                else
+                  echo "WARNING: Missing matching lxd file for $name"
+                fi
+              else
+                echo "WARNING: Filename did not match expected pattern: $name"
+              fi
+            done
+            if [ -f temp_assets.jsonl ]; then
+              jq -s '.' temp_assets.jsonl > temp_existing_assets.json
+              jq -s '.[0] + .[1]' all_assets.json temp_existing_assets.json > all_assets_temp.json
+              mv all_assets_temp.json all_assets.json
+              rm -f temp_assets.jsonl temp_existing_assets.json
             fi
-          done
-          # 合并 assets
-          if [ -f temp_assets.jsonl ]; then
-            jq -s '.' temp_assets.jsonl > all_assets.json
-            rm -f temp_assets.jsonl
           fi
-          # 生成 download.json
-          jq -n --slurpfile assets all_assets.json '
+          if [ -f /tmp/processed_assets.json ] && [ "$(jq '. | length' /tmp/processed_assets.json)" -gt 0 ]; then
+            jq -s '.[0] + .[1]' all_assets.json /tmp/processed_assets.json > combined_assets.json
+            mv combined_assets.json all_assets.json
+          fi
+          if [ "$(jq '. | length' all_assets.json)" -eq 0 ]; then
+            echo '{"index": {"images:download": { "datatype": "image-downloads", "path": "streams/v1/download.json", "products": [], "format": "products:1.0", "updated": "" }}, "format": "index:1.0", "updated": ""}' > pages/streams/v1/index.json
+            echo '{"content_id": "images:download", "datatype": "image-downloads", "format": "products:1.0", "products": {}}' > pages/streams/v1/download.json
+            exit 0
+          fi
+          NOW=$(date -u -R)
+          jq -n --slurpfile assets all_assets.json --arg date "$NOW" '
             {
+              content_id: "images:download",
+              datatype: "image-downloads",
+              format: "products:1.0",
+              updated: $date,
               products: (
                 $assets[0]
-                | group_by(.os)
-                | map({
-                    key: .[0].os,
-                    value: {
-                      versions: (
-                        group_by(.version)
-                        | map({
-                            key: .[0].version,
-                            value: {
-                              architectures: (
-                                group_by(.arch)
-                                | map({
-                                    key: .[0].arch,
-                                    value: {
-                                      variants: (
-                                        group_by(.variant)
-                                        | map({
-                                            key: .[0].variant,
-                                            value: {
-                                              items: [
-                                                {
-                                                  ftype: "squashfs",
-                                                  path: (.[] | select(.rootfs_url != null) | .rootfs_url | sub(".*/"; ""))
-                                                },
-                                                {
-                                                  ftype: "tar.xz",
-                                                  path: (.[] | select(.lxd_url != null) | .lxd_url | sub(".*/"; ""))
-                                                }
-                                              ]
-                                            }
-                                          })
-                                        | from_entries
-                                      )
-                                    }
-                                  })
-                                | from_entries
-                              )
+                | group_by(.os + ":" + .version + ":" + .arch)
+                | map(
+                    . as $group |
+                    $group | map(.variant) as $variants |
+                    $group[] |
+                    {
+                      key: (.os + ":" + .version + ":" + .arch + (if .variant != "default" then ":" + .variant else "" end)),
+                      value: {
+                        aliases: (
+                          (if ($variants | index("cloud")) then (if .variant == "cloud" then ["\(.os)/\(.version)", "\(.os)/\(.version)/\(.arch)"] else [] end 
+                           else (if .variant == "default" then ["\(.os)/\(.version)", "\(.os)/\(.version)/\(.arch)"] else [] end) end)
+                          + ["\(.os)/\(.version)/\(.variant)", "\(.os)/\(.version)/\(.arch)/\(.variant)"]
+                        ) | join(" "),
+                        arch: .arch,
+                        os: .os,
+                        release: (.codename // .version),
+                        release_title: .version,
+                        release_codename: (if .codename then .codename else empty end),
+                        variant: (if .variant != "default" then .variant else "" end),
+                        version: .version,
+                        supported: true,
+                        versions: {
+                          ($date): {
+                            items: {
+                              "rootfs.squashfs": {
+                                ftype: "squashfs",
+                                path: .rootfs_url,
+                                sha256: (if .rootfs_sha256 then .rootfs_sha256 else empty end),
+                                md5: (if .rootfs_md5 then .rootfs_md5 else empty end),
+                                size: (if .rootfs_size then .rootfs_size else 0 end)
+                              },
+                              "lxd.tar.xz": {
+                                ftype: "lxd.tar.xz",
+                                path: .lxd_url,
+                                sha256: (if .lxd_sha256 then .lxd_sha256 else empty end),
+                                md5: (if .lxd_md5 then .lxd_md5 else empty end),
+                                size: (if .lxd_size then .lxd_size else 0 end)
+                              }
                             }
-                          })
-                        | from_entries
-                      )
+                          }
+                        }
+                      }
                     }
-                  })
+                  )
                 | from_entries
               )
             }
-          ' > pages/streams/v1/com.spiritlhl.cloud:released:download.json
-          echo "Simplestreams JSON files generated:"
-          jq . pages/streams/v1/index.json
-          jq . pages/streams/v1/com.spiritlhl.cloud:released:download.json
-
+          ' > pages/streams/v1/download.json
+          products_list=$(jq '.products | keys' pages/streams/v1/download.json)
+          jq -n --arg updated "$NOW" --argjson products_list "$products_list" '
+            {
+              format: "index:1.0",
+              updated: $updated,
+              index: {
+                "images:download": {
+                  datatype: "image-downloads",
+                  path: "streams/v1/download.json",
+                  updated: $updated,
+                  products: $products_list,
+                  format: "products:1.0"
+                }
+              }
+            }
+          ' > pages/streams/v1/index.json
 
       - name: 生成网页界面
         run: |
@@ -387,7 +348,6 @@ jobs:
                               throw new Error(`HTTP error! status: ${response.status}`);
                           }
                           const data = await response.json();
-                          console.log('Loaded data:', data);
                           displayImages(data.products);
                       } catch (error) {
                           console.error('Error loading images:', error);
@@ -400,40 +360,26 @@ jobs:
                           container.innerHTML = '<p>暂无可用镜像</p>';
                           return;
                       }
-                      const imageCards = Object.entries(products).map(([productKey, product]) => {
-                          let usagePath = '';
-                          if (product.arch === 'amd64' && product.variant === 'cloud') {
-                              usagePath = `${product.os}/${product.version}`;
-                          } else if (!product.variant || product.variant === 'cloud') {
-                              usagePath = `${product.os}/${product.version}/${product.arch}`;
-                          } else {
-                              usagePath = `${product.os}/${product.version}/${product.arch}/${product.variant}`;
-                          }
-                          const buildsHtml = Object.entries(product.versions).map(([serial, serialData]) => {
-                              const rootfsItem = serialData.items['root.squashfs'];
-                              const lxdItem = serialData.items['lxd.tar.xz'];
-                              const mirrorBase = rootfsItem.mirrors && rootfsItem.mirrors.length > 0 ? rootfsItem.mirrors[0] : '';
-                              const rootfsLink = mirrorBase ? mirrorBase + '/' + rootfsItem.path : rootfsItem.path;
-                              const lxdLink = mirrorBase ? mirrorBase + '/' + lxdItem.path : lxdItem.path;
-                              return `
-                                  <div class="version-item">
-                                      <strong>构建: ${serial}</strong>
-                                      <div class="arch-item">
-                                          <strong>${product.arch}</strong>${product.variant && product.variant !== 'cloud' ? ' (' + product.variant + ')' : ' (默认变体)'}
-                                          <div class="download-links">
-                                              <a href="${rootfsLink}" download>rootfs</a>
-                                              <a href="${lxdLink}" download>metadata</a>
-                                          </div>
-                                      </div>
-                                  </div>
-                              `;
-                          }).join('');
+                      const imageCards = Object.entries(products).map(([id, product]) => {
+                          const versionData = Object.values(product.versions)[0];
+                          const rootfsPath = versionData.items["rootfs.squashfs"].path;
+                          const lxdPath = versionData.items["lxd.tar.xz"].path;
+                          const variantLabel = product.variant && product.variant !== '' ? product.variant : '默认变体';
                           return `
                               <div class="image-card">
-                                  <h3>${product.os} ${product.version}</h3>
-                                  <p>使用方式: <code>lxc launch spiritlhl-images:${usagePath} container-name</code></p>
+                                  <h3>${product.os}</h3>
+                                  <p>使用方式: <code>lxc launch spiritlhl-images:${product.os}/${product.version} ${product.os}-${product.version}-container</code></p>
                                   <div class="version-list">
-                                      ${buildsHtml}
+                                      <div class="version-item">
+                                          <strong>版本: ${product.version}</strong>
+                                          <div class="arch-item">
+                                              <strong>${product.arch}</strong> (${variantLabel})
+                                              <div class="download-links">
+                                                  <a href="${rootfsPath}" download>rootfs</a>
+                                                  <a href="${lxdPath}" download>metadata</a>
+                                              </div>
+                                          </div>
+                                      </div>
                                   </div>
                               </div>
                           `;
