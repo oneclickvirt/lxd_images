@@ -172,17 +172,29 @@ jobs:
           
           # 获取processed release中已存在的文件
           echo "Getting existing assets from processed release..."
-          curl -s "https://api.github.com/repos/${{ github.repository }}/releases" | \
-            jq -r '.[] | select(.tag_name=="processed") | .assets[]' > existing_assets.json
           
           # 创建包含现有资产的数组
           echo "[]" > all_assets.json
           
-          # 解析现有的processed文件并添加到all_assets.json
-          if [ -s existing_assets.json ]; then
-            while IFS= read -r asset; do
-              name=$(echo "$asset" | jq -r '.name')
-              url=$(echo "$asset" | jq -r '.browser_download_url')
+          # 获取processed release的assets，并处理可能的空结果
+          processed_assets=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" | \
+            jq -r '.[] | select(.tag_name=="processed") | .assets[]?' 2>/dev/null || echo "")
+          
+          if [ -n "$processed_assets" ]; then
+            echo "$processed_assets" > existing_assets_raw.json
+            
+            # 将每个asset对象分别处理
+            echo "$processed_assets" | jq -c '.' | while IFS= read -r asset; do
+              if [ -z "$asset" ] || [ "$asset" = "null" ]; then
+                continue
+              fi
+              
+              name=$(echo "$asset" | jq -r '.name // empty')
+              url=$(echo "$asset" | jq -r '.browser_download_url // empty')
+              
+              if [ -z "$name" ] || [ -z "$url" ]; then
+                continue
+              fi
               
               # 匹配rootfs文件模式: os-version-arch-variant-rootfs.squashfs
               if [[ "$name" =~ ^([a-z0-9]+)-([0-9a-z\.\-]+)-([a-z0-9]+)-([a-z]+)-rootfs\.squashfs$ ]]; then
@@ -193,9 +205,10 @@ jobs:
                 
                 # 查找对应的lxd文件
                 lxd_name="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
-                lxd_url=$(cat existing_assets.json | jq -r --arg name "$lxd_name" 'select(.name == $name) | .browser_download_url // empty')
+                lxd_url=$(echo "$processed_assets" | jq -r --arg name "$lxd_name" 'select(.name == $name) | .browser_download_url // empty')
                 
                 if [ -n "$lxd_url" ]; then
+                  echo "Found existing asset pair: $name and $lxd_name"
                   # 添加到资产列表
                   jq --arg os "$os" \
                      --arg version "$version" \
@@ -215,7 +228,9 @@ jobs:
                   mv all_assets_temp.json all_assets.json
                 fi
               fi
-            done < existing_assets.json
+            done
+          else
+            echo "No existing assets found in processed release"
           fi
           
           # 合并新处理的资产
