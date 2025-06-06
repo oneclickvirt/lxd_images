@@ -20,26 +20,17 @@ jobs:
 
       - name: 获取资产信息
         run: |
-          echo "Fetching release assets..."
           mkdir -p temp
-          
-          # 获取 processed release 的资产
           processed_assets=$(curl -s "https://api.github.com/repos/oneclickvirt/lxd_images/releases" | \
             jq -r '.[] | select(.tag_name=="processed") | .assets // empty')
-          
           if [ "$processed_assets" != "null" ] && [ "$processed_assets" != "empty" ] && [ -n "$processed_assets" ]; then
             echo "$processed_assets" > temp/assets.json
-            echo "Found $(jq length temp/assets.json) assets"
           else
-            echo "No assets found, creating empty assets file"
             echo "[]" > temp/assets.json
           fi
 
       - name: 处理镜像信息
         run: |
-          echo "Processing image information..."
-          
-          # 创建处理脚本
           cat > process_images.jq << 'EOF'
           [
             .[] | 
@@ -84,11 +75,8 @@ jobs:
             }
           )
           EOF
-          
-          # 处理资产信息
           if [ "$(jq length temp/assets.json)" -gt 0 ]; then
             jq -f process_images.jq temp/assets.json > temp/processed_images.json
-            echo "Processed $(jq length temp/processed_images.json) image pairs"
           else
             echo "[]" > temp/processed_images.json
           fi
@@ -96,11 +84,7 @@ jobs:
       - name: 生成 Simplestreams 结构
         run: |
           mkdir -p pages/streams/v1
-          
           if [ "$(jq length temp/processed_images.json)" -eq 0 ]; then
-            echo "No valid image pairs found, creating empty structure"
-            
-            # 创建空的 products.json
             cat > pages/streams/v1/products.json << 'EOF'
           {
             "datatype": "image-downloads",
@@ -108,8 +92,6 @@ jobs:
             "products": {}
           }
           EOF
-            
-            # 创建 index.json
             cat > pages/streams/v1/index.json << 'EOF'
           {
             "index": {
@@ -124,12 +106,7 @@ jobs:
           EOF
             exit 0
           fi
-          
-          # 生成当前时间戳
           current_time=$(date -u +"%Y%m%d_%H%M")
-          echo "Using timestamp: $current_time"
-          
-          # 生成 products.json
           jq -n --slurpfile images temp/processed_images.json --arg updated "$current_time" '
           {
             "datatype": "image-downloads", 
@@ -199,14 +176,12 @@ jobs:
               from_entries
             )
           }' > pages/streams/v1/products.json
-          
-          # 生成 index.json
           cat > pages/streams/v1/index.json << 'EOF'
           {
             "index": {
               "images": {
                 "datatype": "image-downloads",
-                "path": "streams/v1/products.json", 
+                "path": "streams/v1/products.json",
                 "format": "products:1.0"
               }
             },
@@ -216,14 +191,10 @@ jobs:
 
       - name: 创建重定向处理器
         run: |
-          # 创建重定向目录结构
           mkdir -p pages/redirect/{lxd,rootfs}
-          
-          # 生成重定向页面模板函数
           generate_redirect_page() {
             local url="$1"
             local filename="$2"
-            
             cat > "$filename" << EOF
           <!DOCTYPE html>
           <html>
@@ -239,223 +210,25 @@ jobs:
           </html>
           EOF
           }
-          
-          # 为每个镜像文件创建重定向页面
           if [ -f temp/processed_images.json ]; then
             jq -r '.[] | @base64' temp/processed_images.json | while IFS= read -r line; do
-              if [ -n "$line" ]; then
-                decoded=$(echo "$line" | base64 -d)
-                lxd_url=$(echo "$decoded" | jq -r '.lxd_url')
-                rootfs_url=$(echo "$decoded" | jq -r '.rootfs_url')
-                
-                # URL 编码处理
-                lxd_encoded=$(echo "$lxd_url" | sed 's|:|%3A|g; s|/|%2F|g; s|?|%3F|g; s|&|%26|g')
-                rootfs_encoded=$(echo "$rootfs_url" | sed 's|:|%3A|g; s|/|%2F|g; s|?|%3F|g; s|&|%26|g')
-                
-                # 生成重定向文件
-                generate_redirect_page "$lxd_url" "pages/redirect/lxd/$lxd_encoded"
-                generate_redirect_page "$rootfs_url" "pages/redirect/rootfs/$rootfs_encoded"
-                
-                echo "Created redirects for: $(echo "$decoded" | jq -r '.os')-$(echo "$decoded" | jq -r '.version')-$(echo "$decoded" | jq -r '.arch')-$(echo "$decoded" | jq -r '.variant')"
-              fi
+              decoded=$(echo "$line" | base64 -d)
+              lxd_url=$(echo "$decoded" | jq -r '.lxd_url')
+              rootfs_url=$(echo "$decoded" | jq -r '.rootfs_url')
+              lxd_encoded=$(echo "$lxd_url" | sed 's|:|%3A|g; s|/|%2F|g; s|?|%3F|g; s|&|%26|g')
+              rootfs_encoded=$(echo "$rootfs_url" | sed 's|:|%3A|g; s|/|%2F|g; s|?|%3F|g; s|&|%26|g')
+              generate_redirect_page "$lxd_url" "pages/redirect/lxd/$lxd_encoded"
+              generate_redirect_page "$rootfs_url" "pages/redirect/rootfs/$rootfs_encoded"
             done
           fi
 
       - name: 生成网页界面
         run: |
-          cat > pages/index.html << 'EOF'
-          <!DOCTYPE html>
-          <html lang="zh-CN">
-          <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>LXD Images Repository - Simplestreams</title>
-              <style>
-                  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; line-height: 1.6; background: #f5f5f5; }
-                  .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-                  h1 { color: #333; border-bottom: 3px solid #007cba; padding-bottom: 15px; margin-bottom: 30px; }
-                  h2 { color: #555; margin-top: 35px; margin-bottom: 20px; }
-                  .usage-section { background: #f8f9fa; padding: 25px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #007cba; }
-                  .usage-examples { background: white; padding: 20px; border-radius: 5px; margin: 15px 0; border: 1px solid #e0e0e0; }
-                  pre { background: #2d3748; color: #e2e8f0; padding: 15px; border-radius: 5px; overflow-x: auto; font-family: 'Consolas', 'Monaco', monospace; margin: 10px 0; }
-                  .highlight-command { background: #007cba; color: white; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
-                  .image-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 25px; margin: 30px 0; }
-                  .image-card { border: 1px solid #ddd; padding: 20px; border-radius: 8px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-                  .image-card h3 { margin-top: 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 10px; }
-                  .version-list { margin: 15px 0; }
-                  .version-item { margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 5px; border-left: 3px solid #007cba; }
-                  .arch-item { margin: 12px 0; padding: 12px; background: white; border: 1px solid #e0e0e0; border-radius: 5px; }
-                  .variants { margin-top: 10px; }
-                  .variant-item { margin: 8px 0; padding: 8px 12px; background: #e8f4f8; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
-                  .download-links a { margin-left: 10px; padding: 4px 8px; background: #28a745; color: white; text-decoration: none; border-radius: 3px; font-size: 11px; transition: background 0.3s; }
-                  .download-links a:hover { background: #1e7e34; }
-                  .note { background: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 20px 0; border-radius: 4px; }
-                  .error { background: #f8d7da; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0; border-radius: 4px; color: #721c24; }
-                  .success { background: #d4edda; padding: 15px; border-left: 4px solid #28a745; margin: 20px 0; border-radius: 4px; color: #155724; }
-                  .loading { text-align: center; padding: 40px; color: #666; }
-                  .status-indicator { display: inline-block; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
-                  .status-online { background: #d4edda; color: #155724; }
-                  .status-offline { background: #f8d7da; color: #721c24; }
-              </style>
-          </head>
-          <body>
-              <div class="container">
-                  <h1>🐧 LXD Images Repository</h1>
-                  <p>基于 Simplestreams 协议的 LXD 容器镜像仓库，提供各种 Linux 发行版的容器镜像。</p>
-                  
-                  <div class="usage-section">
-                      <h2>📚 使用指南</h2>
-                      
-                      <h3>1. 添加镜像源</h3>
-                      <p>将此仓库添加为 LXD 远程镜像源：</p>
-                      <pre>lxc remote add spiritlhl-images https://oneclickvirt.github.io/lxd_images --protocol=simplestreams --public</pre>
-                      
-                      <div class="note">
-                          <strong>💡 提示：</strong> 如果遇到 HTTPS 证书问题，可以临时使用 <code>--accept-certificate</code> 参数。
-                      </div>
-                      
-                      <h3>2. 基本使用方法</h3>
-                      <div class="usage-examples">
-                          <p><strong>列出所有可用镜像：</strong></p>
-                          <pre>lxc image list spiritlhl-images:</pre>
-                          
-                          <p><strong>启动容器（自动选择架构）：</strong></p>
-                          <pre>lxc launch spiritlhl-images:debian/11 my-debian-container</pre>
-                          
-                          <p><strong>指定架构启动：</strong></p>
-                          <pre>lxc launch spiritlhl-images:ubuntu/20.04/arm64 my-arm-container</pre>
-                          
-                          <p><strong>指定变体启动：</strong></p>
-                          <pre>lxc launch spiritlhl-images:centos/8/amd64/default my-centos-container</pre>
-                      </div>
-                      
-                      <h3>3. 高级用法</h3>
-                      <div class="usage-examples">
-                          <p><strong>仅下载镜像（不启动容器）：</strong></p>
-                          <pre>lxc image copy spiritlhl-images:debian/11 local: --alias my-debian-image</pre>
-                          
-                          <p><strong>查看镜像详细信息：</strong></p>
-                          <pre>lxc image info spiritlhl-images:debian/11</pre>
-                          
-                          <p><strong>从镜像创建容器但不启动：</strong></p>
-                          <pre>lxc init spiritlhl-images:debian/11 my-container</pre>
-                      </div>
-                  </div>
-                  
-                  <h2>📋 可用镜像</h2>
-                  <div id="status-indicator"></div>
-                  <div id="images-container" class="loading">
-                      <p>🔄 正在加载镜像列表...</p>
-                  </div>
-              </div>
-              
-              <script>
-                  async function loadImages() {
-                      const statusDiv = document.getElementById('status-indicator');
-                      const container = document.getElementById('images-container');
-                      
-                      try {
-                          statusDiv.innerHTML = '<span class="status-indicator status-online">🟢 服务在线</span>';
-                          
-                          const response = await fetch('./streams/v1/products.json');
-                          if (!response.ok) {
-                              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                          }
-                          
-                          const data = await response.json();
-                          console.log('Loaded Simplestreams data:', data);
-                          
-                          if (!data.products || Object.keys(data.products).length === 0) {
-                              container.innerHTML = '<div class="note"><p>📦 暂无可用镜像，请稍后再试。</p></div>';
-                              return;
-                          }
-                          
-                          displayImages(data.products);
-                          
-                      } catch (error) {
-                          console.error('Error loading images:', error);
-                          statusDiv.innerHTML = '<span class="status-indicator status-offline">🔴 服务离线</span>';
-                          container.innerHTML = `
-                              <div class="error">
-                                  <h3>❌ 加载失败</h3>
-                                  <p>无法加载镜像列表: ${error.message}</p>
-                                  <p>请检查网络连接或稍后重试。</p>
-                              </div>
-                          `;
-                      }
-                  }
-                  
-                  function displayImages(products) {
-                      const container = document.getElementById('images-container');
-                      
-                      const imageCards = Object.entries(products).map(([productId, product]) => {
-                          const architectures = product.arch.join(', ');
-                          
-                          const versions = Object.entries(product.versions).map(([version, versionData]) => {
-                              const archItems = Object.entries(versionData.items).map(([arch, archData]) => {
-                                  const variants = Object.entries(archData).map(([variant, variantData]) => {
-                                      const latestTimestamp = Object.keys(variantData.versions)[0];
-                                      const items = variantData.versions[latestTimestamp]?.items || {};
-                                      
-                                      return `
-                                          <div class="variant-item">
-                                              <span><strong>${variant}</strong> (${arch})</span>
-                                              <div class="download-links">
-                                                  ${items['rootfs.squashfs'] ? `<a href="${items['rootfs.squashfs'].path}" target="_blank">rootfs (${(items['rootfs.squashfs'].size / 1024 / 1024).toFixed(1)}MB)</a>` : ''}
-                                                  ${items['lxd.tar.xz'] ? `<a href="${items['lxd.tar.xz'].path}" target="_blank">metadata (${(items['lxd.tar.xz'].size / 1024).toFixed(1)}KB)</a>` : ''}
-                                              </div>
-                                          </div>
-                                      `;
-                                  }).join('');
-                                  
-                                  return variants;
-                              }).join('');
-                              
-                              return `
-                                  <div class="version-item">
-                                      <strong>📦 版本: ${version}</strong>
-                                      <div class="variants">
-                                          ${archItems}
-                                      </div>
-                                  </div>
-                              `;
-                          }).join('');
-                          
-                          return `
-                              <div class="image-card">
-                                  <h3>🐧 ${productId}</h3>
-                                  <p><strong>支持架构:</strong> ${architectures}</p>
-                                  <p><strong>LXD 使用:</strong> <span class="highlight-command">lxc launch spiritlhl-images:${productId} container-name</span></p>
-                                  <div class="version-list">
-                                      ${versions}
-                                  </div>
-                              </div>
-                          `;
-                      }).join('');
-                      
-                      container.innerHTML = `
-                          <div class="success">
-                              <p>✅ 成功加载 ${Object.keys(products).length} 个镜像系列</p>
-                          </div>
-                          <div class="image-grid">${imageCards}</div>
-                      `;
-                  }
-                  
-                  // 页面加载完成后自动加载镜像
-                  document.addEventListener('DOMContentLoaded', loadImages);
-                  
-                  // 每5分钟自动刷新一次
-                  setInterval(loadImages, 5 * 60 * 1000);
-              </script>
-          </body>
-          </html>
-          EOF
+          curl -sL https://raw.githubusercontent.com/spiritLHLS/lxd-images-frontend/main/index.html -o pages/index.html
           echo "lxdimages.spiritlhl.net" >> pages/CNAME
 
       - name: 验证生成的文件
         run: |
-          echo "=== 验证生成的 Simplestreams 文件 ==="
-          
           if [ -f pages/streams/v1/products.json ]; then
             echo "✅ products.json 已生成"
             echo "产品数量: $(jq '.products | length' pages/streams/v1/products.json)"
@@ -463,18 +236,13 @@ jobs:
           else
             echo "❌ products.json 未生成"
           fi
-          
           if [ -f pages/streams/v1/index.json ]; then
             echo "✅ index.json 已生成"
           else
             echo "❌ index.json 未生成"
           fi
-          
-          echo "=== 重定向文件统计 ==="
           echo "LXD 重定向文件: $(find pages/redirect/lxd -type f 2>/dev/null | wc -l)"
           echo "Rootfs 重定向文件: $(find pages/redirect/rootfs -type f 2>/dev/null | wc -l)"
-          
-          echo "=== Simplestreams 数据预览 ==="
           if [ -f pages/streams/v1/products.json ] && [ "$(jq '.products | length' pages/streams/v1/products.json)" -gt 0 ]; then
             jq -r '.products | to_entries | .[0] | "示例产品: \(.key)"' pages/streams/v1/products.json
           fi
