@@ -59,7 +59,7 @@ jobs:
           assets = release_data.get('assets', [])
           
           def parse_filename(filename):
-              # 新的文件名格式: debian-11-amd64-cloud-lxd.tar.xz
+              # 解析文件名格式: debian-11-amd64-cloud-lxd.tar.xz
               if filename.endswith('-lxd.tar.xz'):
                   base_name = filename.replace('-lxd.tar.xz', '')
               elif filename.endswith('-rootfs.squashfs'):
@@ -72,14 +72,14 @@ jobs:
                   distro = parts[0]
                   version = parts[1]
                   arch = parts[2]
-                  variant = parts[3]  # cloud, default, etc.
+                  variant = parts[3]  # cloud, default, openrc, systemd etc.
                   return distro, version, arch, variant
               return None, None, None, None
           
           def calculate_sha256_from_url(url):
               try:
                   print(f"Calculating SHA256 for: {url}")
-                  response = requests.get(url, stream=True, timeout=30)
+                  response = requests.get(url, stream=True, timeout=60)
                   if response.status_code == 200:
                       sha256_hash = hashlib.sha256()
                       for chunk in response.iter_content(chunk_size=8192):
@@ -93,16 +93,14 @@ jobs:
               except Exception as e:
                   print(f"Error calculating SHA256: {e}")
               
-              # 如果无法计算实际SHA256，返回一个占位符
+              # 返回占位符，但这会影响验证
               return "0000000000000000000000000000000000000000000000000000000000000000"
           
-          def get_file_info(asset, item_type):
-              # 使用相对路径
-              relative_path = f'download/{asset["name"]}'
+          def get_file_info(asset, file_type):
               return {
-                  'ftype': item_type,
+                  'ftype': file_type,
                   'size': asset.get('size', 0),
-                  'path': relative_path,
+                  'path': f'download/{asset["name"]}',
                   'sha256': calculate_sha256_from_url(f'{BASE_URL}/{asset["name"]}')
               }
           
@@ -137,33 +135,31 @@ jobs:
               redirects_rules.append(f'/download/{lxd_asset["name"]} {BASE_URL}/{lxd_asset["name"]} 302')
               redirects_rules.append(f'/download/{rootfs_asset["name"]} {BASE_URL}/{rootfs_asset["name"]} 302')
               
-              # 生成产品名称，使用冒号分隔格式
+              # 生成产品名称 - 使用正确的格式
               product_name = f'{distro}:{version}:{arch}:{variant}'
               
-              # 生成别名 - 修改为逗号分隔的字符串格式
-              aliases_list = []
+              # 生成别名数组（不是字符串）
+              aliases = []
               
-              # 基本别名格式 (推荐的LXD格式)
-              aliases_list.append(f'{distro}/{version}')
-              
-              # 带架构的别名
-              aliases_list.append(f'{distro}/{version}/{arch}')
+              # 基本别名格式
+              aliases.append({'name': f'{distro}/{version}', 'description': f'{distro.title()} {version}'})
+              aliases.append({'name': f'{distro}/{version}/{arch}', 'description': f'{distro.title()} {version} {arch}'})
               
               # 带变体的别名
-              if variant != 'default':  # 默认变体不需要在别名中显示
-                  aliases_list.append(f'{distro}/{version}/{arch}/{variant}')
+              if variant != 'default':
+                  aliases.append({'name': f'{distro}/{version}/{arch}/{variant}', 'description': f'{distro.title()} {version} {arch} ({variant})'})
               
               # 向后兼容的冒号格式
-              aliases_list.append(f'{distro}:{version}:{arch}')
+              aliases.append({'name': f'{distro}:{version}:{arch}', 'description': f'{distro.title()} {version} {arch}'})
               
               # 如果版本是 current，添加简化别名
               if version == 'current':
-                  aliases_list.append(f'{distro}')
-                  aliases_list.append(f'{distro}/{arch}')
+                  aliases.append({'name': f'{distro}', 'description': f'{distro.title()} latest'})
+                  aliases.append({'name': f'{distro}/{arch}', 'description': f'{distro.title()} latest {arch}'})
               
               if product_name not in products:
                   products[product_name] = {
-                      'aliases': ','.join(aliases_list),  # 改为逗号分隔的字符串
+                      'aliases': aliases,
                       'arch': arch,
                       'os': distro,
                       'release': version,
@@ -179,11 +175,11 @@ jobs:
                   }
               }
               
-              print(f"Processed {product_name} with aliases: {products[product_name]['aliases']}")
+              print(f"Processed {product_name}")
           
-          update_time = current_time.strftime('%a, %d %b %Y %H:%M:%S') + ' +0000'
+          update_time = current_time.strftime('%a, %d %b %Y %H:%M:%S +0000')
           
-          # SimpleStreams索引数据结构
+          # 正确的SimpleStreams索引数据结构
           index_data = {
               'format': 'index:1.0',
               'index': {
@@ -219,7 +215,8 @@ jobs:
           with open('build/_redirects', 'w') as f:
               for rule in redirects_rules:
                   f.write(rule + '\n')
-              # 添加默认重定向到主页
+              # 重要：添加CORS支持的重定向
+              f.write('/streams/v1/* /streams/v1/:splat 200\n')
               f.write('/* /index.html 200\n')
           
           print(f"Generated index with {len(products)} products and {len(redirects_rules)} redirect rules")
@@ -233,34 +230,14 @@ jobs:
               test_images = json.load(f)
               print("Images JSON validation passed")
           
-          # 打印调试信息
-          print("\n=== 生成的产品列表 ===")
+          # 生成调试信息
+          print("\n=== 生成的产品别名 ===")
           for product_name, product_info in sorted(products.items()):
               print(f"产品: {product_name}")
-              print(f"  别名: {product_info['aliases']}")
-              print(f"  架构: {product_info['arch']}")
-              print(f"  系统: {product_info['os']}")
-              print(f"  版本: {product_info['release']}")
-              print(f"  变体: {product_info['variant']}")
+              for alias in product_info['aliases']:
+                  print(f"  别名: {alias['name']} - {alias['description']}")
               print()
           
-          # 生成可用别名列表供测试使用
-          print("\n=== 可用别名测试命令 ===")
-          sample_aliases = []
-          for product_name, product_info in sorted(products.items()):
-              aliases = product_info['aliases'].split(',')
-              for alias in aliases:
-                  if 'debian' in alias and '11' in alias:
-                      sample_aliases.append(alias)
-                  if len(sample_aliases) >= 5:
-                      break
-              if len(sample_aliases) >= 5:
-                  break
-          
-          for alias in sample_aliases[:5]:
-              print(f"lxc launch spiritlhl:{alias} test-container")
-          
-          print(f"\nGenerated _redirects file with {len(redirects_rules)} rules")
           EOF
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -283,132 +260,246 @@ jobs:
               <title>LXD Images Repository</title>
               <style>
                   body {
-                      font-family: Arial, sans-serif;
-                      max-width: 1000px;
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                      max-width: 1200px;
                       margin: 0 auto;
                       padding: 20px;
                       line-height: 1.6;
+                      color: #333;
                   }
-                  h1 { color: #333; }
+                  h1 { color: #2c3e50; margin-bottom: 10px; }
+                  .subtitle { color: #7f8c8d; margin-bottom: 30px; }
                   .usage {
-                      background: #f5f5f5;
-                      padding: 15px;
-                      border-radius: 5px;
+                      background: #f8f9fa;
+                      padding: 20px;
+                      border-radius: 8px;
                       margin: 20px 0;
+                      border-left: 4px solid #3498db;
                   }
                   pre {
-                      background: #333;
-                      color: #fff;
-                      padding: 10px;
-                      border-radius: 3px;
+                      background: #2c3e50;
+                      color: #ecf0f1;
+                      padding: 15px;
+                      border-radius: 5px;
                       overflow-x: auto;
+                      margin: 10px 0;
                   }
                   .images {
                       margin-top: 30px;
                   }
-                  .image-item {
-                      border-bottom: 1px solid #eee;
-                      padding: 15px 0;
+                  .os-section {
+                      margin-bottom: 40px;
+                      border: 1px solid #dee2e6;
+                      border-radius: 8px;
+                      overflow: hidden;
                   }
-                  .image-name {
+                  .os-header {
+                      background: #495057;
+                      color: white;
+                      padding: 20px;
+                      font-size: 1.5em;
                       font-weight: bold;
-                      color: #333;
-                      font-size: 1.1em;
                   }
-                  .image-variant {
-                      color: #666;
-                      font-size: 0.9em;
-                      margin-top: 2px;
+                  .version-group {
+                      border-bottom: 1px solid #dee2e6;
+                  }
+                  .version-header {
+                      background: #6c757d;
+                      color: white;
+                      padding: 15px 20px;
+                      font-weight: bold;
+                  }
+                  .image-item {
+                      padding: 15px 20px;
+                      border-bottom: 1px solid #f1f3f4;
+                  }
+                  .image-item:last-child {
+                      border-bottom: none;
+                  }
+                  .image-details {
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      flex-wrap: wrap;
+                  }
+                  .image-info {
+                      flex: 1;
+                      min-width: 200px;
                   }
                   .image-cmd {
-                      font-family: monospace;
-                      background: #f8f8f8;
-                      padding: 8px;
-                      margin-top: 8px;
-                      border-radius: 3px;
-                      border-left: 4px solid #007acc;
+                      font-family: 'Monaco', 'Menlo', monospace;
+                      background: #f8f9fa;
+                      padding: 10px;
+                      border-radius: 4px;
+                      border-left: 4px solid #28a745;
+                      margin-top: 10px;
+                      font-size: 0.9em;
                   }
-                  .aliases {
-                      color: #666;
-                      font-size: 0.85em;
-                      margin-top: 5px;
+                  .variant-badge {
+                      display: inline-block;
+                      padding: 4px 8px;
+                      border-radius: 12px;
+                      font-size: 0.8em;
+                      font-weight: bold;
+                      text-transform: uppercase;
                   }
-                  .variant-cloud { border-left-color: #28a745; }
-                  .variant-default { border-left-color: #007acc; }
+                  .variant-cloud { background: #d4edda; color: #155724; }
+                  .variant-default { background: #cce5ff; color: #004085; }
+                  .variant-openrc { background: #f8d7da; color: #721c24; }
+                  .variant-systemd { background: #fff3cd; color: #856404; }
+                  .arch-badge {
+                      background: #e9ecef;
+                      color: #495057;
+                      padding: 2px 6px;
+                      border-radius: 8px;
+                      font-size: 0.8em;
+                      margin-left: 10px;
+                  }
+                  .stats {
+                      display: flex;
+                      gap: 20px;
+                      margin: 20px 0;
+                      flex-wrap: wrap;
+                  }
+                  .stat-item {
+                      background: #f8f9fa;
+                      padding: 15px;
+                      border-radius: 8px;
+                      text-align: center;
+                      min-width: 100px;
+                  }
+                  .stat-number {
+                      font-size: 2em;
+                      font-weight: bold;
+                      color: #3498db;
+                  }
+                  .stat-label {
+                      color: #6c757d;
+                      font-size: 0.9em;
+                  }
               </style>
           </head>
           <body>
-              <h1>LXD Images Repository</h1>
-              <p>Last updated: """ + datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC') + """</p>
+              <h1>🐧 LXD Images Repository</h1>
+              <p class="subtitle">高质量的LXD容器镜像集合 - 支持多架构、多变体</p>
+              <p><strong>最后更新:</strong> """ + datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC') + """</p>
               
               <div class="usage">
-                  <h2>Usage</h2>
-                  <p>Add this image server to LXD:</p>
+                  <h2>📋 使用方法</h2>
+                  <p><strong>1. 添加镜像源到LXD:</strong></p>
                   <pre>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public</pre>
-                  <p>Launch a container using any of these formats:</p>
-                  <pre>lxc launch spiritlhl:debian/11 my-container
-          lxc launch spiritlhl:debian/11/amd64 my-container
-          lxc launch spiritlhl:debian:11:amd64 my-container</pre>
+                  <p><strong>2. 启动容器:</strong></p>
+                  <pre>lxc launch spiritlhl:debian/12 my-container
+          lxc launch spiritlhl:debian/12/amd64 my-container  
+          lxc launch spiritlhl:ubuntu/24.04 my-container</pre>
+                  <p><strong>3. 查看可用镜像:</strong></p>
+                  <pre>lxc image list spiritlhl:</pre>
+              </div>
+          """
+          
+          # 统计信息
+          total_images = len(images_data['products'])
+          os_list = set()
+          arch_list = set()
+          variant_list = set()
+          
+          for product_info in images_data['products'].values():
+              os_list.add(product_info['os'])
+              arch_list.add(product_info['arch'])
+              variant_list.add(product_info['variant'])
+          
+          html_content += f"""
+              <div class="stats">
+                  <div class="stat-item">
+                      <div class="stat-number">{total_images}</div>
+                      <div class="stat-label">总镜像数</div>
+                  </div>
+                  <div class="stat-item">
+                      <div class="stat-number">{len(os_list)}</div>
+                      <div class="stat-label">操作系统</div>
+                  </div>
+                  <div class="stat-item">
+                      <div class="stat-number">{len(arch_list)}</div>
+                      <div class="stat-label">架构支持</div>
+                  </div>
+                  <div class="stat-item">
+                      <div class="stat-number">{len(variant_list)}</div>
+                      <div class="stat-label">变体类型</div>
+                  </div>
               </div>
               
               <div class="images">
-                  <h2>Available Images (""" + str(len(images_data['products'])) + """)</h2>
           """
           
-          # 按操作系统和版本分组
-          grouped_images = {}
+          # 按操作系统分组
+          grouped_by_os = {}
           for product_name, product_info in images_data['products'].items():
-              key = f"{product_info['os']}_{product_info['release']}"
-              if key not in grouped_images:
-                  grouped_images[key] = []
-              grouped_images[key].append((product_name, product_info))
+              os_name = product_info['os']
+              if os_name not in grouped_by_os:
+                  grouped_by_os[os_name] = {}
+              
+              version = product_info['release']
+              if version not in grouped_by_os[os_name]:
+                  grouped_by_os[os_name][version] = []
+              
+              grouped_by_os[os_name][version].append((product_name, product_info))
           
-          for group_key in sorted(grouped_images.keys()):
-              os_name, version = group_key.split('_', 1)
+          for os_name in sorted(grouped_by_os.keys()):
               html_content += f"""
-                  <h3>{os_name.title()} {version}</h3>
+                  <div class="os-section">
+                      <div class="os-header">{os_name.title()}</div>
               """
               
-              for product_name, product_info in sorted(grouped_images[group_key], key=lambda x: (x[1]['arch'], x[1]['variant'])):
-                  arch = product_info['arch']
-                  variant = product_info['variant']
-                  
-                  # 从逗号分隔的字符串中选择最简单的别名作为推荐使用
-                  aliases = product_info.get('aliases', '').split(',')
-                  recommended_alias = None
-                  for alias in aliases:
-                      if '/' in alias and alias.count('/') == 1:  # 形如 debian/11
-                          recommended_alias = alias
-                          break
-                  
-                  if not recommended_alias and aliases:
-                      recommended_alias = aliases[0]
-                  
-                  variant_class = f"variant-{variant}" if variant in ['cloud', 'default'] else ""
-                  
+              for version in sorted(grouped_by_os[os_name].keys()):
                   html_content += f"""
-                      <div class="image-item">
-                          <div class="image-name">{os_name.title()} {version} ({arch})</div>
-                          <div class="image-variant">Variant: {variant}</div>
-                          <div class="image-cmd {variant_class}">lxc launch spiritlhl:{recommended_alias or f'{os_name}:{version}:{arch}'} my-container</div>
-                          <div class="aliases">Available aliases: """
+                      <div class="version-group">
+                          <div class="version-header">Version {version}</div>
+                  """
                   
-                  html_content += ', '.join(aliases[:4])  # 显示前4个别名
-                  if len(aliases) > 4:
-                      html_content += f' (+{len(aliases)-4} more)'
+                  # 按架构和变体排序
+                  items = sorted(grouped_by_os[os_name][version], key=lambda x: (x[1]['arch'], x[1]['variant']))
                   
-                  html_content += """</div>
+                  for product_name, product_info in items:
+                      arch = product_info['arch']
+                      variant = product_info['variant']
+                      
+                      # 选择最佳别名
+                      best_alias = f"{os_name}/{version}"
+                      for alias in product_info.get('aliases', []):
+                          alias_name = alias.get('name', '') if isinstance(alias, dict) else str(alias)
+                          if '/' in alias_name and alias_name.count('/') == 1:
+                              best_alias = alias_name
+                              break
+                      
+                      html_content += f"""
+                          <div class="image-item">
+                              <div class="image-details">
+                                  <div class="image-info">
+                                      <strong>{os_name.title()} {version}</strong>
+                                      <span class="arch-badge">{arch}</span>
+                                      <span class="variant-badge variant-{variant}">{variant}</span>
+                                  </div>
+                              </div>
+                              <div class="image-cmd">lxc launch spiritlhl:{best_alias} my-container</div>
+                          </div>
+                      """
+                  
+                  html_content += """
                       </div>
                   """
+              
+              html_content += """
+                  </div>
+              """
           
           html_content += """
               </div>
               
               <hr style="margin: 40px 0;">
-              <p><small>
+              <p style="text-align: center;"><small>
                   <a href="streams/v1/index.json">SimpleStreams Index</a> | 
                   <a href="streams/v1/images.json">Images Metadata</a> |
-                  <a href="https://github.com/oneclickvirt/lxd_images">GitHub</a>
+                  <a href="https://github.com/oneclickvirt/lxd_images">GitHub Repository</a>
               </small></p>
           </body>
           </html>
@@ -435,11 +526,18 @@ jobs:
               Content-Type = "application/json"
               Cache-Control = "public, max-age=300"
               Access-Control-Allow-Origin = "*"
+              Access-Control-Allow-Methods = "GET, HEAD, OPTIONS"
+              Access-Control-Allow-Headers = "Content-Type"
           
           [[headers]]
             for = "/download/*"
             [headers.values]
               Cache-Control = "no-cache"
+          
+          [[redirects]]
+            from = "/simplestreams/data/*"
+            to = "/streams/v1/:splat"
+            status = 301
           EOL
 
       - name: Deploy to Netlify
