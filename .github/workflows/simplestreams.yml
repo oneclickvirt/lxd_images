@@ -1,7 +1,5 @@
 name: 构建LXD镜像源
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * *'
