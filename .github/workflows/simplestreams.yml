@@ -140,8 +140,7 @@ jobs:
                          arch: $arch,
                          variant: $variant,
                          rootfs_url: $rootfs_url,
-                         lxd_url: $lxd_url,
-                         product_id: "\($os)-\($version)-\($arch)-\($variant)"
+                         lxd_url: $lxd_url
                        }]' ../processed_assets.json > ../processed_assets_temp.json
                     
                     mv ../processed_assets_temp.json ../processed_assets.json
@@ -222,8 +221,7 @@ jobs:
                        arch: $arch,
                        variant: $variant,
                        rootfs_url: $rootfs_url,
-                       lxd_url: $lxd_url,
-                       product_id: "\($os)-\($version)-\($arch)-\($variant)"
+                       lxd_url: $lxd_url
                      }]' all_assets.json > all_assets_temp.json
                   mv all_assets_temp.json all_assets.json
                 fi
@@ -247,14 +245,14 @@ jobs:
             exit 0
           fi
 
-          # 生成 products.json
+          # 生成 products.json - 修正后的结构
           jq -n --slurpfile assets all_assets.json '
             {
               products: (
                 $assets[0]
-                | group_by(.product_id)
+                | group_by(.os)
                 | map({
-                    key: .[0].product_id,
+                    key: .[0].os,
                     value: {
                       versions: (
                         group_by(.version)
@@ -265,10 +263,48 @@ jobs:
                                 group_by(.arch)
                                 | map({
                                     key: .[0].arch,
-                                    value: {
-                                      rootfs: .[0].rootfs_url,
-                                      lxd: .[0].lxd_url
-                                    }
+                                    value: (
+                                      group_by(.variant)
+                                      | if length == 1 then
+                                          # 只有一个变体，直接使用
+                                          {
+                                            rootfs: .[0].rootfs_url,
+                                            lxd: .[0].lxd_url
+                                          }
+                                        elif (map(select(.variant == "cloud")) | length) > 0 then
+                                          # 有cloud变体，使用cloud作为默认，同时提供所有变体
+                                          (map(select(.variant == "cloud"))[0] | {
+                                            rootfs: .rootfs_url,
+                                            lxd: .lxd_url
+                                          }) + {
+                                            variants: (
+                                              map({
+                                                key: .variant,
+                                                value: {
+                                                  rootfs: .rootfs_url,
+                                                  lxd: .lxd_url
+                                                }
+                                              }) | from_entries
+                                            )
+                                          }
+                                        else
+                                          # 没有cloud变体，使用第一个作为默认
+                                          (.[0] | {
+                                            rootfs: .rootfs_url,
+                                            lxd: .lxd_url
+                                          }) + {
+                                            variants: (
+                                              map({
+                                                key: .variant,
+                                                value: {
+                                                  rootfs: .rootfs_url,
+                                                  lxd: .lxd_url
+                                                }
+                                              }) | from_entries
+                                            )
+                                          }
+                                        end
+                                    )
                                   })
                                 | from_entries
                               )
@@ -319,16 +355,21 @@ jobs:
                   h1 { color: #333; border-bottom: 2px solid #ddd; padding-bottom: 10px; }
                   h2 { color: #666; margin-top: 30px; }
                   .container { max-width: 1200px; margin: 0 auto; }
-                  .image-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 20px 0; }
+                  .image-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; margin: 20px 0; }
                   .image-card { border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
                   .image-card h3 { margin-top: 0; color: #333; }
                   .version-list { margin: 10px 0; }
-                  .version-item { margin: 5px 0; padding: 5px; background: #f5f5f5; border-radius: 3px; }
+                  .version-item { margin: 5px 0; padding: 10px; background: #f5f5f5; border-radius: 3px; }
+                  .arch-item { margin: 8px 0; padding: 8px; background: #fff; border: 1px solid #e0e0e0; border-radius: 3px; }
                   .download-links { margin: 5px 0; }
-                  .download-links a { margin-right: 10px; padding: 2px 8px; background: #007cba; color: white; text-decoration: none; border-radius: 3px; font-size: 12px; }
+                  .download-links a { margin-right: 10px; padding: 4px 8px; background: #007cba; color: white; text-decoration: none; border-radius: 3px; font-size: 12px; }
                   .download-links a:hover { background: #005a8b; }
+                  .variants { margin-top: 8px; font-size: 12px; }
+                  .variants .variant-item { margin: 4px 0; padding: 4px 8px; background: #e8f4f8; border-radius: 2px; }
                   .usage-section { background: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0; }
-                  pre { background: #f4f4f4; padding: 10px; border-radius: 3px; overflow-x: auto; }
+                  .usage-examples { background: #fff; padding: 15px; border-radius: 3px; margin: 10px 0; }
+                  pre { background: #f4f4f4; padding: 10px; border-radius: 3px; overflow-x: auto; font-size: 14px; }
+                  .note { background: #fffbf0; padding: 10px; border-left: 4px solid #ffa500; margin: 10px 0; }
               </style>
           </head>
           <body>
@@ -341,11 +382,23 @@ jobs:
                       <p>添加此镜像源到您的 LXD 配置：</p>
                       <pre>lxc remote add spiritlhl-images http://lxdimages.spiritlhl.net --protocol=simplestreams --public</pre>
                       
+                      <div class="usage-examples">
+                          <p><strong>基本使用（使用默认变体）：</strong></p>
+                          <pre>lxc launch spiritlhl-images:debian/11 my-container</pre>
+                          
+                          <p><strong>指定架构：</strong></p>
+                          <pre>lxc launch spiritlhl-images:debian/11/arm64 my-arm-container</pre>
+                          
+                          <p><strong>指定特定变体：</strong></p>
+                          <pre>lxc launch spiritlhl-images:debian/11/amd64/default my-default-container</pre>
+                      </div>
+                      
+                      <div class="note">
+                          <strong>注意：</strong> 如果存在多个变体，默认会使用 cloud 变体。如需使用其他变体，请在命令中明确指定。
+                      </div>
+                      
                       <p>列出可用镜像：</p>
                       <pre>lxc image list spiritlhl-images:</pre>
-                      
-                      <p>使用镜像创建容器：</p>
-                      <pre>lxc launch spiritlhl-images:PRODUCT_ID container-name</pre>
                   </div>
                   
                   <h2>可用镜像</h2>
@@ -380,14 +433,37 @@ jobs:
                       
                       const imageCards = Object.entries(products).map(([productId, product]) => {
                           const versions = Object.entries(product.versions).map(([version, versionData]) => {
-                              const architectures = Object.entries(versionData.items).map(([arch, files]) => {
-                                  return `
-                                      <div style="margin-left: 20px;">
-                                          <strong>${arch}</strong>
-                                          <div class="download-links">
-                                              <a href="${files.rootfs}" download>rootfs</a>
-                                              <a href="${files.lxd}" download>metadata</a>
+                              const architectures = Object.entries(versionData.items).map(([arch, archData]) => {
+                                  let downloadLinks = `
+                                      <div class="download-links">
+                                          <a href="${archData.rootfs}" download>rootfs</a>
+                                          <a href="${archData.lxd}" download>metadata</a>
+                                      </div>
+                                  `;
+                                  
+                                  let variantsHtml = '';
+                                  if (archData.variants) {
+                                      const variantsList = Object.entries(archData.variants).map(([variant, files]) => `
+                                          <div class="variant-item">
+                                              <strong>${variant}:</strong>
+                                              <a href="${files.rootfs}" download style="margin-left: 5px; font-size: 11px;">rootfs</a>
+                                              <a href="${files.lxd}" download style="margin-left: 5px; font-size: 11px;">metadata</a>
                                           </div>
+                                      `).join('');
+                                      
+                                      variantsHtml = `
+                                          <div class="variants">
+                                              <strong>可用变体：</strong>
+                                              ${variantsList}
+                                          </div>
+                                      `;
+                                  }
+                                  
+                                  return `
+                                      <div class="arch-item">
+                                          <strong>${arch}</strong> (默认变体)
+                                          ${downloadLinks}
+                                          ${variantsHtml}
                                       </div>
                                   `;
                               }).join('');
@@ -403,6 +479,7 @@ jobs:
                           return `
                               <div class="image-card">
                                   <h3>${productId}</h3>
+                                  <p>使用方式: <code>lxc launch spiritlhl-images:${productId} container-name</code></p>
                                   <div class="version-list">
                                       ${versions}
                                   </div>
