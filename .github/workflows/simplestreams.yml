@@ -118,14 +118,23 @@ jobs:
               
               product_name = f'{distro}:{version}:{arch}'
               
+              # 修复别名配置 - 这里是关键问题
+              aliases_list = []
+              # 添加完整的产品名称作为别名
+              aliases_list.append(product_name)
+              
+              # 如果版本是 current，也添加不带版本的别名
               if version == 'current':
-                  alias_name = f'{distro}:{arch}'
-              else:
-                  alias_name = f'{distro}:{version}:{arch}'
+                  short_alias = f'{distro}:{arch}'
+                  aliases_list.append(short_alias)
+              
+              # 添加带版本的完整别名
+              if version != 'current':
+                  aliases_list.append(f'{distro}:{version}:{arch}')
               
               if product_name not in products:
                   products[product_name] = {
-                      'aliases': alias_name,
+                      'aliases': ','.join(aliases_list),  # 修复：用逗号分隔的字符串
                       'arch': arch,
                       'os': distro,
                       'release': version,
@@ -133,6 +142,7 @@ jobs:
                       'versions': {}
                   }
               
+              # 修复版本信息结构
               products[product_name]['versions'][version_id] = {
                   'items': {
                       'lxd.tar.xz': get_file_info(lxd_asset, 'lxd.tar.xz'),
@@ -140,10 +150,11 @@ jobs:
                   }
               }
               
-              print(f"Processed {product_name}")
+              print(f"Processed {product_name} with aliases: {aliases_list}")
           
           update_time = current_time.strftime('%a, %d %b %Y %H:%M:%S') + ' +0000'
           
+          # 修复索引数据结构
           index_data = {
               'format': 'index:1.0',
               'index': {
@@ -193,9 +204,21 @@ jobs:
               test_images = json.load(f)
               print("Images JSON validation passed")
               
+          # 打印调试信息
+          print("\n=== 生成的产品列表 ===")
+          for product_name, product_info in products.items():
+              print(f"产品: {product_name}")
+              print(f"  别名: {product_info['aliases']}")
+              print(f"  架构: {product_info['arch']}")
+              print(f"  系统: {product_info['os']}")
+              print(f"  版本: {product_info['release']}")
+              print(f"  变体: {product_info['variant']}")
+              print()
+          
           print("Generated _redirects file with rules:")
           with open('build/_redirects', 'r') as f:
-              print(f.read())
+              redirects_content = f.read()
+              print(redirects_content[:1000])  # 只打印前1000字符避免日志过长
           EOF
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -211,237 +234,87 @@ jobs:
               images_data = json.load(f)
           
           html_content = """<!DOCTYPE html>
-          <html lang="zh-CN">
+          <html lang="en">
           <head>
               <meta charset="UTF-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
               <title>LXD Images Repository</title>
               <style>
                   body {
-                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                      line-height: 1.6;
-                      color: #333;
-                      max-width: 1200px;
+                      font-family: Arial, sans-serif;
+                      max-width: 800px;
                       margin: 0 auto;
                       padding: 20px;
-                      background-color: #f5f5f5;
+                      line-height: 1.6;
                   }
-                  .header {
-                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                      color: white;
-                      padding: 2rem;
-                      border-radius: 10px;
-                      margin-bottom: 2rem;
-                      text-align: center;
-                  }
-                  .header h1 {
-                      margin: 0;
-                      font-size: 2.5rem;
-                  }
-                  .header p {
-                      margin: 0.5rem 0 0 0;
-                      opacity: 0.9;
-                  }
+                  h1 { color: #333; }
                   .usage {
-                      background: white;
-                      padding: 1.5rem;
-                      border-radius: 8px;
-                      margin-bottom: 2rem;
-                      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                      background: #f5f5f5;
+                      padding: 15px;
+                      border-radius: 5px;
+                      margin: 20px 0;
                   }
-                  .usage h2 {
-                      color: #667eea;
-                      margin-top: 0;
-                  }
-                  .usage code {
-                      background: #f4f4f4;
-                      padding: 0.2rem 0.4rem;
+                  pre {
+                      background: #333;
+                      color: #fff;
+                      padding: 10px;
                       border-radius: 3px;
-                      font-family: 'Monaco', 'Consolas', monospace;
-                  }
-                  .usage pre {
-                      background: #2d3748;
-                      color: #e2e8f0;
-                      padding: 1rem;
-                      border-radius: 5px;
                       overflow-x: auto;
-                      margin: 0.5rem 0;
                   }
-                  .warning-box {
-                      background: #d1ecf1;
-                      border: 1px solid #bee5eb;
-                      padding: 1rem;
-                      border-radius: 5px;
-                      margin: 1rem 0;
+                  .images {
+                      margin-top: 30px;
                   }
-                  .warning-box h3 {
-                      color: #0c5460;
-                      margin-top: 0;
+                  .image-item {
+                      border-bottom: 1px solid #eee;
+                      padding: 10px 0;
                   }
-                  .stats {
-                      display: grid;
-                      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                      gap: 1rem;
-                      margin-bottom: 2rem;
-                  }
-                  .stat-card {
-                      background: white;
-                      padding: 1.5rem;
-                      border-radius: 8px;
-                      text-align: center;
-                      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                  }
-                  .stat-number {
-                      font-size: 2rem;
-                      font-weight: bold;
-                      color: #667eea;
-                  }
-                  .stat-label {
-                      color: #666;
-                      margin-top: 0.5rem;
-                  }
-                  .images-grid {
-                      display: grid;
-                      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-                      gap: 1rem;
-                  }
-                  .image-card {
-                      background: white;
-                      border-radius: 8px;
-                      padding: 1.5rem;
-                      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                      transition: transform 0.2s ease;
-                  }
-                  .image-card:hover {
-                      transform: translateY(-2px);
-                  }
-                  .image-title {
-                      font-size: 1.2rem;
+                  .image-name {
                       font-weight: bold;
                       color: #333;
-                      margin-bottom: 0.5rem;
                   }
-                  .image-meta {
-                      color: #666;
-                      font-size: 0.9rem;
-                      margin-bottom: 1rem;
-                  }
-                  .image-command {
-                      background: #f8f9fa;
-                      padding: 0.5rem;
-                      border-radius: 4px;
+                  .image-cmd {
                       font-family: monospace;
-                      font-size: 0.8rem;
-                      word-break: break-all;
-                      border-left: 3px solid #667eea;
-                  }
-                  .footer {
-                      text-align: center;
-                      margin-top: 3rem;
-                      padding: 2rem;
-                      color: #666;
-                  }
-                  .last-updated {
-                      background: white;
-                      padding: 1rem;
-                      border-radius: 8px;
-                      text-align: center;
-                      margin-bottom: 2rem;
-                      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                      background: #f8f8f8;
+                      padding: 5px;
+                      margin-top: 5px;
+                      border-radius: 3px;
                   }
               </style>
           </head>
           <body>
-              <div class="header">
-                  <h1>🐧 LXD Images Repository</h1>
-                  <p>高质量的 Linux 容器镜像集合，支持多架构 - 托管在 Netlify</p>
-              </div>
-              
-              <div class="last-updated">
-                  <strong>最后更新:</strong> """ + datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC') + """
-              </div>
+              <h1>LXD Images Repository</h1>
+              <p>Last updated: """ + datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC') + """</p>
               
               <div class="usage">
-                  <h2>🚀 使用方法</h2>
-                  <p><strong>步骤 1:</strong> 添加此镜像源到你的 LXD 客户端</p>
-                  <pre><code>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public --accept-certificate</code></pre>
-                  <p><strong>步骤 2:</strong> 验证远程源已添加</p>
-                  <pre><code>lxc remote list</code></pre>
-                  <p><strong>步骤 3:</strong> 查看可用镜像</p>
-                  <pre><code>lxc image list spiritlhl:</code></pre>
-                  <p><strong>步骤 4:</strong> 启动容器</p>
-                  <pre><code>lxc launch spiritlhl:ubuntu:22.04:amd64 my-container</code></pre>
-              </div>
-              <div class="stats">
-          """
-          
-          total_products = len(images_data['products'])
-          total_architectures = len(set(product.split(':')[2] for product in images_data['products']))
-          total_distros = len(set(product.split(':')[0] for product in images_data['products']))
-          
-          html_content += f"""
-                  <div class="stat-card">
-                      <div class="stat-number">{total_products}</div>
-                      <div class="stat-label">可用镜像</div>
-                  </div>
-                  <div class="stat-card">
-                      <div class="stat-number">{total_distros}</div>
-                      <div class="stat-label">Linux 发行版</div>
-                  </div>
-                  <div class="stat-card">
-                      <div class="stat-number">{total_architectures}</div>
-                      <div class="stat-label">支持架构</div>
-                  </div>
-                  <div class="stat-card">
-                      <div class="stat-number">Netlify</div>
-                      <div class="stat-label">真实重定向</div>
-                  </div>
+                  <h2>Usage</h2>
+                  <p>Add this image server to LXD:</p>
+                  <pre>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public</pre>
+                  <p>Launch a container:</p>
+                  <pre>lxc launch spiritlhl:ubuntu:22.04:amd64 my-container</pre>
               </div>
               
-              <div class="images-grid">
+              <div class="images">
+                  <h2>Available Images (""" + str(len(images_data['products'])) + """)</h2>
           """
           
-          sorted_products = sorted(images_data['products'].items(), key=lambda x: (x[0].split(':')[0], x[0].split(':')[1], x[0].split(':')[2]))
-          
-          for product_name, product_info in sorted_products:
+          for product_name, product_info in sorted(images_data['products'].items()):
               distro, version, arch = product_name.split(':')
-              variant = product_info.get('variant', 'default')
-              
-              distro_emoji = {
-                  'ubuntu': '🟠',
-                  'debian': '🔴',
-                  'centos': '💙',
-                  'fedora': '🔵',
-                  'archlinux': '🔷',
-                  'almalinux': '🟡',
-                  'rockylinux': '🟢',
-                  'oracle': '🔶',
-                  'gentoo': '🟣'
-              }.get(distro, '🐧')
-              
               html_content += f"""
-                  <div class="image-card">
-                      <div class="image-title">{distro_emoji} {distro.title()} {version}</div>
-                      <div class="image-meta">
-                          <strong>架构:</strong> {arch}<br>
-                          <strong>变体:</strong> {variant}<br>
-                          <strong>别名:</strong> {product_info.get('aliases', '')}
-                      </div>
-                      <div class="image-command">
-                          lxc launch spiritlhl:{distro}:{version}:{arch} my-{distro}-container
-                      </div>
+                  <div class="image-item">
+                      <div class="image-name">{distro} {version} ({arch})</div>
+                      <div class="image-cmd">lxc launch spiritlhl:{distro}:{version}:{arch} my-container</div>
                   </div>
               """
           
           html_content += """
               </div>
               
-              <div class="footer">
-                  <p>🔗 <a href="https://github.com/oneclickvirt/lxd_images" target="_blank">GitHub Repository</a> | 
-                  📊 <a href="streams/v1/index.json" target="_blank">SimpleStreams Index</a> | 
-                  🗂️ <a href="streams/v1/images.json" target="_blank">Images Metadata</a></p>
-                  <p>由 <a href="https://github.com/spiritLHLS" target="_blank">spiritLHLS</a> 维护 | 托管在 Netlify</p>
-              </div>
+              <hr style="margin: 40px 0;">
+              <p><small>
+                  <a href="streams/v1/index.json">SimpleStreams Index</a> | 
+                  <a href="streams/v1/images.json">Images Metadata</a> |
+                  <a href="https://github.com/oneclickvirt/lxd_images">GitHub</a>
+              </small></p>
           </body>
           </html>
           """
@@ -449,9 +322,9 @@ jobs:
           with open('build/index.html', 'w', encoding='utf-8') as f:
               f.write(html_content)
           
-          print("Generated HTML frontend")
+          print("Generated simple HTML frontend")
           EOF
-
+          
       - name: Create netlify.toml configuration
         run: |
           cat > build/netlify.toml << 'EOL'
