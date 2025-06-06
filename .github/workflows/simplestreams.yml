@@ -59,12 +59,20 @@ jobs:
           assets = release_data.get('assets', [])
           
           def parse_filename(filename):
-              parts = filename.replace('.tar.xz', '').replace('.squashfs', '').split('-')
+              # 新的文件名格式: debian-11-amd64-cloud-lxd.tar.xz
+              if filename.endswith('-lxd.tar.xz'):
+                  base_name = filename.replace('-lxd.tar.xz', '')
+              elif filename.endswith('-rootfs.squashfs'):
+                  base_name = filename.replace('-rootfs.squashfs', '')
+              else:
+                  return None, None, None, None
+              
+              parts = base_name.split('-')
               if len(parts) >= 4:
                   distro = parts[0]
                   version = parts[1]
                   arch = parts[2]
-                  variant = parts[3]
+                  variant = parts[3]  # cloud, default, etc.
                   return distro, version, arch, variant
               return None, None, None, None
           
@@ -95,46 +103,64 @@ jobs:
           
           products = {}
           
-          lxd_files = [asset for asset in assets if asset['name'].endswith('lxd.tar.xz')]
-          rootfs_files = [asset for asset in assets if asset['name'].endswith('rootfs.squashfs')]
+          lxd_files = [asset for asset in assets if asset['name'].endswith('-lxd.tar.xz')]
+          rootfs_files = [asset for asset in assets if asset['name'].endswith('-rootfs.squashfs')]
           
           current_time = datetime.now(timezone.utc)
           version_id = current_time.strftime('%Y%m%d_%H%M')
           
+          print(f"Found {len(lxd_files)} LXD files and {len(rootfs_files)} rootfs files")
+          
           for lxd_asset in lxd_files:
               distro, version, arch, variant = parse_filename(lxd_asset['name'])
               if not distro:
+                  print(f"Could not parse filename: {lxd_asset['name']}")
                   continue
                   
-              rootfs_name = lxd_asset['name'].replace('lxd.tar.xz', 'rootfs.squashfs')
+              # 查找对应的rootfs文件
+              rootfs_name = lxd_asset['name'].replace('-lxd.tar.xz', '-rootfs.squashfs')
               rootfs_asset = next((a for a in rootfs_files if a['name'] == rootfs_name), None)
               
               if not rootfs_asset:
+                  print(f"Could not find rootfs for: {lxd_asset['name']}")
                   continue
               
               # 添加重定向规则
               redirects_rules.append(f'/download/{lxd_asset["name"]} {BASE_URL}/{lxd_asset["name"]} 302')
               redirects_rules.append(f'/download/{rootfs_asset["name"]} {BASE_URL}/{rootfs_asset["name"]} 302')
               
-              # 使用下划线而不是冒号作为产品名称
-              product_name = f'{distro}_{version}_{arch}'
+              # 生成产品名称，包含variant以区分不同的变体
+              product_name = f'{distro}_{version}_{arch}_{variant}'
               
-              # 修复别名配置 - 使用正确的格式
+              # 生成别名
               aliases_list = []
               
-              # 添加基本别名 - 使用斜杠分隔符
+              # 基本别名格式 (推荐的LXD格式)
               aliases_list.append({
                   'name': f'{distro}/{version}',
                   'description': f'{distro.title()} {version}'
               })
               
-              # 添加架构特定别名
+              # 带架构的别名
               aliases_list.append({
                   'name': f'{distro}/{version}/{arch}',
                   'description': f'{distro.title()} {version} {arch}'
               })
               
-              # 如果版本是 current，也添加不带版本的别名
+              # 带变体的别名
+              if variant != 'default':  # 默认变体不需要在别名中显示
+                  aliases_list.append({
+                      'name': f'{distro}/{version}/{arch}/{variant}',
+                      'description': f'{distro.title()} {version} {arch} ({variant})'
+                  })
+              
+              # 向后兼容的冒号格式
+              aliases_list.append({
+                  'name': f'{distro}:{version}:{arch}',
+                  'description': f'{distro.title()} {version} {arch} (legacy format)'
+              })
+              
+              # 如果版本是 current，添加简化别名
               if version == 'current':
                   aliases_list.append({
                       'name': f'{distro}',
@@ -145,15 +171,9 @@ jobs:
                       'description': f'{distro.title()} {arch}'
                   })
               
-              # 添加冒号分隔的别名（向后兼容）
-              aliases_list.append({
-                  'name': f'{distro}:{version}:{arch}',
-                  'description': f'{distro.title()} {version} {arch} (legacy format)'
-              })
-              
               if product_name not in products:
                   products[product_name] = {
-                      'aliases': aliases_list,  # 修复：使用对象数组格式
+                      'aliases': aliases_list,
                       'arch': arch,
                       'os': distro,
                       'release': version,
@@ -161,7 +181,7 @@ jobs:
                       'versions': {}
                   }
               
-              # 修复版本信息结构
+              # 版本信息
               products[product_name]['versions'][version_id] = {
                   'items': {
                       'lxd.tar.xz': get_file_info(lxd_asset, 'lxd.tar.xz'),
@@ -173,7 +193,7 @@ jobs:
           
           update_time = current_time.strftime('%a, %d %b %Y %H:%M:%S') + ' +0000'
           
-          # 修复索引数据结构
+          # SimpleStreams索引数据结构
           index_data = {
               'format': 'index:1.0',
               'index': {
@@ -222,24 +242,38 @@ jobs:
           with open('build/streams/v1/images.json', 'r') as f:
               test_images = json.load(f)
               print("Images JSON validation passed")
-              
+          
           # 打印调试信息
           print("\n=== 生成的产品列表 ===")
-          for product_name, product_info in products.items():
+          for product_name, product_info in sorted(products.items()):
               print(f"产品: {product_name}")
               print(f"  别名数量: {len(product_info['aliases'])}")
-              for alias in product_info['aliases']:
+              for alias in product_info['aliases'][:3]:  # 只显示前3个别名
                   print(f"    - {alias['name']}: {alias['description']}")
+              if len(product_info['aliases']) > 3:
+                  print(f"    ... (+{len(product_info['aliases'])-3} more)")
               print(f"  架构: {product_info['arch']}")
               print(f"  系统: {product_info['os']}")
               print(f"  版本: {product_info['release']}")
               print(f"  变体: {product_info['variant']}")
               print()
           
-          print("Generated _redirects file with rules:")
-          with open('build/_redirects', 'r') as f:
-              redirects_content = f.read()
-              print(redirects_content[:1000])  # 只打印前1000字符避免日志过长
+          # 生成可用别名列表供测试使用
+          print("\n=== 可用别名测试命令 ===")
+          sample_aliases = []
+          for product_name, product_info in sorted(products.items()):
+              for alias in product_info['aliases']:
+                  if 'debian' in alias['name'] and '11' in alias['name']:
+                      sample_aliases.append(alias['name'])
+                  if len(sample_aliases) >= 5:
+                      break
+              if len(sample_aliases) >= 5:
+                  break
+          
+          for alias in sample_aliases[:5]:
+              print(f"lxc launch spiritlhl:{alias} test-container")
+          
+          print(f"\nGenerated _redirects file with {len(redirects_rules)} rules")
           EOF
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -263,7 +297,7 @@ jobs:
               <style>
                   body {
                       font-family: Arial, sans-serif;
-                      max-width: 800px;
+                      max-width: 1000px;
                       margin: 0 auto;
                       padding: 20px;
                       line-height: 1.6;
@@ -287,24 +321,33 @@ jobs:
                   }
                   .image-item {
                       border-bottom: 1px solid #eee;
-                      padding: 10px 0;
+                      padding: 15px 0;
                   }
                   .image-name {
                       font-weight: bold;
                       color: #333;
+                      font-size: 1.1em;
+                  }
+                  .image-variant {
+                      color: #666;
+                      font-size: 0.9em;
+                      margin-top: 2px;
                   }
                   .image-cmd {
                       font-family: monospace;
                       background: #f8f8f8;
-                      padding: 5px;
-                      margin-top: 5px;
+                      padding: 8px;
+                      margin-top: 8px;
                       border-radius: 3px;
+                      border-left: 4px solid #007acc;
                   }
                   .aliases {
                       color: #666;
-                      font-size: 0.9em;
-                      margin-top: 3px;
+                      font-size: 0.85em;
+                      margin-top: 5px;
                   }
+                  .variant-cloud { border-left-color: #28a745; }
+                  .variant-default { border-left-color: #007acc; }
               </style>
           </head>
           <body>
@@ -325,20 +368,47 @@ jobs:
                   <h2>Available Images (""" + str(len(images_data['products'])) + """)</h2>
           """
           
-          for product_name, product_info in sorted(images_data['products'].items()):
-              parts = product_name.split('_')
-              if len(parts) >= 3:
-                  distro, version, arch = parts[0], parts[1], parts[2]
+          # 按操作系统和版本分组
+          grouped_images = {}
+          for product_name, product_info in images_data['products'].items():
+              key = f"{product_info['os']}_{product_info['release']}"
+              if key not in grouped_images:
+                  grouped_images[key] = []
+              grouped_images[key].append((product_name, product_info))
+          
+          for group_key in sorted(grouped_images.keys()):
+              os_name, version = group_key.split('_', 1)
+              html_content += f"""
+                  <h3>{os_name.title()} {version}</h3>
+              """
+              
+              for product_name, product_info in sorted(grouped_images[group_key], key=lambda x: (x[1]['arch'], x[1]['variant'])):
+                  arch = product_info['arch']
+                  variant = product_info['variant']
+                  
+                  # 选择最简单的别名作为推荐使用
+                  recommended_alias = None
+                  for alias in product_info.get('aliases', []):
+                      if '/' in alias['name'] and alias['name'].count('/') == 1:  # 形如 debian/11
+                          recommended_alias = alias['name']
+                          break
+                  
+                  if not recommended_alias and product_info.get('aliases'):
+                      recommended_alias = product_info['aliases'][0]['name']
+                  
+                  variant_class = f"variant-{variant}" if variant in ['cloud', 'default'] else ""
+                  
                   html_content += f"""
                       <div class="image-item">
-                          <div class="image-name">{distro} {version} ({arch})</div>
-                          <div class="image-cmd">lxc launch spiritlhl:{distro}/{version}/{arch} my-container</div>
+                          <div class="image-name">{os_name.title()} {version} ({arch})</div>
+                          <div class="image-variant">Variant: {variant}</div>
+                          <div class="image-cmd {variant_class}">lxc launch spiritlhl:{recommended_alias or f'{os_name}:{version}:{arch}'} my-container</div>
                           <div class="aliases">Available aliases: """
                   
                   alias_names = [alias['name'] for alias in product_info.get('aliases', [])]
-                  html_content += ', '.join(alias_names[:3])  # 只显示前3个别名
-                  if len(alias_names) > 3:
-                      html_content += f' (+{len(alias_names)-3} more)'
+                  html_content += ', '.join(alias_names[:4])  # 显示前4个别名
+                  if len(alias_names) > 4:
+                      html_content += f' (+{len(alias_names)-4} more)'
                   
                   html_content += """</div>
                       </div>
@@ -360,7 +430,7 @@ jobs:
           with open('build/index.html', 'w', encoding='utf-8') as f:
               f.write(html_content)
           
-          print("Generated simple HTML frontend")
+          print("Generated enhanced HTML frontend")
           EOF
           
       - name: Create netlify.toml configuration
@@ -377,6 +447,7 @@ jobs:
             [headers.values]
               Content-Type = "application/json"
               Cache-Control = "public, max-age=300"
+              Access-Control-Allow-Origin = "*"
           
           [[headers]]
             for = "/download/*"
