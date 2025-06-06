@@ -334,27 +334,27 @@ jobs:
                                           key: .[0].variant,
                                           value: {
                                             "ftype": "squashfs",
-                                            "os": .os,
-                                            "release": .version,
-                                            "version": .version,
-                                            "arch": .arch,
-                                            "variant": .variant,
-                                            "combined_sha256": .combined_sha256,
-                                            "path": ("images/" + .os + "/" + .version + "/" + .arch + "/" + .variant + "/"),
+                                            "os": .[0].os,
+                                            "release": .[0].version,
+                                            "version": .[0].version,
+                                            "arch": .[0].arch,
+                                            "variant": .[0].variant,
+                                            "combined_sha256": .[0].combined_sha256,
+                                            "path": ("images/" + .[0].os + "/" + .[0].version + "/" + .[0].arch + "/" + .[0].variant + "/"),
                                             "versions": {
                                               ($updated): {
                                                 "items": {
                                                   "lxd.tar.xz": {
                                                     "ftype": "lxd.tar.xz",
-                                                    "size": .lxd_size,
-                                                    "sha256": .lxd_sha256,
-                                                    "path": ("images/" + .os + "/" + .version + "/" + .arch + "/" + .variant + "/" + $updated + "/lxd.tar.xz")
+                                                    "size": .[0].lxd_size,
+                                                    "sha256": .[0].lxd_sha256,
+                                                    "path": ("images/" + .[0].os + "/" + .[0].version + "/" + .[0].arch + "/" + .[0].variant + "/" + $updated + "/lxd.tar.xz")
                                                   },
                                                   "rootfs.squashfs": {
                                                     "ftype": "squashfs",
-                                                    "size": .rootfs_size,
-                                                    "sha256": .rootfs_sha256,
-                                                    "path": ("images/" + .os + "/" + .version + "/" + .arch + "/" + .variant + "/" + $updated + "/rootfs.squashfs")
+                                                    "size": .[0].rootfs_size,
+                                                    "sha256": .[0].rootfs_sha256,
+                                                    "path": ("images/" + .[0].os + "/" + .[0].version + "/" + .[0].arch + "/" + .[0].variant + "/" + $updated + "/rootfs.squashfs")
                                                   }
                                                 }
                                               }
