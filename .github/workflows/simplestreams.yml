@@ -226,10 +226,16 @@ jobs:
                       key: (.os + ":" + .version + ":" + .arch + (if .variant != "default" then ":" + .variant else "" end)),
                       value: {
                         aliases: (
-                          (if ($variants | index("cloud")) then (if .variant == "cloud" then ["\(.os)/\(.version)", "\(.os)/\(.version)/\(.arch)"] else [] end 
-                           else (if .variant == "default" then ["\(.os)/\(.version)", "\(.os)/\(.version)/\(.arch)"] else [] end) end)
+                          (
+                            if ($variants | index("cloud")) and .variant == "cloud" then 
+                              ["\(.os)/\(.version)", "\(.os)/\(.version)/\(.arch)"] 
+                            elif not ($variants | index("cloud")) and .variant == "default" then 
+                              ["\(.os)/\(.version)", "\(.os)/\(.version)/\(.arch)"] 
+                            else [] 
+                            end
+                          )
                           + ["\(.os)/\(.version)/\(.variant)", "\(.os)/\(.version)/\(.arch)/\(.variant)"]
-                        ) | join(" "),
+                        ),
                         arch: .arch,
                         os: .os,
                         release: (.codename // .version),
