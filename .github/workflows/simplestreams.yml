@@ -42,166 +42,166 @@ jobs:
           fi
           echo "release_id=$processed_id" >> $GITHUB_OUTPUT
 
-      # - name: 预处理和删除现有文件
-      #   env:
-      #     PROCESSED_RELEASE_ID: ${{ steps.get_processed_release.outputs.release_id }}
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #     REPO: ${{ github.repository }}
-      #   run: |
-      #     mkdir -p work
-      #     cd work
-      #     echo "[]" > files_to_upload.json
-      #     cat ../releases.json | jq -r '
-      #       .[] | 
-      #       select(.tag_name != "processed") | 
-      #       .assets[] | 
-      #       select(.name | test("^[a-z0-9]+_[0-9a-z.-]+_[a-z0-9]+_[a-z0-9]+_[a-z]+\\.zip$")) |
-      #       @base64
-      #     ' > assets_to_process.txt
-      #     existing_assets=$(curl -s "https://api.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets")
-      #     while IFS= read -r encoded_asset; do
-      #       if [ -z "$encoded_asset" ]; then
-      #         continue
-      #       fi
-      #       asset=$(echo "$encoded_asset" | base64 -d)
-      #       name=$(echo "$asset" | jq -r '.name')
-      #       url=$(echo "$asset" | jq -r '.browser_download_url')
-      #       echo "Processing $name"
-      #       if [[ "$name" =~ ^([a-z0-9]+)_([0-9a-z\.\-]+)_([a-z0-9]+)_([a-z0-9]+)_([a-z]+)\.zip$ ]]; then
-      #         os="${BASH_REMATCH[1]}"
-      #         version="${BASH_REMATCH[2]}"
-      #         codename="${BASH_REMATCH[3]}"
-      #         arch="${BASH_REMATCH[4]}"
-      #         variant="${BASH_REMATCH[5]}"
-      #         rootfs_file="${os}-${version}-${arch}-${variant}-rootfs.squashfs"
-      #         lxd_file="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
-      #         rootfs_asset_id=$(echo "$existing_assets" | jq -r --arg name "$rootfs_file" '.[] | select(.name == $name) | .id // empty')
-      #         lxd_asset_id=$(echo "$existing_assets" | jq -r --arg name "$lxd_file" '.[] | select(.name == $name) | .id // empty')
-      #         if [ -n "$rootfs_asset_id" ]; then
-      #           sleep 1
-      #           echo "Deleting existing $rootfs_file..."
-      #           curl -s -X DELETE \
-      #             -H "Authorization: token $GITHUB_TOKEN" \
-      #             "https://api.github.com/repos/$REPO/releases/assets/$rootfs_asset_id"
-      #         fi
-      #         if [ -n "$lxd_asset_id" ]; then
-      #           echo "Deleting existing $lxd_file..."
-      #           curl -s -X DELETE \
-      #             -H "Authorization: token $GITHUB_TOKEN" \
-      #             "https://api.github.com/repos/$REPO/releases/assets/$lxd_asset_id"
-      #         fi
-      #         sleep 1
-      #         jq --arg name "$name" \
-      #            --arg url "$url" \
-      #            --arg os "$os" \
-      #            --arg version "$version" \
-      #            --arg arch "$arch" \
-      #            --arg variant "$variant" \
-      #            --arg rootfs_file "$rootfs_file" \
-      #            --arg lxd_file "$lxd_file" \
-      #            '. += [{
-      #              name: $name,
-      #              url: $url,
-      #              os: $os,
-      #              version: $version,
-      #              arch: $arch,
-      #              variant: $variant,
-      #              rootfs_file: $rootfs_file,
-      #              lxd_file: $lxd_file
-      #            }]' files_to_upload.json > files_to_upload_temp.json
-      #         mv files_to_upload_temp.json files_to_upload.json
-      #       fi
-      #     done < assets_to_process.txt
-      #     mv files_to_upload.json /tmp/files_to_upload.json
+      - name: 预处理和删除现有文件
+        env:
+          PROCESSED_RELEASE_ID: ${{ steps.get_processed_release.outputs.release_id }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p work
+          cd work
+          echo "[]" > files_to_upload.json
+          cat ../releases.json | jq -r '
+            .[] | 
+            select(.tag_name != "processed") | 
+            .assets[] | 
+            select(.name | test("^[a-z0-9]+_[0-9a-z.-]+_[a-z0-9]+_[a-z0-9]+_[a-z]+\\.zip$")) |
+            @base64
+          ' > assets_to_process.txt
+          existing_assets=$(curl -s "https://api.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets")
+          while IFS= read -r encoded_asset; do
+            if [ -z "$encoded_asset" ]; then
+              continue
+            fi
+            asset=$(echo "$encoded_asset" | base64 -d)
+            name=$(echo "$asset" | jq -r '.name')
+            url=$(echo "$asset" | jq -r '.browser_download_url')
+            echo "Processing $name"
+            if [[ "$name" =~ ^([a-z0-9]+)_([0-9a-z\.\-]+)_([a-z0-9]+)_([a-z0-9]+)_([a-z]+)\.zip$ ]]; then
+              os="${BASH_REMATCH[1]}"
+              version="${BASH_REMATCH[2]}"
+              codename="${BASH_REMATCH[3]}"
+              arch="${BASH_REMATCH[4]}"
+              variant="${BASH_REMATCH[5]}"
+              rootfs_file="${os}-${version}-${arch}-${variant}-rootfs.squashfs"
+              lxd_file="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
+              rootfs_asset_id=$(echo "$existing_assets" | jq -r --arg name "$rootfs_file" '.[] | select(.name == $name) | .id // empty')
+              lxd_asset_id=$(echo "$existing_assets" | jq -r --arg name "$lxd_file" '.[] | select(.name == $name) | .id // empty')
+              if [ -n "$rootfs_asset_id" ]; then
+                sleep 1
+                echo "Deleting existing $rootfs_file..."
+                curl -s -X DELETE \
+                  -H "Authorization: token $GITHUB_TOKEN" \
+                  "https://api.github.com/repos/$REPO/releases/assets/$rootfs_asset_id"
+              fi
+              if [ -n "$lxd_asset_id" ]; then
+                echo "Deleting existing $lxd_file..."
+                curl -s -X DELETE \
+                  -H "Authorization: token $GITHUB_TOKEN" \
+                  "https://api.github.com/repos/$REPO/releases/assets/$lxd_asset_id"
+              fi
+              sleep 1
+              jq --arg name "$name" \
+                 --arg url "$url" \
+                 --arg os "$os" \
+                 --arg version "$version" \
+                 --arg arch "$arch" \
+                 --arg variant "$variant" \
+                 --arg rootfs_file "$rootfs_file" \
+                 --arg lxd_file "$lxd_file" \
+                 '. += [{
+                   name: $name,
+                   url: $url,
+                   os: $os,
+                   version: $version,
+                   arch: $arch,
+                   variant: $variant,
+                   rootfs_file: $rootfs_file,
+                   lxd_file: $lxd_file
+                 }]' files_to_upload.json > files_to_upload_temp.json
+              mv files_to_upload_temp.json files_to_upload.json
+            fi
+          done < assets_to_process.txt
+          mv files_to_upload.json /tmp/files_to_upload.json
 
-      # - name: 等待API同步
-      #   run: |
-      #     echo "Waiting for GitHub API to sync after deletions..."
-      #     sleep 60
+      - name: 等待API同步
+        run: |
+          echo "Waiting for GitHub API to sync after deletions..."
+          sleep 60
 
-      # - name: 处理并上传解压文件
-      #   env:
-      #     PROCESSED_RELEASE_ID: ${{ steps.get_processed_release.outputs.release_id }}
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #     REPO: ${{ github.repository }}
-      #   run: |
-      #     mkdir -p work
-      #     cd work
-      #     echo "[]" > processed_assets.json
+      - name: 处理并上传解压文件
+        env:
+          PROCESSED_RELEASE_ID: ${{ steps.get_processed_release.outputs.release_id }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p work
+          cd work
+          echo "[]" > processed_assets.json
           
-      #     jq -r '.[] | @base64' /tmp/files_to_upload.json | while IFS= read -r encoded_file; do
-      #       if [ -z "$encoded_file" ]; then
-      #         continue
-      #       fi
-      #       file_info=$(echo "$encoded_file" | base64 -d)
-      #       name=$(echo "$file_info" | jq -r '.name')
-      #       url=$(echo "$file_info" | jq -r '.url')
-      #       os=$(echo "$file_info" | jq -r '.os')
-      #       version=$(echo "$file_info" | jq -r '.version')
-      #       arch=$(echo "$file_info" | jq -r '.arch')
-      #       variant=$(echo "$file_info" | jq -r '.variant')
-      #       rootfs_file=$(echo "$file_info" | jq -r '.rootfs_file')
-      #       lxd_file=$(echo "$file_info" | jq -r '.lxd_file')
+          jq -r '.[] | @base64' /tmp/files_to_upload.json | while IFS= read -r encoded_file; do
+            if [ -z "$encoded_file" ]; then
+              continue
+            fi
+            file_info=$(echo "$encoded_file" | base64 -d)
+            name=$(echo "$file_info" | jq -r '.name')
+            url=$(echo "$file_info" | jq -r '.url')
+            os=$(echo "$file_info" | jq -r '.os')
+            version=$(echo "$file_info" | jq -r '.version')
+            arch=$(echo "$file_info" | jq -r '.arch')
+            variant=$(echo "$file_info" | jq -r '.variant')
+            rootfs_file=$(echo "$file_info" | jq -r '.rootfs_file')
+            lxd_file=$(echo "$file_info" | jq -r '.lxd_file')
             
-      #       temp_dir="temp_${os}_${version}_${arch}_${variant}_$$"
-      #       mkdir -p "$temp_dir"
-      #       cd "$temp_dir"
+            temp_dir="temp_${os}_${version}_${arch}_${variant}_$$"
+            mkdir -p "$temp_dir"
+            cd "$temp_dir"
             
-      #       echo "Downloading $name..."
-      #       if curl --retry 3 --retry-delay 5 -L -o image.zip "$url" && unzip -q image.zip; then
-      #         if [ -f rootfs.squashfs ] && [ -f lxd.tar.xz ]; then
-      #           mv rootfs.squashfs "$rootfs_file"
-      #           mv lxd.tar.xz "$lxd_file"
+            echo "Downloading $name..."
+            if curl --retry 3 --retry-delay 5 -L -o image.zip "$url" && unzip -q image.zip; then
+              if [ -f rootfs.squashfs ] && [ -f lxd.tar.xz ]; then
+                mv rootfs.squashfs "$rootfs_file"
+                mv lxd.tar.xz "$lxd_file"
                 
-      #           echo "Uploading $rootfs_file..."
-      #           rootfs_response=$(curl -s -X POST \
-      #             -H "Authorization: token $GITHUB_TOKEN" \
-      #             -H "Content-Type: application/octet-stream" \
-      #             --data-binary @"$rootfs_file" \
-      #             "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$rootfs_file")
+                echo "Uploading $rootfs_file..."
+                rootfs_response=$(curl -s -X POST \
+                  -H "Authorization: token $GITHUB_TOKEN" \
+                  -H "Content-Type: application/octet-stream" \
+                  --data-binary @"$rootfs_file" \
+                  "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$rootfs_file")
                 
-      #           echo "Uploading $lxd_file..."
-      #           lxd_response=$(curl -s -X POST \
-      #             -H "Authorization: token $GITHUB_TOKEN" \
-      #             -H "Content-Type: application/octet-stream" \
-      #             --data-binary @"$lxd_file" \
-      #             "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$lxd_file")
+                echo "Uploading $lxd_file..."
+                lxd_response=$(curl -s -X POST \
+                  -H "Authorization: token $GITHUB_TOKEN" \
+                  -H "Content-Type: application/octet-stream" \
+                  --data-binary @"$lxd_file" \
+                  "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$lxd_file")
                 
-      #           rootfs_url=$(echo "$rootfs_response" | jq -r '.browser_download_url // empty')
-      #           lxd_url=$(echo "$lxd_response" | jq -r '.browser_download_url // empty')
+                rootfs_url=$(echo "$rootfs_response" | jq -r '.browser_download_url // empty')
+                lxd_url=$(echo "$lxd_response" | jq -r '.browser_download_url // empty')
                 
-      #           if [ -n "$rootfs_url" ] && [ -n "$lxd_url" ]; then
-      #             echo "Successfully uploaded both files for $name"
-      #             jq --arg os "$os" \
-      #                --arg version "$version" \
-      #                --arg arch "$arch" \
-      #                --arg variant "$variant" \
-      #                --arg rootfs_url "$rootfs_url" \
-      #                --arg lxd_url "$lxd_url" \
-      #                '. += [{
-      #                  os: $os,
-      #                  version: $version,
-      #                  arch: $arch,
-      #                  variant: $variant,
-      #                  rootfs_url: $rootfs_url,
-      #                  lxd_url: $lxd_url
-      #                }]' ../processed_assets.json > ../processed_assets_temp.json
-      #             mv ../processed_assets_temp.json ../processed_assets.json
-      #           else
-      #             echo "Failed to upload files for $name"
-      #             echo "Rootfs response: $rootfs_response"
-      #             echo "LXD response: $lxd_response"
-      #           fi
-      #         else
-      #           echo "Missing required files in $name"
-      #         fi
-      #       else
-      #         echo "Failed to download or extract $name"
-      #       fi
-      #       cd ..
-      #       rm -rf "$temp_dir"
-      #     done
-      #     mv processed_assets.json /tmp/processed_assets.json
+                if [ -n "$rootfs_url" ] && [ -n "$lxd_url" ]; then
+                  echo "Successfully uploaded both files for $name"
+                  jq --arg os "$os" \
+                     --arg version "$version" \
+                     --arg arch "$arch" \
+                     --arg variant "$variant" \
+                     --arg rootfs_url "$rootfs_url" \
+                     --arg lxd_url "$lxd_url" \
+                     '. += [{
+                       os: $os,
+                       version: $version,
+                       arch: $arch,
+                       variant: $variant,
+                       rootfs_url: $rootfs_url,
+                       lxd_url: $lxd_url
+                     }]' ../processed_assets.json > ../processed_assets_temp.json
+                  mv ../processed_assets_temp.json ../processed_assets.json
+                else
+                  echo "Failed to upload files for $name"
+                  echo "Rootfs response: $rootfs_response"
+                  echo "LXD response: $lxd_response"
+                fi
+              else
+                echo "Missing required files in $name"
+              fi
+            else
+              echo "Failed to download or extract $name"
+            fi
+            cd ..
+            rm -rf "$temp_dir"
+          done
+          mv processed_assets.json /tmp/processed_assets.json
 
       - name: 生成 Simplestreams JSON
         run: |
@@ -209,7 +209,6 @@ jobs:
           echo "Getting existing assets from processed release..."
           echo "[]" > all_assets.json
           processed_assets_response=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" | jq '[ .[] | select(.tag_name=="processed") ] | if length > 0 then .[0].assets // [] else [] end')
-          echo "processed_assets_response: $processed_assets_response"
           if [ "$processed_assets_response" != "null" ] && [ "$processed_assets_response" != "empty" ] && [ -n "$processed_assets_response" ]; then
             echo "$processed_assets_response" > existing_assets_array.json
             if [ "$(jq length existing_assets_array.json)" -gt 0 ]; then
