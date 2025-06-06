@@ -153,6 +153,12 @@ jobs:
                 mv rootfs.squashfs "$rootfs_file"
                 mv lxd.tar.xz "$lxd_file"
                 
+                rootfs_size=$(stat -c%s "$rootfs_file")
+                lxd_size=$(stat -c%s "$lxd_file")
+                rootfs_sha256=$(sha256sum "$rootfs_file" | cut -d' ' -f1)
+                lxd_sha256=$(sha256sum "$lxd_file" | cut -d' ' -f1)
+                combined_sha256=$(echo -n "${rootfs_sha256}${lxd_sha256}" | sha256sum | cut -d' ' -f1)
+                
                 echo "Uploading $rootfs_file..."
                 rootfs_response=$(curl -s -X POST \
                   -H "Authorization: token $GITHUB_TOKEN" \
@@ -178,13 +184,23 @@ jobs:
                      --arg variant "$variant" \
                      --arg rootfs_url "$rootfs_url" \
                      --arg lxd_url "$lxd_url" \
+                     --arg rootfs_size "$rootfs_size" \
+                     --arg lxd_size "$lxd_size" \
+                     --arg rootfs_sha256 "$rootfs_sha256" \
+                     --arg lxd_sha256 "$lxd_sha256" \
+                     --arg combined_sha256 "$combined_sha256" \
                      '. += [{
                        os: $os,
                        version: $version,
                        arch: $arch,
                        variant: $variant,
                        rootfs_url: $rootfs_url,
-                       lxd_url: $lxd_url
+                       lxd_url: $lxd_url,
+                       rootfs_size: ($rootfs_size | tonumber),
+                       lxd_size: ($lxd_size | tonumber),
+                       rootfs_sha256: $rootfs_sha256,
+                       lxd_sha256: $lxd_sha256,
+                       combined_sha256: $combined_sha256
                      }]' ../processed_assets.json > ../processed_assets_temp.json
                   mv ../processed_assets_temp.json ../processed_assets.json
                 else
@@ -220,6 +236,7 @@ jobs:
                 asset=$(echo "$encoded_asset" | base64 -d)
                 name=$(echo "$asset" | jq -r '.name')
                 rootfs_url=$(echo "$asset" | jq -r '.browser_download_url')
+                rootfs_size=$(echo "$asset" | jq -r '.size')
                 echo "Processing existing asset: $name"
                 if [[ "$name" =~ ^([a-z0-9]+)-([0-9a-z\.\-]+)-([a-z0-9]+)-([a-z]+)-rootfs\.squashfs$ ]]; then
                   os="${BASH_REMATCH[1]}"
@@ -227,7 +244,9 @@ jobs:
                   arch="${BASH_REMATCH[3]}"
                   variant="${BASH_REMATCH[4]}"
                   lxd_name="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
-                  lxd_url=$(jq -r --arg lxd_name "$lxd_name" '.[] | select(.name == $lxd_name) | .browser_download_url // empty' existing_assets_array.json)
+                  lxd_info=$(jq -r --arg lxd_name "$lxd_name" '.[] | select(.name == $lxd_name) | {url: .browser_download_url, size: .size} // empty' existing_assets_array.json)
+                  lxd_url=$(echo "$lxd_info" | jq -r '.url // empty')
+                  lxd_size=$(echo "$lxd_info" | jq -r '.size // empty')
                   if [ -n "$lxd_url" ] && [ "$lxd_url" != "null" ] && [ "$lxd_url" != "empty" ]; then
                     echo "Found existing asset pair: $name and $lxd_name"
                     temp_asset=$(jq -n --arg os "$os" \
@@ -236,13 +255,20 @@ jobs:
                        --arg variant "$variant" \
                        --arg rootfs_url "$rootfs_url" \
                        --arg lxd_url "$lxd_url" \
+                       --arg rootfs_size "$rootfs_size" \
+                       --arg lxd_size "$lxd_size" \
                        '{
                          os: $os,
                          version: $version,
                          arch: $arch,
                          variant: $variant,
                          rootfs_url: $rootfs_url,
-                         lxd_url: $lxd_url
+                         lxd_url: $lxd_url,
+                         rootfs_size: ($rootfs_size | tonumber),
+                         lxd_size: ($lxd_size | tonumber),
+                         rootfs_sha256: "unknown",
+                         lxd_sha256: "unknown",
+                         combined_sha256: "unknown"
                        }')
                     echo "$temp_asset" >> temp_assets.jsonl
                   fi
@@ -264,65 +290,80 @@ jobs:
           fi
           if [ "$(jq length all_assets.json)" -eq 0 ]; then
             echo "No assets found, creating empty structure"
-            echo '{"index": {"images": {}}}' > pages/streams/v1/index.json
-            echo '{"products": {}}' > pages/streams/v1/products.json
+            echo '{
+              "datatype": "image-downloads",
+              "format": "products:1.0",
+              "products": {}
+            }' > pages/streams/v1/products.json
+            echo '{
+              "index": {
+                "images": {
+                  "datatype": "image-downloads",
+                  "path": "streams/v1/products.json",
+                  "format": "products:1.0"
+                }
+              },
+              "format": "index:1.0"
+            }' > pages/streams/v1/index.json
             exit 0
           fi
-          jq -n --slurpfile assets all_assets.json '
+          current_time=$(date -u +"%Y%m%d_%H:%M")
+          jq -n --slurpfile assets all_assets.json --arg updated "$current_time" '
             {
-              products: (
+              "datatype": "image-downloads",
+              "format": "products:1.0",
+              "products": (
                 $assets[0]
                 | group_by(.os)
                 | map({
                     key: .[0].os,
                     value: {
-                      versions: (
+                      "arch": (map(.arch) | unique),
+                      "release": .[0].os,
+                      "os": .[0].os,
+                      "versions": (
                         group_by(.version)
                         | map({
                             key: .[0].version,
                             value: {
-                              items: (
+                              "items": (
                                 group_by(.arch)
                                 | map({
                                     key: .[0].arch,
                                     value: (
                                       group_by(.variant)
-                                      | if length == 1 then
-                                          {
-                                            rootfs: .[0][0].rootfs_url,
-                                            lxd: .[0][0].lxd_url
-                                          }
-                                        elif (map(.[0]) | map(select(.variant == "cloud")) | length) > 0 then
-                                          (map(.[0]) | map(select(.variant == "cloud"))[0] | {
-                                            rootfs: .rootfs_url,
-                                            lxd: .lxd_url
-                                          }) + {
-                                            variants: (
-                                              map(.[0]) | map({
-                                                key: .variant,
-                                                value: {
-                                                  rootfs: .rootfs_url,
-                                                  lxd: .lxd_url
+                                      | map({
+                                          key: .[0].variant,
+                                          value: {
+                                            "ftype": "squashfs",
+                                            "os": .[0][0].os,
+                                            "release": .[0][0].version,
+                                            "version": .[0][0].version,
+                                            "arch": .[0][0].arch,
+                                            "variant": .[0][0].variant,
+                                            "combined_sha256": .[0][0].combined_sha256,
+                                            "path": ("images/" + .[0][0].os + "/" + .[0][0].version + "/" + .[0][0].arch + "/" + .[0][0].variant + "/"),
+                                            "versions": {
+                                              ($updated): {
+                                                "items": {
+                                                  "lxd.tar.xz": {
+                                                    "ftype": "lxd.tar.xz",
+                                                    "size": .[0][0].lxd_size,
+                                                    "sha256": .[0][0].lxd_sha256,
+                                                    "path": ("images/" + .[0][0].os + "/" + .[0][0].version + "/" + .[0][0].arch + "/" + .[0][0].variant + "/" + $updated + "/lxd.tar.xz")
+                                                  },
+                                                  "rootfs.squashfs": {
+                                                    "ftype": "squashfs",
+                                                    "size": .[0][0].rootfs_size,
+                                                    "sha256": .[0][0].rootfs_sha256,
+                                                    "path": ("images/" + .[0][0].os + "/" + .[0][0].version + "/" + .[0][0].arch + "/" + .[0][0].variant + "/" + $updated + "/rootfs.squashfs")
+                                                  }
                                                 }
-                                              }) | from_entries
-                                            )
+                                              }
+                                            }
                                           }
-                                        else
-                                          (.[0][0] | {
-                                            rootfs: .rootfs_url,
-                                            lxd: .lxd_url
-                                          }) + {
-                                            variants: (
-                                              map(.[0]) | map({
-                                                key: .variant,
-                                                value: {
-                                                  rootfs: .rootfs_url,
-                                                  lxd: .lxd_url
-                                                }
-                                              }) | from_entries
-                                            )
-                                          }
-                                        end
+                                        })
+                                      | from_entries
                                     )
                                   })
                                 | from_entries
@@ -337,19 +378,25 @@ jobs:
               )
             }
           ' > pages/streams/v1/products.json
-          jq '{
-            index: {
-              images: (
-                .products 
-                | keys 
-                | map({
-                    key: .,
-                    value: {product: .}
-                  })
-                | from_entries
-              )
-            }
-          }' pages/streams/v1/products.json > pages/streams/v1/index.json
+          echo '{
+            "index": {
+              "images": {
+                "datatype": "image-downloads",
+                "path": "streams/v1/products.json",
+                "format": "products:1.0"
+              }
+            },
+            "format": "index:1.0"
+          }' > pages/streams/v1/index.json
+          
+          mkdir -p pages/streams/v1/images
+          jq -r --slurpfile assets all_assets.json --arg updated "$current_time" '
+            $assets[0][] |
+            "mkdir -p pages/streams/v1/images/\(.os)/\(.version)/\(.arch)/\(.variant)/\($updated);" +
+            "ln -sf \(.rootfs_url) pages/streams/v1/images/\(.os)/\(.version)/\(.arch)/\(.variant)/\($updated)/rootfs.squashfs;" +
+            "ln -sf \(.lxd_url) pages/streams/v1/images/\(.os)/\(.version)/\(.arch)/\(.variant)/\($updated)/lxd.tar.xz"
+          ' all_assets.json | bash
+          
           echo "Generated Simplestreams JSON files:"
           echo "products.json:"
           cat pages/streams/v1/products.json | jq .
@@ -396,15 +443,12 @@ jobs:
                       <p>添加此镜像源到您的 LXD 配置：</p>
                       <pre>lxc remote add spiritlhl-images http://lxdimages.spiritlhl.net --protocol=simplestreams --public</pre>
                       <div class="usage-examples">
-                          <p><strong>基本使用（使用默认变体）：</strong></p>
+                          <p><strong>基本使用：</strong></p>
                           <pre>lxc launch spiritlhl-images:debian/11 my-container</pre>
                           <p><strong>指定架构：</strong></p>
                           <pre>lxc launch spiritlhl-images:debian/11/arm64 my-arm-container</pre>
                           <p><strong>指定特定变体：</strong></p>
                           <pre>lxc launch spiritlhl-images:debian/11/amd64/default my-default-container</pre>
-                      </div>
-                      <div class="note">
-                          <strong>注意：</strong> 如果存在多个变体，默认会使用 cloud 变体。如需使用其他变体，请在命令中明确指定。
                       </div>
                       <p>列出可用镜像：</p>
                       <pre>lxc image list spiritlhl-images:</pre>
@@ -438,33 +482,24 @@ jobs:
                       const imageCards = Object.entries(products).map(([productId, product]) => {
                           const versions = Object.entries(product.versions).map(([version, versionData]) => {
                               const architectures = Object.entries(versionData.items).map(([arch, archData]) => {
-                                  let downloadLinks = `
-                                      <div class="download-links">
-                                          <a href="${archData.rootfs}" download>rootfs</a>
-                                          <a href="${archData.lxd}" download>metadata</a>
-                                      </div>
-                                  `;
-                                  let variantsHtml = '';
-                                  if (archData.variants) {
-                                      const variantsList = Object.entries(archData.variants).map(([variant, files]) => `
+                                  const variants = Object.entries(archData).map(([variant, variantData]) => {
+                                      const latestVersion = Object.keys(variantData.versions)[0];
+                                      const items = variantData.versions[latestVersion].items;
+                                      return `
                                           <div class="variant-item">
                                               <strong>${variant}:</strong>
-                                              <a href="${files.rootfs}" download style="margin-left: 5px; font-size: 11px;">rootfs</a>
-                                              <a href="${files.lxd}" download style="margin-left: 5px; font-size: 11px;">metadata</a>
-                                          </div>
-                                      `).join('');
-                                      variantsHtml = `
-                                          <div class="variants">
-                                              <strong>可用变体：</strong>
-                                              ${variantsList}
+                                              <a href="${items['rootfs.squashfs'].path}" download style="margin-left: 5px; font-size: 11px;">rootfs</a>
+                                              <a href="${items['lxd.tar.xz'].path}" download style="margin-left: 5px; font-size: 11px;">metadata</a>
                                           </div>
                                       `;
-                                  }
+                                  }).join('');
                                   return `
                                       <div class="arch-item">
-                                          <strong>${arch}</strong> (默认变体)
-                                          ${downloadLinks}
-                                          ${variantsHtml}
+                                          <strong>${arch}</strong>
+                                          <div class="variants">
+                                              <strong>可用变体：</strong>
+                                              ${variants}
+                                          </div>
                                       </div>
                                   `;
                               }).join('');
