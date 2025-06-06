@@ -23,7 +23,7 @@ jobs:
         run: |
           pip install requests jinja2 pyyaml
           
-      - name: Generate Ubuntu-compatible SimpleStreams
+      - name: Generate SimpleStreams
         run: |
           python3 << 'EOF'
           import requests
@@ -72,11 +72,9 @@ jobs:
           rootfs_files = [asset for asset in assets if asset['name'].endswith('-rootfs.squashfs')]
           
           current_time = datetime.now(timezone.utc)
-          # 使用Ubuntu兼容的版本格式：简单的日期
           version_id = current_time.strftime('%Y%m%d')
           
           print(f"Processing {len(lxd_files)} LXD files")
-          print(f"Using Ubuntu-compatible version ID: {version_id}")
           
           for lxd_asset in lxd_files:
               distro, version, arch, variant = parse_filename(lxd_asset['name'])
@@ -93,84 +91,72 @@ jobs:
               redirects_rules.append(f'/download/{lxd_asset["name"]} {BASE_URL}/{lxd_asset["name"]} 302')
               redirects_rules.append(f'/download/{rootfs_asset["name"]} {BASE_URL}/{rootfs_asset["name"]} 302')
               
-              # Ubuntu风格的产品名称：使用冒号分隔
-              product_name = f'{distro}:{version}:{arch}'
-              if variant != 'default':
-                  product_name += f':{variant}'
+              # 修复：使用标准的产品命名格式
+              if variant == 'default':
+                  product_name = f'{distro}:{version}:{arch}'
+              else:
+                  product_name = f'{distro}:{version}:{arch}:{variant}'
               
               if product_name not in products:
-                  # Ubuntu风格的别名：使用简单格式
-                  aliases_list = []
+                  # 修复：简化别名结构，确保兼容性
+                  aliases = []
                   
-                  # 核心别名
-                  aliases_list.append(f'{distro}/{version}')
-                  
-                  # 架构特定别名
-                  if arch == 'amd64':  # 默认架构不显示
-                      aliases_list.append(f'{distro}/{version}')
+                  # 基础别名
+                  if arch == 'amd64':
+                      aliases.extend([
+                          f'{distro}/{version}',
+                          f'{distro}/{version}/default' if variant == 'default' else f'{distro}/{version}/{variant}'
+                      ])
                   else:
-                      aliases_list.append(f'{distro}/{version}/{arch}')
+                      aliases.extend([
+                          f'{distro}/{version}/{arch}',
+                          f'{distro}/{version}/{arch}/default' if variant == 'default' else f'{distro}/{version}/{arch}/{variant}'
+                      ])
                   
-                  # 变体别名
-                  if variant != 'default':
-                      aliases_list.append(f'{distro}/{version}/{variant}')
-                      if arch != 'amd64':
-                          aliases_list.append(f'{distro}/{version}/{arch}/{variant}')
+                  # 去重
+                  aliases = list(set(aliases))
                   
-                  # 去重并转换为字符串
-                  aliases_list = list(set(aliases_list))
-                  aliases_string = ','.join(aliases_list)
-                  
-                  # Ubuntu兼容的产品结构
                   products[product_name] = {
-                      'aliases': aliases_string,
+                      'aliases': ','.join(aliases),
                       'arch': arch,
                       'os': distro,
                       'release': version,
-                      'release_title': f'{distro.title()} {version}',  # 添加标题
-                      'support_eol': '2030-01-01',  # 添加支持日期
                       'versions': {}
                   }
                   
-                  # 添加变体信息（如果不是default）
                   if variant != 'default':
                       products[product_name]['variant'] = variant
               
-              # Ubuntu风格的项目结构
-              version_data = {
-                  'items': {
-                      'lxd.tar.xz': {
-                          'ftype': 'lxd.tar.xz',
-                          'size': lxd_asset.get('size', 0),
-                          'path': f'download/{lxd_asset["name"]}',
-                          'sha256': get_placeholder_sha256()
-                      },
-                      'root.tar.xz': {  # Ubuntu使用root.tar.xz格式
-                          'ftype': 'root.tar.xz', 
-                          'size': rootfs_asset.get('size', 0),
-                          'path': f'download/{rootfs_asset["name"]}',
-                          'sha256': get_placeholder_sha256()
-                      }
-                  },
-                  'label': f'{distro}-{version}',  # 添加标签
-                  'pubname': f'{distro}-{version}-{arch}',  # 添加发布名称
+              # 修复：使用正确的文件类型映射
+              items = {
+                  'lxd.tar.xz': {
+                      'ftype': 'lxd.tar.xz',
+                      'size': lxd_asset.get('size', 0),
+                      'path': f'download/{lxd_asset["name"]}',
+                      'sha256': get_placeholder_sha256()
+                  }
               }
               
-              # 添加变体到版本数据
-              if variant != 'default':
-                  version_data['label'] += f'-{variant}'
-                  version_data['pubname'] += f'-{variant}'
+              # 修复：保持原始文件类型
+              if rootfs_asset['name'].endswith('.squashfs'):
+                  items['squashfs'] = {
+                      'ftype': 'squashfs',
+                      'size': rootfs_asset.get('size', 0),
+                      'path': f'download/{rootfs_asset["name"]}',
+                      'sha256': get_placeholder_sha256()
+                  }
+              
+              version_data = {
+                  'items': items
+              }
               
               products[product_name]['versions'][version_id] = version_data
               
-              if distro == 'debian' and version == '11':
-                  print(f"Added Debian 11: {product_name}")
-                  print(f"  Aliases: {aliases_string}")
-                  print(f"  Version: {version_id}")
+              print(f"Added: {product_name} with aliases: {','.join(aliases)}")
           
           current_time_str = current_time.strftime('%a, %d %b %Y %H:%M:%S +0000')
           
-          # Ubuntu兼容的索引结构
+          # 标准 SimpleStreams 索引结构
           index_data = {
               'format': 'index:1.0',
               'index': {
@@ -178,19 +164,17 @@ jobs:
                       'datatype': 'image-downloads',
                       'path': 'streams/v1/images.json',
                       'updated': current_time_str,
-                      'products': list(products.keys()),
                       'format': 'products:1.0'
                   }
               },
               'updated': current_time_str
           }
           
-          # Ubuntu兼容的图像数据结构
+          # 标准 SimpleStreams 图像数据结构
           images_data = {
               'content_id': 'images',
               'datatype': 'image-downloads', 
               'format': 'products:1.0',
-              'license': 'http://www.canonical.com/intellectual-property-policy',  # 添加许可证
               'products': products,
               'updated': current_time_str
           }
@@ -211,30 +195,15 @@ jobs:
           
           print(f"Generated {len(products)} products")
           
-          # 详细调试
-          print("\n=== Ubuntu兼容格式验证 ===")
-          debian_count = 0
-          for product_name, product in products.items():
-              if 'debian:11' in product_name:
-                  debian_count += 1
-                  print(f"Product: {product_name}")
-                  print(f"  Aliases: {product['aliases']}")
-                  print(f"  Versions: {list(product['versions'].keys())}")
-          
-          print(f"Total Debian 11 products: {debian_count}")
-          
-          # 验证一个完整的debian产品
-          sample_debian = None
-          for name, data in products.items():
-              if 'debian:11:amd64' in name and 'default' not in name:
-                  sample_debian = (name, data)
-                  break
-          
-          if sample_debian:
-              name, data = sample_debian
-              print(f"\n=== Sample Debian Product ===")
-              print(f"Name: {name}")
-              print(f"Data: {json.dumps(data, indent=2)[:500]}...")
+          # 调试输出
+          print("\n=== Debug Info ===")
+          for product_name, product in list(products.items())[:3]:
+              print(f"Product: {product_name}")
+              print(f"  Aliases: {product['aliases']}")
+              print(f"  Versions: {list(product['versions'].keys())}")
+              if product['versions']:
+                  version_key = list(product['versions'].keys())[0]
+                  print(f"  Items: {list(product['versions'][version_key]['items'].keys())}")
           
           EOF
         env:
@@ -246,7 +215,7 @@ jobs:
           <!DOCTYPE html>
           <html>
           <head>
-              <title>LXD Images - Ubuntu Compatible</title>
+              <title>LXD Images Repository</title>
               <style>
                   body { font-family: Arial, sans-serif; padding: 20px; }
                   pre { background: #f0f0f0; padding: 15px; border-radius: 5px; }
@@ -255,7 +224,7 @@ jobs:
           </head>
           <body>
               <h1>LXD Images Repository</h1>
-              <p>Ubuntu-compatible SimpleStreams format</p>
+              <p>SimpleStreams compatible image repository</p>
               
               <h2>Setup</h2>
               <pre class="command">lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public</pre>
@@ -268,7 +237,6 @@ jobs:
           # Launch containers
           lxc launch spiritlhl:debian/11 my-debian
           lxc launch spiritlhl:ubuntu/22.04 my-ubuntu
-          lxc launch spiritlhl:fedora/40 my-fedora
               </pre>
               
               <h2>API Endpoints</h2>
@@ -292,7 +260,12 @@ jobs:
               Content-Type = "application/json; charset=utf-8"
               Cache-Control = "public, max-age=300"
               Access-Control-Allow-Origin = "*"
-              Access-Control-Allow-Methods = "GET, HEAD"
+              Access-Control-Allow-Methods = "GET, HEAD, OPTIONS"
+          
+          [[headers]]
+            for = "/download/*"
+            [headers.values]
+              Cache-Control = "public, max-age=86400"
           EOF
 
       - name: Deploy to Netlify  
