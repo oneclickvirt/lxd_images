@@ -78,15 +78,23 @@ jobs:
           
           def calculate_sha256_from_url(url):
               try:
-                  response = requests.head(url, timeout=10)
+                  print(f"Calculating SHA256 for: {url}")
+                  response = requests.get(url, stream=True, timeout=30)
                   if response.status_code == 200:
-                      etag = response.headers.get('etag', '').strip('"')
-                      if etag and len(etag) >= 32:
-                          return etag[:64]
-              except:
-                  pass
+                      sha256_hash = hashlib.sha256()
+                      for chunk in response.iter_content(chunk_size=8192):
+                          if chunk:
+                              sha256_hash.update(chunk)
+                      result = sha256_hash.hexdigest()
+                      print(f"SHA256: {result}")
+                      return result
+                  else:
+                      print(f"Failed to download file for SHA256: {response.status_code}")
+              except Exception as e:
+                  print(f"Error calculating SHA256: {e}")
               
-              return hashlib.sha256(url.encode()).hexdigest()
+              # 如果无法计算实际SHA256，返回一个占位符
+              return "0000000000000000000000000000000000000000000000000000000000000000"
           
           def get_file_info(asset, item_type):
               # 使用相对路径
@@ -132,48 +140,30 @@ jobs:
               # 生成产品名称，包含variant以区分不同的变体
               product_name = f'{distro}_{version}_{arch}_{variant}'
               
-              # 生成别名
+              # 生成别名 - 修改为逗号分隔的字符串格式
               aliases_list = []
               
               # 基本别名格式 (推荐的LXD格式)
-              aliases_list.append({
-                  'name': f'{distro}/{version}',
-                  'description': f'{distro.title()} {version}'
-              })
+              aliases_list.append(f'{distro}/{version}')
               
               # 带架构的别名
-              aliases_list.append({
-                  'name': f'{distro}/{version}/{arch}',
-                  'description': f'{distro.title()} {version} {arch}'
-              })
+              aliases_list.append(f'{distro}/{version}/{arch}')
               
               # 带变体的别名
               if variant != 'default':  # 默认变体不需要在别名中显示
-                  aliases_list.append({
-                      'name': f'{distro}/{version}/{arch}/{variant}',
-                      'description': f'{distro.title()} {version} {arch} ({variant})'
-                  })
+                  aliases_list.append(f'{distro}/{version}/{arch}/{variant}')
               
               # 向后兼容的冒号格式
-              aliases_list.append({
-                  'name': f'{distro}:{version}:{arch}',
-                  'description': f'{distro.title()} {version} {arch} (legacy format)'
-              })
+              aliases_list.append(f'{distro}:{version}:{arch}')
               
               # 如果版本是 current，添加简化别名
               if version == 'current':
-                  aliases_list.append({
-                      'name': f'{distro}',
-                      'description': f'{distro.title()} current'
-                  })
-                  aliases_list.append({
-                      'name': f'{distro}/{arch}',
-                      'description': f'{distro.title()} {arch}'
-                  })
+                  aliases_list.append(f'{distro}')
+                  aliases_list.append(f'{distro}/{arch}')
               
               if product_name not in products:
                   products[product_name] = {
-                      'aliases': aliases_list,
+                      'aliases': ','.join(aliases_list),  # 改为逗号分隔的字符串
                       'arch': arch,
                       'os': distro,
                       'release': version,
@@ -189,7 +179,7 @@ jobs:
                   }
               }
               
-              print(f"Processed {product_name} with {len(aliases_list)} aliases")
+              print(f"Processed {product_name} with aliases: {products[product_name]['aliases']}")
           
           update_time = current_time.strftime('%a, %d %b %Y %H:%M:%S') + ' +0000'
           
@@ -247,11 +237,7 @@ jobs:
           print("\n=== 生成的产品列表 ===")
           for product_name, product_info in sorted(products.items()):
               print(f"产品: {product_name}")
-              print(f"  别名数量: {len(product_info['aliases'])}")
-              for alias in product_info['aliases'][:3]:  # 只显示前3个别名
-                  print(f"    - {alias['name']}: {alias['description']}")
-              if len(product_info['aliases']) > 3:
-                  print(f"    ... (+{len(product_info['aliases'])-3} more)")
+              print(f"  别名: {product_info['aliases']}")
               print(f"  架构: {product_info['arch']}")
               print(f"  系统: {product_info['os']}")
               print(f"  版本: {product_info['release']}")
@@ -262,9 +248,10 @@ jobs:
           print("\n=== 可用别名测试命令 ===")
           sample_aliases = []
           for product_name, product_info in sorted(products.items()):
-              for alias in product_info['aliases']:
-                  if 'debian' in alias['name'] and '11' in alias['name']:
-                      sample_aliases.append(alias['name'])
+              aliases = product_info['aliases'].split(',')
+              for alias in aliases:
+                  if 'debian' in alias and '11' in alias:
+                      sample_aliases.append(alias)
                   if len(sample_aliases) >= 5:
                       break
               if len(sample_aliases) >= 5:
@@ -386,15 +373,16 @@ jobs:
                   arch = product_info['arch']
                   variant = product_info['variant']
                   
-                  # 选择最简单的别名作为推荐使用
+                  # 从逗号分隔的字符串中选择最简单的别名作为推荐使用
+                  aliases = product_info.get('aliases', '').split(',')
                   recommended_alias = None
-                  for alias in product_info.get('aliases', []):
-                      if '/' in alias['name'] and alias['name'].count('/') == 1:  # 形如 debian/11
-                          recommended_alias = alias['name']
+                  for alias in aliases:
+                      if '/' in alias and alias.count('/') == 1:  # 形如 debian/11
+                          recommended_alias = alias
                           break
                   
-                  if not recommended_alias and product_info.get('aliases'):
-                      recommended_alias = product_info['aliases'][0]['name']
+                  if not recommended_alias and aliases:
+                      recommended_alias = aliases[0]
                   
                   variant_class = f"variant-{variant}" if variant in ['cloud', 'default'] else ""
                   
@@ -405,10 +393,9 @@ jobs:
                           <div class="image-cmd {variant_class}">lxc launch spiritlhl:{recommended_alias or f'{os_name}:{version}:{arch}'} my-container</div>
                           <div class="aliases">Available aliases: """
                   
-                  alias_names = [alias['name'] for alias in product_info.get('aliases', [])]
-                  html_content += ', '.join(alias_names[:4])  # 显示前4个别名
-                  if len(alias_names) > 4:
-                      html_content += f' (+{len(alias_names)-4} more)'
+                  html_content += ', '.join(aliases[:4])  # 显示前4个别名
+                  if len(aliases) > 4:
+                      html_content += f' (+{len(aliases)-4} more)'
                   
                   html_content += """</div>
                       </div>
