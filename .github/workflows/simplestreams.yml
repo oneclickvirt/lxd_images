@@ -1,356 +1,387 @@
-name: Build and Deploy LXD Simplestreams
+name: Build LXD Simplestreams
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
   schedule:
-    - cron: '0 2 * * *'
-  workflow_dispatch:
+    - cron: '0 6 * * *'  # 每天早上6点运行
+  workflow_dispatch:  # 允许手动触发
+  push:
+    branches:
+      - main
+  release:
+    types: [published]
 
 jobs:
-  build-and-deploy:
+  build-simplestreams:
     runs-on: ubuntu-latest
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       
-    - name: Setup Python
+    - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
+        python-version: '3.9'
         
     - name: Install dependencies
       run: |
-        pip install requests pyyaml jinja2
-        
-    - name: Download simplestreams-builder
-      run: |
-        wget -O simplestreams-builder https://github.com/MottainaiCI/simplestreams-builder/releases/download/v0.3.1/simplestreams-builder-v0.3.1-linux-amd64
-        chmod +x simplestreams-builder
-        sudo mv simplestreams-builder /usr/local/bin/
+        pip install requests PyYAML
         
     - name: Create build directory
-      run: mkdir -p build
-      
-    - name: Fetch LXD images and create config
       run: |
-        python3 << 'PYTHON_SCRIPT'
+        mkdir -p build/images
+        
+    - name: Create image parser script
+      run: |
+        cat > parse_github_releases.py << 'EOF'
+        #!/usr/bin/env python3
         import requests
         import json
-        import yaml
         import os
+        import sys
         import re
-        from datetime import datetime, timezone
-        
-        REPO_OWNER = "oneclickvirt"
-        REPO_NAME = "lxd_images"
-        RELEASE_TAG = "processed"
-        
-        def parse_image_filename(filename):
-            base_name = filename
-            for ext in ['.tar.xz', '.tar.gz', '.tar', '.squashfs']:
-                if base_name.endswith(ext):
-                    base_name = base_name[:-len(ext)]
-                    break
+        import hashlib
+        import datetime
+        from urllib.parse import urlparse
+        import tarfile
+        import tempfile
+        import yaml
+
+        def download_file(url, local_path):
+            """下载文件到本地"""
+            print(f"Downloading {url}")
+            response = requests.get(url, stream=True)
+            response.raise_for_status()
             
-            if base_name.endswith('-rootfs'):
-                base_name = base_name[:-7]
-            if base_name.endswith('-lxd'):
-                base_name = base_name[:-4]
-            if base_name.endswith('-cloud'):
-                base_name = base_name[:-6]
-            if base_name.endswith('-default'):
-                base_name = base_name[:-8]
-            
+            with open(local_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            return local_path
+
+        def get_file_hash(filepath):
+            """计算文件SHA256"""
+            hash_sha256 = hashlib.sha256()
+            with open(filepath, "rb") as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hash_sha256.update(chunk)
+            return hash_sha256.hexdigest()
+
+        def parse_metadata_from_tar(tar_path):
+            """从tar.xz文件中解析metadata.yaml"""
+            metadata = {}
+            try:
+                with tarfile.open(tar_path, 'r:xz') as tar:
+                    try:
+                        metadata_member = tar.getmember('metadata.yaml')
+                        metadata_file = tar.extractfile(metadata_member)
+                        if metadata_file:
+                            content = metadata_file.read().decode('utf-8')
+                            metadata = yaml.safe_load(content)
+                    except KeyError:
+                        print(f"Warning: metadata.yaml not found in {tar_path}")
+            except Exception as e:
+                print(f"Error parsing {tar_path}: {e}")
+            return metadata
+
+        def parse_filename(filename):
+            """解析文件名获取OS、版本、架构等信息"""
+            # 匹配模式: OS-VERSION-ARCH-VARIANT-TYPE.EXTENSION
             patterns = [
-                r'^([a-z]+)-([0-9]+(?:\.[0-9]+)*)-([a-z0-9_]+)$',
-                r'^([a-z]+)([0-9]+(?:\.[0-9]+)*)-([a-z0-9_]+)$',
-                r'^([a-z]+)_([0-9_]+)_([a-z0-9_]+)$',
+                r'(\w+)-([^-]+)-(\w+)-([\w-]+)-(rootfs|lxd)\.(\w+(?:\.\w+)*)',
+                r'(\w+)-([^-]+)-(\w+)-(rootfs|lxd)\.(\w+(?:\.\w+)*)',
             ]
             
             for pattern in patterns:
-                match = re.match(pattern, base_name, re.IGNORECASE)
+                match = re.match(pattern, filename)
                 if match:
-                    os_name = match.group(1).lower()
-                    version = match.group(2).replace('_', '.')
-                    arch = match.group(3).lower()
+                    if len(match.groups()) == 6:
+                        os_name, version, arch, variant, file_type, ext = match.groups()
+                    else:
+                        os_name, version, arch, file_type, ext = match.groups()
+                        variant = 'default'
                     
-                    arch_mapping = {
-                        'x86_64': 'amd64',
-                        'aarch64': 'arm64',
-                        'armv7l': 'armhf',
-                        'i386': '386',
-                        'i686': '386'
+                    return {
+                        'os': os_name,
+                        'release': version,
+                        'arch': arch,
+                        'variant': variant,
+                        'type': file_type,
+                        'extension': ext
                     }
-                    arch = arch_mapping.get(arch, arch)
-                    
-                    return os_name, version, arch
+            return None
+
+        def fetch_github_releases():
+            """获取GitHub releases中的文件"""
+            url = "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
             
-            print(f"Warning: Could not parse filename {filename}, using defaults")
-            return "unknown", "latest", "amd64"
-        
-        api_url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/tags/{RELEASE_TAG}"
-        print(f"Fetching release data from: {api_url}")
-        
-        try:
-            response = requests.get(api_url)
-            response.raise_for_status()
-            release_data = response.json()
-        except Exception as e:
-            print(f"Error fetching release data: {e}")
-            exit(1)
-        
-        assets = release_data.get('assets', [])
-        print(f"Found {len(assets)} assets in release")
-        
-        config = {
-            "storage": {
-                "backend": "filesystem",
-                "path": "./build"
-            },
-            "products": []
-        }
-        
-        for asset in assets:
-            filename = asset['name']
-            download_url = asset['browser_download_url']
-            
-            if not any(filename.endswith(ext) for ext in ['.tar.xz', '.tar.gz', '.tar', '.squashfs']):
-                continue
+            try:
+                response = requests.get(url)
+                response.raise_for_status()
+                release_data = response.json()
                 
-            print(f"Processing: {filename}")
+                assets = []
+                for asset in release_data.get('assets', []):
+                    download_url = asset['download_url']
+                    filename = asset['name']
+                    size = asset['size']
+                    
+                    # 只处理我们关心的文件类型
+                    if any(filename.endswith(ext) for ext in ['.squashfs', '.tar.xz']):
+                        assets.append({
+                            'name': filename,
+                            'download_url': download_url,
+                            'size': size
+                        })
+                
+                return assets
+            except Exception as e:
+                print(f"Error fetching releases: {e}")
+                return []
+
+        def group_files_by_image(assets):
+            """将文件按镜像分组"""
+            images = {}
             
-            os_name, version, arch = parse_image_filename(filename)
-            file_size = asset.get('size', 0)
+            for asset in assets:
+                parsed = parse_filename(asset['name'])
+                if not parsed:
+                    continue
+                    
+                image_key = f"{parsed['os']}:{parsed['release']}:{parsed['arch']}:{parsed['variant']}"
+                
+                if image_key not in images:
+                    images[image_key] = {
+                        'os': parsed['os'],
+                        'release': parsed['release'],
+                        'arch': parsed['arch'],
+                        'variant': parsed['variant'],
+                        'files': {}
+                    }
+                
+                file_key = f"{parsed['type']}.{parsed['extension']}"
+                images[image_key]['files'][file_key] = asset
+                
+            return images
+
+        def create_directory_structure(images, build_dir):
+            """创建目录结构并下载必要的元数据"""
+            current_time = datetime.datetime.utcnow()
+            timestamp = current_time.strftime('%Y%m%d_%H:%M')
             
-            print(f"  OS: {os_name}, Version: {version}, Arch: {arch}, Size: {file_size}")
+            for image_key, image_info in images.items():
+                # 创建目录结构
+                image_dir = os.path.join(
+                    build_dir, 'images',
+                    image_info['os'],
+                    image_info['release'], 
+                    image_info['arch'],
+                    image_info['variant'],
+                    timestamp
+                )
+                os.makedirs(image_dir, exist_ok=True)
+                
+                # 处理文件
+                items = {}
+                temp_files = []
+                
+                try:
+                    for file_key, asset in image_info['files'].items():
+                        # 下载文件到临时位置计算hash
+                        temp_file = tempfile.NamedTemporaryFile(delete=False)
+                        temp_files.append(temp_file.name)
+                        download_file(asset['download_url'], temp_file.name)
+                        
+                        # 计算hash
+                        file_hash = get_file_hash(temp_file.name)
+                        
+                        # 添加到items
+                        if file_key.endswith('.squashfs'):
+                            ftype = 'root.squashfs'
+                        elif file_key.endswith('.tar.xz'):
+                            if 'lxd' in file_key:
+                                ftype = 'lxd.tar.xz'
+                            else:
+                                ftype = 'root.tar.xz'
+                        else:
+                            ftype = file_key
+                            
+                        items[file_key.replace('.', '_')] = {
+                            'ftype': ftype,
+                            'path': f"images/{image_info['os']}/{image_info['release']}/{image_info['arch']}/{image_info['variant']}/{timestamp}/{asset['name']}",
+                            'size': asset['size'],
+                            'sha256': file_hash,
+                        }
+                        
+                        # 如果是LXD tar文件，尝试解析metadata
+                        if 'lxd' in file_key and file_key.endswith('.tar.xz'):
+                            try:
+                                metadata = parse_metadata_from_tar(temp_file.name)
+                                if metadata:
+                                    # 更新镜像信息
+                                    if 'architecture' in metadata:
+                                        arch = metadata['architecture']
+                                        if arch == 'x86_64':
+                                            arch = 'amd64'
+                                        image_info['arch'] = arch
+                                    
+                                    if 'creation_date' in metadata:
+                                        creation_date = datetime.datetime.utcfromtimestamp(int(metadata['creation_date']))
+                                        timestamp = creation_date.strftime('%Y%m%d_%H:%M')
+                                        # 可能需要重新创建目录
+                            except Exception as e:
+                                print(f"Warning: Could not parse metadata from {asset['name']}: {e}")
+                
+                finally:
+                    # 清理临时文件
+                    for temp_file in temp_files:
+                        try:
+                            os.unlink(temp_file)
+                        except:
+                            pass
+                
+                # 保存items.json
+                with open(os.path.join(image_dir, '.items.json'), 'w') as f:
+                    json.dump(items, f, indent=2)
+                
+                # 更新images字典
+                images[image_key]['timestamp'] = timestamp
+                images[image_key]['items'] = items
+                
+            return images
+
+        def build_aliases(os_name, release, variant):
+            """构建别名"""
+            aliases = [f"{os_name}/{release}/{variant}"]
+            if variant == 'default':
+                aliases.append(f"{os_name}/{release}")
+            return ','.join(aliases)
+
+        def generate_simplestreams(images, build_dir):
+            """生成simplestreams格式的JSON"""
+            products = {}
             
-            if filename.endswith('.squashfs'):
-                file_type = "squashfs"
-            else:
-                file_type = "tar.xz"
+            for image_key, image_info in images.items():
+                product_key = f"{image_info['os']}:{image_info['release']}:{image_info['arch']}:{image_info['variant']}"
+                
+                products[product_key] = {
+                    'aliases': build_aliases(image_info['os'], image_info['release'], image_info['variant']),
+                    'arch': image_info['arch'],
+                    'os': image_info['os'],
+                    'release': image_info['release'],
+                    'release_title': image_info['release'],
+                    'variant': image_info['variant'],
+                    'versions': {
+                        image_info['timestamp']: {
+                            'items': image_info['items']
+                        }
+                    }
+                }
             
-            image_config = {
-                "os": f"{os_name}",
-                "release": version,
-                "arch": arch,
-                "url": download_url,
-                "size": file_size,
-                "type": file_type,
-                "aliases": [f"{os_name}/{version}", f"{os_name}/{version}/{arch}"]
+            # 生成images.json
+            images_data = {
+                'content_id': 'images',
+                'datatype': 'image-downloads', 
+                'format': 'products:1.0',
+                'products': products
             }
             
-            config["products"].append(image_config)
+            # 生成index.json
+            index_data = {
+                'format': 'index:1.0',
+                'index': {
+                    'images': {
+                        'datatype': 'image-downloads',
+                        'path': 'streams/v1/images.json',
+                        'format': 'products:1.0',
+                        'products': list(products.keys())
+                    }
+                }
+            }
+            
+            # 创建目录并写入文件
+            streams_dir = os.path.join(build_dir, 'streams', 'v1')
+            os.makedirs(streams_dir, exist_ok=True)
+            
+            with open(os.path.join(streams_dir, 'images.json'), 'w') as f:
+                json.dump(images_data, f, indent=2)
+                
+            with open(os.path.join(streams_dir, 'index.json'), 'w') as f:
+                json.dump(index_data, f, indent=2)
+                
+            print("Simplestreams files generated successfully!")
+
+        def main():
+            build_dir = './build'
+            
+            print("Fetching GitHub releases...")
+            assets = fetch_github_releases()
+            
+            if not assets:
+                print("No assets found!")
+                return 1
+                
+            print(f"Found {len(assets)} assets")
+            
+            print("Grouping files by image...")
+            images = group_files_by_image(assets)
+            
+            print(f"Found {len(images)} images")
+            for key in images.keys():
+                print(f"  - {key}")
+            
+            print("Creating directory structure...")
+            images = create_directory_structure(images, build_dir)
+            
+            print("Generating simplestreams...")
+            generate_simplestreams(images, build_dir)
+            
+            print("Build completed successfully!")
+            return 0
+
+        if __name__ == '__main__':
+            exit(main())
+        EOF
         
-        print(f"Generated config for {len(config['products'])} images")
-        
-        with open("simplestreams-config.yaml", "w") as f:
-            yaml.dump(config, f, default_flow_style=False)
-        
-        print("Generated simplestreams-config.yaml")
-        
-        summary = {
-            "total_images": len(config["products"]),
-            "architectures": list(set(img["arch"] for img in config["products"])),
-            "operating_systems": list(set(img["os"] for img in config["products"])),
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "source_release": f"{REPO_OWNER}/{REPO_NAME}/releases/tag/{RELEASE_TAG}"
-        }
-        
-        with open("build/summary.json", "w") as f:
-            json.dump(summary, f, indent=2)
-        
-        print(f"Build summary: {summary}")
-        PYTHON_SCRIPT
-        
-    - name: Build simplestreams with simplestreams-builder
-      run: |
-        echo "Building simplestreams with simplestreams-builder..."
-        simplestreams-builder build-images-file --config simplestreams-config.yaml --target-dir build
-        simplestreams-builder build-index --config simplestreams-config.yaml --target-dir build
-        
-    - name: Generate static HTML index
+    - name: Run image parser
+      run: python parse_github_releases.py
+      
+    - name: Create simple index.html
       run: |
         cat > build/index.html << 'EOF'
         <!DOCTYPE html>
-        <html lang="en">
+        <html>
         <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>LXD Simplestreams Image Server</title>
+            <title>LXD Simplestreams</title>
+            <meta charset="utf-8">
             <style>
-                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px; background: #f5f5f5; }
-                .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-                h1 { color: #333; border-bottom: 3px solid #007acc; padding-bottom: 10px; }
-                .info-box { background: #e7f3ff; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #007acc; }
-                .endpoint { background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace; margin: 10px 0; border: 1px solid #dee2e6; }
-                .usage-example { background: #2d3748; color: #fff; padding: 20px; border-radius: 6px; margin: 20px 0; overflow-x: auto; }
-                .usage-example code { color: #68d391; }
-                table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-                th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-                th { background-color: #f8f9fa; font-weight: 600; }
-                tr:hover { background-color: #f8f9fa; }
-                .badge { display: inline-block; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500; }
-                .badge-primary { background: #007acc; color: white; }
-                .badge-success { background: #28a745; color: white; }
+                body { font-family: Arial, sans-serif; margin: 40px; }
+                h1 { color: #333; }
+                .code { background: #f4f4f4; padding: 10px; border-radius: 4px; }
             </style>
         </head>
         <body>
-            <div class="container">
-                <h1>LXD Simplestreams Image Server</h1>
-                
-                <div class="info-box">
-                    <h3>Server Information</h3>
-                    <p>This is an automated LXD Simplestreams image server, providing pre-built container images from the oneclickvirt project.</p>
-                    <p><strong>Source:</strong> <a href="https://github.com/oneclickvirt/lxd_images">oneclickvirt/lxd_images</a></p>
-                    <p><strong>Updated:</strong> <span id="last-updated">Loading...</span></p>
-                </div>
-                
-                <h2>API Endpoints</h2>
-                <div class="endpoint">
-                    <strong>Index:</strong> <a href="./streams/v1/index.json">./streams/v1/index.json</a>
-                </div>
-                <div class="endpoint">
-                    <strong>Images:</strong> <a href="./streams/v1/images.json">./streams/v1/images.json</a>
-                </div>
-                <div class="endpoint">
-                    <strong>Summary:</strong> <a href="./summary.json">./summary.json</a>
-                </div>
-                
-                <h2>Usage Examples</h2>
-                
-                <h3>Add this server as a remote in LXD:</h3>
-                <div class="usage-example">
-                    <code>lxc remote remove spiritlhl && lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public</code>
-                </div>
-                
-                <h3>List available images:</h3>
-                <div class="usage-example">
-                    <code>lxc image list spiritlhl:</code>
-                </div>
-                <h3>Launch a container:</h3>
-                <div class="usage-example">
-                    <code>lxc launch spiritlhl:ubuntu/22.04/amd64 my-container</code>
-                </div>
-                <div id="images-table-container">
-                    <h2>Available Images</h2>
-                    <p>Loading image list...</p>
-                </div>
+            <h1>LXD Simplestreams Server</h1>
+            <p>This is a simplestreams server for LXD images.</p>
+            
+            <h2>Usage</h2>
+            <p>Add this server to your LXD client:</p>
+            <div class="code">
+                <code>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public</code>
             </div>
-            <script>
-                Promise.all([
-                    fetch('./streams/v1/images.json').then(r => r.json()),
-                    fetch('./summary.json').then(r => r.json())
-                ]).then(([images, summary]) => {
-                    document.getElementById('last-updated').textContent = new Date(summary.generated_at).toLocaleString();
-                    
-                    const products = images.products || {};
-                    const tableHtml = `
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Operating System</th>
-                                    <th>Version</th>
-                                    <th>Architecture</th>
-                                    <th>Aliases</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${Object.entries(products).map(([id, product]) => `
-                                    <tr>
-                                        <td><strong>${product.os || 'Unknown'}</strong></td>
-                                        <td>${product.release || 'Unknown'}</td>
-                                        <td><span class="badge badge-primary">${product.arch || 'Unknown'}</span></td>
-                                        <td><code>${product.aliases || id}</code></td>
-                                        <td><span class="badge badge-success">Available</span></td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                        <p><strong>Total Images:</strong> ${Object.keys(products).length}</p>
-                        <p><strong>Architectures:</strong> ${summary.architectures ? summary.architectures.join(', ') : 'Unknown'}</p>
-                        <p><strong>Operating Systems:</strong> ${summary.operating_systems ? summary.operating_systems.join(', ') : 'Unknown'}</p>
-                    `;
-                    
-                    document.getElementById('images-table-container').innerHTML = 
-                        '<h2>Available Images</h2>' + tableHtml;
-                }).catch(error => {
-                    console.error('Error loading image data:', error);
-                    document.getElementById('images-table-container').innerHTML = 
-                        '<h2>Available Images</h2><p>Error loading image list. Please check the console.</p>';
-                });
-            </script>
+            
+            <h2>Available Files</h2>
+            <ul>
+                <li><a href="streams/v1/index.json">Index</a></li>
+                <li><a href="streams/v1/images.json">Images</a></li>
+            </ul>
         </body>
         </html>
         EOF
         
-    - name: Create _redirects file for Netlify
+    - name: List build contents
       run: |
-        cat > build/_redirects << 'EOF'
-        /streams/v1/* /streams/v1/:splat 200
-        /streams/* /streams/:splat 200
-        /*.json /:splat 200
-        EOF
-        
-    - name: Create _headers file for Netlify
-      run: |
-        cat > build/_headers << 'EOF'
-        /*.json
-          Access-Control-Allow-Origin: *
-          Access-Control-Allow-Methods: GET, HEAD, OPTIONS
-          Access-Control-Allow-Headers: *
-          Content-Type: application/json
-          Cache-Control: public, max-age=300
-        
-        /streams/v1/*
-          Access-Control-Allow-Origin: *
-          Access-Control-Allow-Methods: GET, HEAD, OPTIONS
-          Access-Control-Allow-Headers: *
-          Content-Type: application/json
-          Cache-Control: public, max-age=300
-        
-        /*.html
-          Cache-Control: public, max-age=60
-        EOF
-        
-    - name: Verify build structure and content
-      run: |
-        echo "=== Build directory structure ==="
-        find build -type f -exec ls -la {} \;
-        
-        echo -e "\n=== Verifying JSON files ==="
-        if [ -f "build/streams/v1/index.json" ]; then
-          python3 -m json.tool build/streams/v1/index.json > /dev/null && echo "index.json is valid"
-        else
-          echo "index.json not found"
-        fi
-        
-        if [ -f "build/streams/v1/images.json" ]; then
-          python3 -m json.tool build/streams/v1/images.json > /dev/null && echo "images.json is valid"
-        else
-          echo "images.json not found"
-        fi
-        
-        if [ -f "build/summary.json" ]; then
-          python3 -m json.tool build/summary.json > /dev/null && echo "summary.json is valid"
-        else
-          echo "summary.json not found"
-        fi
-        
-        echo -e "\n=== Sample content ==="
-        if [ -f "build/streams/v1/index.json" ]; then
-          echo "--- index.json ---"
-          head -20 build/streams/v1/index.json
-        fi
-        
-        if [ -f "build/streams/v1/images.json" ]; then
-          echo -e "\n--- images.json (first 30 lines) ---"
-          head -30 build/streams/v1/images.json
-        fi
+        echo "Build directory contents:"
+        find build -type f | head -20
         
     - name: Deploy to Netlify
       uses: nwtgck/actions-netlify@v3.0
@@ -358,48 +389,6 @@ jobs:
         publish-dir: './build'
         production-branch: main
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        deploy-message: "Deploy LXD Simplestreams - $(date)"
-        alias: deploy-preview-${{ github.event.number }}
       env:
         NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
         NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-      id: netlify-deploy
-        
-    - name: Output deployment information
-      run: |
-        echo "Deployment completed successfully!"
-        echo "Deploy URL: ${{ steps.netlify-deploy.outputs.deploy-url }}"
-        echo "Live URL: ${{ steps.netlify-deploy.outputs.live-url }}"
-        echo ""
-        echo "LXD Configuration:"
-        echo "lxc remote add oneclickvirt ${{ steps.netlify-deploy.outputs.live-url }} --protocol=simplestreams --public"
-        echo ""
-        echo "Usage Examples:"
-        echo "lxc image list oneclickvirt:"
-        echo "lxc launch oneclickvirt:ubuntu/24.04/amd64 my-container"
-        
-    - name: Test simplestreams endpoints
-      run: |
-        echo "Waiting for deployment to be ready..."
-        sleep 45
-        
-        DEPLOY_URL="${{ steps.netlify-deploy.outputs.live-url }}"
-        if [ ! -z "$DEPLOY_URL" ]; then
-          echo "Testing simplestreams endpoints..."
-          
-          echo "Testing main page..."
-          curl -f -s "$DEPLOY_URL/" > /dev/null && echo "Main page OK" || echo "Main page failed"
-          
-          echo "Testing index.json..."
-          curl -f -s "$DEPLOY_URL/streams/v1/index.json" | python3 -m json.tool > /dev/null && echo "index.json OK" || echo "index.json failed"
-          
-          echo "Testing images.json..."
-          curl -f -s "$DEPLOY_URL/streams/v1/images.json" | python3 -m json.tool > /dev/null && echo "images.json OK" || echo "images.json failed"
-          
-          echo "Testing summary.json..."
-          curl -f -s "$DEPLOY_URL/summary.json" | python3 -m json.tool > /dev/null && echo "summary.json OK" || echo "summary.json failed"
-          
-          echo "Endpoint testing completed!"
-        else
-          echo "No deployment URL available for testing"
-        fi
