@@ -364,20 +364,14 @@ jobs:
               <div class="usage">
                   <h2>🚀 使用方法</h2>
                   <p><strong>步骤 1:</strong> 添加此镜像源到你的 LXD 客户端</p>
-                  <pre><code>lxc remote add spiritlhl https://YOUR_NETLIFY_DOMAIN.netlify.app --protocol=simplestreams --public</code></pre>
+                  <pre><code>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol=simplestreams --public --accept-certificate</code></pre>
                   <p><strong>步骤 2:</strong> 验证远程源已添加</p>
                   <pre><code>lxc remote list</code></pre>
                   <p><strong>步骤 3:</strong> 查看可用镜像</p>
                   <pre><code>lxc image list spiritlhl:</code></pre>
                   <p><strong>步骤 4:</strong> 启动容器</p>
                   <pre><code>lxc launch spiritlhl:ubuntu:22.04:amd64 my-container</code></pre>
-                  
-                  <div class="warning-box">
-                      <h3>ℹ️ 技术说明</h3>
-                      <p>此镜像仓库现在使用 Netlify 托管，支持真正的 HTTP 重定向。镜像文件通过 _redirects 规则自动重定向到 GitHub Release 的下载链接。</p>
-                  </div>
               </div>
-              
               <div class="stats">
           """
           
