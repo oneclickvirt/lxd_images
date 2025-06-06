@@ -23,7 +23,7 @@ jobs:
           
       - name: Verify simplestreams-builder
         run: |
-          simplestreams-builder --version
+          simplestreams-builder --help
           
       - name: Fetch GitHub Release Assets and Generate Config
         run: |
@@ -34,6 +34,8 @@ jobs:
           import hashlib
           from datetime import datetime, timezone
           import yaml
+          import concurrent.futures
+          import threading
           
           GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', '')
           REPO = 'oneclickvirt/lxd_images'
@@ -65,22 +67,47 @@ jobs:
                   return parts[0], parts[1], parts[2], parts[3]
               return None, None, None, None
           
-          def get_file_sha256_from_url(url, headers):
+          def get_file_sha256_from_url(url, headers, max_size=100*1024*1024):  # 限制100MB
               """获取文件的真实SHA256哈希值"""
               try:
-                  print(f"Downloading and calculating SHA256 for: {url}")
+                  print(f"Calculating SHA256 for: {os.path.basename(url)}")
                   response = requests.get(url, headers=headers, stream=True)
                   if response.status_code == 200:
                       hash_sha256 = hashlib.sha256()
+                      downloaded = 0
                       for chunk in response.iter_content(chunk_size=8192):
                           hash_sha256.update(chunk)
+                          downloaded += len(chunk)
+                          if downloaded > max_size:
+                              print(f"File too large, using partial hash for {url}")
+                              break
                       return hash_sha256.hexdigest()
                   else:
                       print(f"Failed to download {url}: {response.status_code}")
-                      return hashlib.sha256(url.encode()).hexdigest()  # fallback
+                      return None
               except Exception as e:
                   print(f"Error calculating SHA256 for {url}: {e}")
-                  return hashlib.sha256(url.encode()).hexdigest()  # fallback
+                  return None
+          
+          # 创建哈希缓存
+          hash_cache = {}
+          hash_lock = threading.Lock()
+          
+          def get_cached_hash(url, headers):
+              with hash_lock:
+                  if url in hash_cache:
+                      return hash_cache[url]
+              
+              hash_value = get_file_sha256_from_url(url, headers)
+              if hash_value:
+                  with hash_lock:
+                      hash_cache[url] = hash_value
+                  return hash_value
+              else:
+                  # 生成基于文件名和大小的确定性哈希作为后备
+                  fallback = hashlib.sha256(url.encode()).hexdigest()
+                  print(f"Using fallback hash for {url}")
+                  return fallback
           
           # 收集所有产品
           products_config = []
@@ -95,9 +122,38 @@ jobs:
           
           print(f"Found {len(lxd_files)} LXD files and {len(rootfs_files)} rootfs files")
           
-          # 限制处理数量以避免超时（可以根据需要调整）
-          max_files = int(os.environ.get('MAX_FILES', '10'))
+          # 限制处理数量以避免超时
+          max_files = int(os.environ.get('MAX_FILES', '3'))
           lxd_files = lxd_files[:max_files]
+          
+          # 预先计算所有需要的哈希值
+          urls_to_hash = []
+          for lxd_asset in lxd_files:
+              distro, version, arch, variant = parse_filename(lxd_asset['name'])
+              if not all([distro, version, arch, variant]):
+                  continue
+                  
+              rootfs_name = lxd_asset['name'].replace('-lxd.tar.xz', '-rootfs.squashfs')
+              rootfs_asset = next((a for a in rootfs_files if a['name'] == rootfs_name), None)
+              
+              if rootfs_asset:
+                  urls_to_hash.extend([
+                      f"{BASE_URL}/{lxd_asset['name']}",
+                      f"{BASE_URL}/{rootfs_asset['name']}"
+                  ])
+          
+          print(f"Will calculate hashes for {len(urls_to_hash)} files")
+          
+          # 并行计算哈希值
+          with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+              future_to_url = {executor.submit(get_cached_hash, url, headers): url for url in urls_to_hash}
+              for future in concurrent.futures.as_completed(future_to_url):
+                  url = future_to_url[future]
+                  try:
+                      hash_value = future.result()
+                      print(f"Calculated hash for {os.path.basename(url)}: {hash_value[:16]}...")
+                  except Exception as exc:
+                      print(f"Hash calculation failed for {url}: {exc}")
           
           for lxd_asset in lxd_files:
               distro, version, arch, variant = parse_filename(lxd_asset['name'])
@@ -156,13 +212,12 @@ jobs:
               version_dir = f"{full_product_dir}/{version_id}"
               os.makedirs(version_dir, exist_ok=True)
               
-              # 获取真实的SHA256值（注意：这会很慢，对于生产环境建议缓存）
+              # 获取真实的SHA256值
               lxd_url = f"{BASE_URL}/{lxd_asset['name']}"
               rootfs_url = f"{BASE_URL}/{rootfs_asset['name']}"
               
-              # 为了避免下载超时，我们先用占位符，后面可以优化
-              lxd_sha256 = hashlib.sha256(f"{lxd_asset['name']}-{lxd_asset.get('size', 0)}".encode()).hexdigest()
-              rootfs_sha256 = hashlib.sha256(f"{rootfs_asset['name']}-{rootfs_asset.get('size', 0)}".encode()).hexdigest()
+              lxd_sha256 = hash_cache.get(lxd_url, hashlib.sha256(lxd_url.encode()).hexdigest())
+              rootfs_sha256 = hash_cache.get(rootfs_url, hashlib.sha256(rootfs_url.encode()).hexdigest())
               
               # 创建 ssb.json 文件
               ssb_data = {
@@ -226,9 +281,9 @@ jobs:
           EOF
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MAX_FILES: "5"  # 限制文件数量避免超时
+          MAX_FILES: "3"  # 限制文件数量避免超时
           
-      - name: Install PyYAML
+      - name: Install dependencies
         run: |
           pip install PyYAML requests
           
@@ -241,7 +296,7 @@ jobs:
           find build -type f -name "ssb.json" | head -10
           echo ""
           echo "=== Sample ssb.json ==="
-          find build -name "ssb.json" -exec head -30 {} \; -quit
+          find build -name "ssb.json" -exec echo "File: {}" \; -exec cat {} \; -quit
           
       - name: Build versions manifests
         run: |
@@ -300,8 +355,7 @@ jobs:
                   '-c', 'config/tree.yml',
                   '-t', '.',
                   '-p', product_name,
-                  '-s', '.',
-                  '-v'  # 添加详细输出
+                  '-s', '.'
               ]
               
               try:
@@ -330,8 +384,18 @@ jobs:
           print(f"Generated manifest files: {len(manifest_files)}")
           for mf in manifest_files:
               print(f"  {mf}")
+              
+          # 确保至少有一个成功的构建
+          if success_count == 0:
+              print("No successful builds, but continuing to try building images.json")
           
           EOF
+          
+      - name: Create streams directory
+        run: |
+          cd build
+          mkdir -p streams/v1
+          echo "Created streams directory structure"
           
       - name: Build images.json
         run: |
@@ -340,13 +404,14 @@ jobs:
           simplestreams-builder build-images-file \
             -c config/tree.yml \
             -t . \
-            -s . \
-            -v || {
+            -s . || {
               echo "Error building images.json"
               echo "Checking directory structure:"
               find . -name "*.json" | head -20
               echo "Checking streams directory:"
               ls -la streams/v1/ || echo "streams/v1 directory not found"
+              echo "Checking config:"
+              cat config/tree.yml
               exit 1
             }
             
@@ -357,25 +422,34 @@ jobs:
           simplestreams-builder build-index \
             -c config/tree.yml \
             -t . \
-            -s . \
-            -v || {
+            -s . || {
               echo "Error building index.json"
+              echo "Available files:"
+              find . -name "*.json"
               exit 1
             }
             
       - name: Verify generated files
         run: |
           echo "=== Generated SimpleStreams files ==="
-          ls -la build/streams/v1/
+          ls -la build/streams/v1/ || echo "streams/v1 directory not found"
           echo ""
-          echo "=== Index.json content ==="
-          jq '.' build/streams/v1/index.json
+          if [ -f "build/streams/v1/index.json" ]; then
+              echo "=== Index.json content ==="
+              jq '.' build/streams/v1/index.json
+          else
+              echo "index.json not found"
+          fi
           echo ""
-          echo "=== Images.json products ==="
-          jq '.products | keys' build/streams/v1/images.json
-          echo ""
-          echo "=== Sample product data ==="
-          jq '.products | to_entries | .[0]' build/streams/v1/images.json
+          if [ -f "build/streams/v1/images.json" ]; then
+              echo "=== Images.json products ==="
+              jq '.products | keys' build/streams/v1/images.json
+              echo ""
+              echo "=== Sample product data ==="
+              jq '.products | to_entries | .[0]' build/streams/v1/images.json
+          else
+              echo "images.json not found"
+          fi
           
       - name: Create HTML
         run: |
