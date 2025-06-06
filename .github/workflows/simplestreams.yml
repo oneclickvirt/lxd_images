@@ -229,16 +229,16 @@ jobs:
                                       group_by(.variant)
                                       | if length == 1 then
                                           {
-                                            rootfs: .[0].rootfs_url,
-                                            lxd: .[0].lxd_url
+                                            rootfs: .[0][0].rootfs_url,
+                                            lxd: .[0][0].lxd_url
                                           }
-                                        elif (map(select(.variant == "cloud")) | length) > 0 then
-                                          (map(select(.variant == "cloud"))[0] | {
+                                        elif (map(.[0]) | map(select(.variant == "cloud")) | length) > 0 then
+                                          (map(.[0]) | map(select(.variant == "cloud"))[0] | {
                                             rootfs: .rootfs_url,
                                             lxd: .lxd_url
                                           }) + {
                                             variants: (
-                                              map({
+                                              map(.[0]) | map({
                                                 key: .variant,
                                                 value: {
                                                   rootfs: .rootfs_url,
@@ -248,12 +248,12 @@ jobs:
                                             )
                                           }
                                         else
-                                          (.[0] | {
+                                          (.[0][0] | {
                                             rootfs: .rootfs_url,
                                             lxd: .lxd_url
                                           }) + {
                                             variants: (
-                                              map({
+                                              map(.[0]) | map({
                                                 key: .variant,
                                                 value: {
                                                   rootfs: .rootfs_url,
