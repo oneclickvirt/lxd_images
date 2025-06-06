@@ -1,90 +1,107 @@
-name: Build Simplestreams and Deploy Pages
+name: Build and Deploy Simplestreams
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
-      - master
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - name: 检出仓库
         uses: actions/checkout@v4
 
-      - name: 获取 Releases 文件列表
+      - name: 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: 获取已发布镜像文件
         id: get_assets
         run: |
-          API_URL="https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
-          curl -sSL $API_URL > release.json
-          jq -r '.assets[] | [.name, .browser_download_url] | @tsv' release.json > assets.tsv
+          api_url="https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
+          assets=$(curl -sL "$api_url" | jq -r '.assets[] | {name: .name, url: .browser_download_url, size: .size, updated_at: .updated_at}')
+          echo "$assets" > assets.json
 
-      - name: 安装 jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: 构建 simplestreams 数据
+      - name: 生成simplestreams index.json和images.json
+        id: generate_simple_streams
         run: |
-          mkdir -p gh-pages/streams/v1/images
-          INDEX_JSON="gh-pages/streams/v1/index.json"
-          IMAGES_JSON="gh-pages/streams/v1/images.json"
-          echo '{ "index": [ { "path": "streams/v1/images.json", "products": {} } ] }' > "$INDEX_JSON"
-          echo '{ "images": {}}' > "$IMAGES_JSON"
-          while IFS=$'\t' read -r name url; do
-            ext="${name##*.}"
-            base="${name%.*}"
-            [[ "$ext" == "tar" ]] && continue
-            if [[ "$ext" == "xz" || "$ext" == "gz" || "$ext" == "zst" ]]; then
-              img_name="${base%.*}"
-              format="$ext"
-              img_entry=$(jq -n \
-                --arg name "$img_name" \
+          mkdir -p site/streams/v1
+          now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          uuid="oneclickvirt-lxdimages"
+          images_array="[]"
+          while IFS= read -r asset; do
+            name=$(echo "$asset" | jq -r .name)
+            url=$(echo "$asset" | jq -r .url)
+            size=$(echo "$asset" | jq -r .size)
+            updated=$(echo "$asset" | jq -r .updated_at)
+            if [[ "$name" =~ \.tar\.xz$ ]]; then
+              arch=$(echo "$name" | sed -E 's/.*-([a-z0-9_]+)\.tar\.xz/\1/')
+              alias=$(echo "$name" | sed -E 's/(.*)-[a-z0-9_]+\.tar\.xz/\1/')
+              id=$(echo "$name" | sha1sum | awk '{print $1}')
+              images_array=$(echo "$images_array" | jq \
+                --arg id "$id" \
+                --arg alias "$alias" \
+                --arg arch "$arch" \
                 --arg url "$url" \
-                --arg format "$format" \
-                --arg file "$name" \
-                '{'"\"$img_name\"": {
-                  "aliases": [],
-                  "ftype": $format,
-                  "path": $file,
-                  "download_url": $url,
-                  "sha256": "",
-                  "size": 0,
-                  "uploaded": "",
-                  "auto_update": false
-                }}')
-              jq ".images += $img_entry" "$IMAGES_JSON" > tmp.json && mv tmp.json "$IMAGES_JSON"
-              curl -sSL "$url" -o "gh-pages/streams/v1/images/$name"
+                --arg size "$size" \
+                --arg updated "$updated" \
+                '. += [{
+                  "id": $id,
+                  "aliases": [$alias],
+                  "architecture": $arch,
+                  "stream": "default",
+                  "ftype": "lxd.tar.xz",
+                  "path": $url,
+                  "size": ($size | tonumber),
+                  "created_at": $updated,
+                  "updated_at": $updated
+                }]'
+              )
             fi
-          done < assets.tsv
+          done < <(jq -c '.' assets.json)
+          cat > site/streams/v1/index.json <<EOF
+{
+  "index": {
+    "format": "simplestreams",
+    "updated_at": "$now",
+    "content_id": "$uuid",
+    "products": {
+      "lxd": {
+        "versions": {
+          "1.0": {
+            "items": [
+              {
+                "path": "images.json"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
+EOF
+          echo "$images_array" > images_list.json
+          cat > site/streams/v1/images.json <<EOF
+{
+  "content_id": "$uuid",
+  "format": "lxd_simple",
+  "updated_at": "$now",
+  "images": $(cat images_list.json)
+}
+EOF
 
-      - name: 生成前端 index.html
-        run: |
-          cat > gh-pages/index.html <<EOF
-          <!DOCTYPE html>
-          <html lang="zh">
-          <head>
-            <meta charset="UTF-8">
-            <title>LXD Simplestreams 镜像源</title>
-          </head>
-          <body>
-            <h1>LXD 镜像源 - lxdimages.spiritlhl.net</h1>
-            <p>作为 LXD Simplestreams 镜像源，可直接通过 <code>https://lxdimages.spiritlhl.net/streams/v1/</code> 远程添加。</p>
-            <h2>文件列表</h2>
-            <ul>
-          EOF
-          while IFS=$'\t' read -r name url; do
-            echo "<li><a href=\"streams/v1/images/$name\">$name</a></li>" >> gh-pages/index.html
-          done < assets.tsv
-          echo "</ul></body></html>" >> gh-pages/index.html
-
-      - name: 配置自定义域名
-        run: |
-          echo "lxdimages.spiritlhl.net" > gh-pages/CNAME
-
-      - name: 部署到 GitHub Pages
+      - name: 部署到gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./gh-pages
+          publish_dir: ./site
           publish_branch: gh-pages
+
+      - name: 配置自定义域名
+        run: |
+          echo "lxdimages.spiritlhl.net" > site/CNAME
+        continue-on-error: true
