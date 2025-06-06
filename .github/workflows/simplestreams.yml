@@ -364,7 +364,7 @@ jobs:
               <div class="usage">
                   <h2>🚀 使用方法</h2>
                   <p><strong>步骤 1:</strong> 添加此镜像源到你的 LXD 客户端</p>
-                  <pre><code>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol=simplestreams --public --accept-certificate</code></pre>
+                  <pre><code>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public --accept-certificate</code></pre>
                   <p><strong>步骤 2:</strong> 验证远程源已添加</p>
                   <pre><code>lxc remote list</code></pre>
                   <p><strong>步骤 3:</strong> 查看可用镜像</p>
