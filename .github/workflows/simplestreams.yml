@@ -1,7 +1,14 @@
 name: Build and Deploy SimpleStreams Index
 
 on:
+  schedule:
+    - cron: '0 */6 * * *'
   workflow_dispatch:
+  push:
+    branches:
+      - main
+  release:
+    types: [published]
 
 jobs:
   build-and-deploy:
@@ -65,12 +72,11 @@ jobs:
               return hashlib.sha256(content.encode()).hexdigest()
           
           def get_file_info(asset, item_type):
-              url = f'{BASE_URL}/{asset["name"]}'
-              sha256_content = f'{url}:{asset.get("size", 0)}:{asset["name"]}'
+              sha256_content = f'{asset["name"]}:{asset.get("size", 0)}'
               return {
                   'ftype': item_type,
                   'size': asset.get('size', 0),
-                  'path': url,
+                  'path': asset['name'],
                   'sha256': generate_sha256(sha256_content)
               }
           
@@ -81,6 +87,8 @@ jobs:
           
           current_time = datetime.now(timezone.utc)
           version_id = current_time.strftime('%Y%m%d_%H%M')
+          
+          os.makedirs('build/images', exist_ok=True)
           
           for lxd_asset in lxd_files:
               distro, version, arch, variant = parse_filename(lxd_asset['name'])
@@ -117,7 +125,28 @@ jobs:
                   }
               }
               
-              print(f"Processed {product_name}")
+              lxd_url = f'{BASE_URL}/{lxd_asset["name"]}'
+              rootfs_url = f'{BASE_URL}/{rootfs_asset["name"]}'
+              
+              try:
+                  print(f"Downloading {lxd_asset['name']}...")
+                  lxd_response = requests.get(lxd_url, stream=True, timeout=300)
+                  lxd_response.raise_for_status()
+                  with open(f'build/images/{lxd_asset["name"]}', 'wb') as f:
+                      for chunk in lxd_response.iter_content(chunk_size=8192):
+                          f.write(chunk)
+                  
+                  print(f"Downloading {rootfs_asset['name']}...")
+                  rootfs_response = requests.get(rootfs_url, stream=True, timeout=300)
+                  rootfs_response.raise_for_status()
+                  with open(f'build/images/{rootfs_asset["name"]}', 'wb') as f:
+                      for chunk in rootfs_response.iter_content(chunk_size=8192):
+                          f.write(chunk)
+                          
+                  print(f"Downloaded {product_name}")
+              except Exception as e:
+                  print(f"Error downloading {product_name}: {e}")
+                  continue
           
           update_time = current_time.strftime('%a, %d %b %Y %H:%M:%S') + ' +0000'
           
@@ -154,7 +183,6 @@ jobs:
           
           print(f"Generated index with {len(products)} products")
           
-          # 测试 JSON 有效性
           with open('build/streams/v1/index.json', 'r') as f:
               test_index = json.load(f)
               print("Index JSON validation passed")
