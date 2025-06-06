@@ -1,107 +1,443 @@
-name: Build and Deploy Simplestreams
+name: Build and Deploy SimpleStreams Index
 
 on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
   push:
     branches:
       - main
-  workflow_dispatch:
+  release:
+    types: [published]
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
     steps:
-      - name: 检出仓库
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: 安装依赖
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
-
-      - name: 获取已发布镜像文件
-        id: get_assets
-        run: |
-          api_url="https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
-          assets=$(curl -sL "$api_url" | jq -r '.assets[] | {name: .name, url: .browser_download_url, size: .size, updated_at: .updated_at}')
-          echo "$assets" > assets.json
-
-      - name: 生成simplestreams index.json和images.json
-        id: generate_simple_streams
-        run: |
-          mkdir -p site/streams/v1
-          now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          uuid="oneclickvirt-lxdimages"
-          images_array="[]"
-          while IFS= read -r asset; do
-            name=$(echo "$asset" | jq -r .name)
-            url=$(echo "$asset" | jq -r .url)
-            size=$(echo "$asset" | jq -r .size)
-            updated=$(echo "$asset" | jq -r .updated_at)
-            if [[ "$name" =~ \.tar\.xz$ ]]; then
-              arch=$(echo "$name" | sed -E 's/.*-([a-z0-9_]+)\.tar\.xz/\1/')
-              alias=$(echo "$name" | sed -E 's/(.*)-[a-z0-9_]+\.tar\.xz/\1/')
-              id=$(echo "$name" | sha1sum | awk '{print $1}')
-              images_array=$(echo "$images_array" | jq \
-                --arg id "$id" \
-                --arg alias "$alias" \
-                --arg arch "$arch" \
-                --arg url "$url" \
-                --arg size "$size" \
-                --arg updated "$updated" \
-                '. += [{
-                  "id": $id,
-                  "aliases": [$alias],
-                  "architecture": $arch,
-                  "stream": "default",
-                  "ftype": "lxd.tar.xz",
-                  "path": $url,
-                  "size": ($size | tonumber),
-                  "created_at": $updated,
-                  "updated_at": $updated
-                }]'
-              )
-            fi
-          done < <(jq -c '.' assets.json)
-          cat > site/streams/v1/index.json <<EOF
-{
-  "index": {
-    "format": "simplestreams",
-    "updated_at": "$now",
-    "content_id": "$uuid",
-    "products": {
-      "lxd": {
-        "versions": {
-          "1.0": {
-            "items": [
-              {
-                "path": "images.json"
-              }
-            ]
-          }
-        }
-      }
-    }
-  }
-}
-EOF
-          echo "$images_array" > images_list.json
-          cat > site/streams/v1/images.json <<EOF
-{
-  "content_id": "$uuid",
-  "format": "lxd_simple",
-  "updated_at": "$now",
-  "images": $(cat images_list.json)
-}
-EOF
-
-      - name: 部署到gh-pages
-        uses: peaceiris/actions-gh-pages@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./site
-          publish_branch: gh-pages
-
-      - name: 配置自定义域名
+          ref: gh-pages
+          
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: Install dependencies
         run: |
-          echo "lxdimages.spiritlhl.net" > site/CNAME
-        continue-on-error: true
+          pip install requests jinja2 pyyaml
+          
+      - name: Generate SimpleStreams index
+        run: |
+          python3 << 'EOF'
+          import requests
+          import json
+          import hashlib
+          import os
+          from datetime import datetime, timezone
+          import yaml
+          
+          GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', '')
+          REPO = 'oneclickvirt/lxd_images'
+          TAG = 'processed'
+          BASE_URL = f'https://github.com/{REPO}/releases/download/{TAG}'
+          
+          headers = {}
+          if GITHUB_TOKEN:
+              headers['Authorization'] = f'token {GITHUB_TOKEN}'
+              
+          response = requests.get(f'https://api.github.com/repos/{REPO}/releases/tags/{TAG}', headers=headers)
+          release_data = response.json()
+          
+          assets = release_data.get('assets', [])
+          
+          def parse_filename(filename):
+              parts = filename.replace('.tar.xz', '').replace('.squashfs', '').split('-')
+              if len(parts) >= 4:
+                  distro = parts[0]
+                  version = parts[1]
+                  arch = parts[2]
+                  variant = parts[3]
+                  return distro, version, arch, variant
+              return None, None, None, None
+          
+          def get_file_info(asset):
+              url = f'{BASE_URL}/{asset["name"]}'
+              return {
+                  'size': asset.get('size', 0),
+                  'path': asset['name'],
+                  'sha256': '',
+                  'ftype': 'lxd.tar.xz' if asset['name'].endswith('lxd.tar.xz') else 'squashfs'
+              }
+          
+          images = {}
+          products = {}
+          
+          lxd_files = [asset for asset in assets if asset['name'].endswith('lxd.tar.xz')]
+          rootfs_files = [asset for asset in assets if asset['name'].endswith('rootfs.squashfs')]
+          
+          for lxd_asset in lxd_files:
+              distro, version, arch, variant = parse_filename(lxd_asset['name'])
+              if not distro:
+                  continue
+                  
+              rootfs_name = lxd_asset['name'].replace('lxd.tar.xz', 'rootfs.squashfs')
+              rootfs_asset = next((a for a in rootfs_files if a['name'] == rootfs_name), None)
+              
+              if not rootfs_asset:
+                  continue
+                  
+              image_id = f'{distro}/{version}/{arch}/{variant}'
+              product_name = f'{distro}:{version}:{arch}'
+              
+              if version == 'current':
+                  aliases = f'{distro}/{arch},{distro}/{arch}/{variant}'
+              else:
+                  aliases = f'{distro}/{version}/{arch},{distro}/{version}/{arch}/{variant}'
+              
+              current_time = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')
+              
+              images[image_id] = {
+                  'arch': arch,
+                  'os': distro,
+                  'release': version,
+                  'variant': variant,
+                  'version': current_time,
+                  'created_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z',
+                  'expires_at': '2030-01-01T00:00:00.000Z',
+                  'last_updated': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z',
+                  'path': f'streams/v1/images/{image_id}',
+                  'products': [product_name],
+                  'aliases': aliases,
+                  'public': True,
+                  'requirements': {
+                      'architecture': arch
+                  },
+                  'properties': {
+                      'os': distro,
+                      'release': version,
+                      'variant': variant,
+                      'architecture': arch,
+                      'type': 'container'
+                  },
+                  'items': {
+                      'lxd.tar.xz': get_file_info(lxd_asset),
+                      'rootfs.squashfs': get_file_info(rootfs_asset)
+                  }
+              }
+              
+              if product_name not in products:
+                  products[product_name] = {
+                      'aliases': aliases,
+                      'arch': arch,
+                      'os': distro,
+                      'release': version,
+                      'variant': variant,
+                      'versions': {}
+                  }
+              
+              products[product_name]['versions'][current_time] = {
+                  'items': {
+                      'lxd.tar.xz': get_file_info(lxd_asset),
+                      'rootfs.squashfs': get_file_info(rootfs_asset)
+                  }
+              }
+          
+          index_data = {
+              'format': 'index:1.0',
+              'index': {
+                  'images': {
+                      'datatype': 'image-downloads',
+                      'path': 'streams/v1/images.json',
+                      'updated': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + '+00:00',
+                      'products': list(products.keys()),
+                      'format': 'products:1.0'
+                  }
+              },
+              'updated': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + '+00:00'
+          }
+          
+          images_data = {
+              'content_id': 'images',
+              'datatype': 'image-downloads',
+              'format': 'products:1.0',
+              'license': 'https://www.canonical.com/licencing/ubuntu',
+              'products': products,
+              'updated': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + '+00:00'
+          }
+          
+          os.makedirs('streams/v1', exist_ok=True)
+          
+          with open('streams/v1/index.json', 'w') as f:
+              json.dump(index_data, f, indent=2)
+              
+          with open('streams/v1/images.json', 'w') as f:
+              json.dump(images_data, f, indent=2)
+          
+          print(f"Generated index with {len(products)} products and {len(images)} images")
+          EOF
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Create CNAME file
+        run: |
+          echo "lxdimages.spiritlhl.net" > CNAME
+          
+      - name: Generate HTML frontend
+        run: |
+          python3 << 'EOF'
+          import json
+          import os
+          from datetime import datetime
+          
+          with open('streams/v1/images.json', 'r') as f:
+              images_data = json.load(f)
+          
+          html_content = """<!DOCTYPE html>
+          <html lang="zh-CN">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>LXD Images Repository</title>
+              <style>
+                  body {
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                      line-height: 1.6;
+                      color: #333;
+                      max-width: 1200px;
+                      margin: 0 auto;
+                      padding: 20px;
+                      background-color: #f5f5f5;
+                  }
+                  .header {
+                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                      color: white;
+                      padding: 2rem;
+                      border-radius: 10px;
+                      margin-bottom: 2rem;
+                      text-align: center;
+                  }
+                  .header h1 {
+                      margin: 0;
+                      font-size: 2.5rem;
+                  }
+                  .header p {
+                      margin: 0.5rem 0 0 0;
+                      opacity: 0.9;
+                  }
+                  .usage {
+                      background: white;
+                      padding: 1.5rem;
+                      border-radius: 8px;
+                      margin-bottom: 2rem;
+                      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                  }
+                  .usage h2 {
+                      color: #667eea;
+                      margin-top: 0;
+                  }
+                  .usage code {
+                      background: #f4f4f4;
+                      padding: 0.2rem 0.4rem;
+                      border-radius: 3px;
+                      font-family: 'Monaco', 'Consolas', monospace;
+                  }
+                  .usage pre {
+                      background: #2d3748;
+                      color: #e2e8f0;
+                      padding: 1rem;
+                      border-radius: 5px;
+                      overflow-x: auto;
+                  }
+                  .stats {
+                      display: grid;
+                      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                      gap: 1rem;
+                      margin-bottom: 2rem;
+                  }
+                  .stat-card {
+                      background: white;
+                      padding: 1.5rem;
+                      border-radius: 8px;
+                      text-align: center;
+                      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                  }
+                  .stat-number {
+                      font-size: 2rem;
+                      font-weight: bold;
+                      color: #667eea;
+                  }
+                  .stat-label {
+                      color: #666;
+                      margin-top: 0.5rem;
+                  }
+                  .images-grid {
+                      display: grid;
+                      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                      gap: 1rem;
+                  }
+                  .image-card {
+                      background: white;
+                      border-radius: 8px;
+                      padding: 1.5rem;
+                      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                      transition: transform 0.2s ease;
+                  }
+                  .image-card:hover {
+                      transform: translateY(-2px);
+                  }
+                  .image-title {
+                      font-size: 1.2rem;
+                      font-weight: bold;
+                      color: #333;
+                      margin-bottom: 0.5rem;
+                  }
+                  .image-meta {
+                      color: #666;
+                      font-size: 0.9rem;
+                      margin-bottom: 1rem;
+                  }
+                  .image-command {
+                      background: #f8f9fa;
+                      padding: 0.5rem;
+                      border-radius: 4px;
+                      font-family: monospace;
+                      font-size: 0.8rem;
+                      word-break: break-all;
+                      border-left: 3px solid #667eea;
+                  }
+                  .footer {
+                      text-align: center;
+                      margin-top: 3rem;
+                      padding: 2rem;
+                      color: #666;
+                  }
+                  .last-updated {
+                      background: white;
+                      padding: 1rem;
+                      border-radius: 8px;
+                      text-align: center;
+                      margin-bottom: 2rem;
+                      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                  }
+              </style>
+          </head>
+          <body>
+              <div class="header">
+                  <h1>🐧 LXD Images Repository</h1>
+                  <p>高质量的 Linux 容器镜像集合，支持多架构</p>
+              </div>
+              
+              <div class="last-updated">
+                  <strong>最后更新:</strong> """ + datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC') + """
+              </div>
+              
+              <div class="usage">
+                  <h2>🚀 使用方法</h2>
+                  <p>添加此镜像源到你的 LXD 客户端:</p>
+                  <pre><code>lxc launch --remote https://lxdimages.spiritlhl.net ubuntu:22.04:amd64 my-container</code></pre>
+                  <p>或者添加为远程源:</p>
+                  <pre><code>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol=simplestreams --public
+          lxc launch spiritlhl:ubuntu/22.04/amd64 my-container</code></pre>
+              </div>
+              
+              <div class="stats">
+          """
+          
+          total_products = len(images_data['products'])
+          total_architectures = len(set(product.split(':')[2] for product in images_data['products']))
+          total_distros = len(set(product.split(':')[0] for product in images_data['products']))
+          
+          html_content += f"""
+                  <div class="stat-card">
+                      <div class="stat-number">{total_products}</div>
+                      <div class="stat-label">可用镜像</div>
+                  </div>
+                  <div class="stat-card">
+                      <div class="stat-number">{total_distros}</div>
+                      <div class="stat-label">Linux 发行版</div>
+                  </div>
+                  <div class="stat-card">
+                      <div class="stat-number">{total_architectures}</div>
+                      <div class="stat-label">支持架构</div>
+                  </div>
+                  <div class="stat-card">
+                      <div class="stat-number">24/7</div>
+                      <div class="stat-label">自动更新</div>
+                  </div>
+              </div>
+              
+              <div class="images-grid">
+          """
+          
+          for product_name, product_info in images_data['products'].items():
+              distro, version, arch = product_name.split(':')
+              variant = product_info.get('variant', 'default')
+              
+              distro_emoji = {
+                  'ubuntu': '🟠',
+                  'debian': '🔴',
+                  'centos': '💙',
+                  'fedora': '🔵',
+                  'archlinux': '🔷',
+                  'almalinux': '🟡',
+                  'rockylinux': '🟢',
+                  'oracle': '🔶',
+                  'gentoo': '🟣'
+              }.get(distro, '🐧')
+              
+              html_content += f"""
+                  <div class="image-card">
+                      <div class="image-title">{distro_emoji} {distro.title()} {version}</div>
+                      <div class="image-meta">
+                          <strong>架构:</strong> {arch}<br>
+                          <strong>变体:</strong> {variant}<br>
+                          <strong>别名:</strong> {product_info.get('aliases', '')}
+                      </div>
+                      <div class="image-command">
+                          lxc launch spiritlhl:{distro}/{version}/{arch} my-{distro}-container
+                      </div>
+                  </div>
+              """
+          
+          html_content += """
+              </div>
+              
+              <div class="footer">
+                  <p>🔗 <a href="https://github.com/oneclickvirt/lxd_images" target="_blank">GitHub Repository</a> | 
+                  📊 <a href="streams/v1/index.json" target="_blank">SimpleStreams Index</a> | 
+                  🗂️ <a href="streams/v1/images.json" target="_blank">Images Metadata</a></p>
+                  <p>由 <a href="https://github.com/spiritLHLS" target="_blank">spiritLHLS</a> 维护</p>
+              </div>
+          </body>
+          </html>
+          """
+          
+          with open('index.html', 'w', encoding='utf-8') as f:
+              f.write(html_content)
+          
+          print("Generated HTML frontend")
+          EOF
+          
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+        
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+          
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
