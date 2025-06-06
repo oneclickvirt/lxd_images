@@ -7,15 +7,11 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    
     steps:
-      - name: Checkout repository
+      - name: Checkout main repository
         uses: actions/checkout@v4
         with:
-          ref: gh-pages
+          fetch-depth: 0
           
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -44,10 +40,15 @@ jobs:
           headers = {}
           if GITHUB_TOKEN:
               headers['Authorization'] = f'token {GITHUB_TOKEN}'
+              headers['Accept'] = 'application/vnd.github.v3+json'
               
           response = requests.get(f'https://api.github.com/repos/{REPO}/releases/tags/{TAG}', headers=headers)
+          if response.status_code != 200:
+              print(f"Error fetching release: {response.status_code}")
+              print(response.text)
+              exit(1)
+              
           release_data = response.json()
-          
           assets = release_data.get('assets', [])
           
           def parse_filename(filename):
@@ -165,12 +166,12 @@ jobs:
               'updated': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S') + '+00:00'
           }
           
-          os.makedirs('streams/v1', exist_ok=True)
+          os.makedirs('build/streams/v1', exist_ok=True)
           
-          with open('streams/v1/index.json', 'w') as f:
+          with open('build/streams/v1/index.json', 'w') as f:
               json.dump(index_data, f, indent=2)
               
-          with open('streams/v1/images.json', 'w') as f:
+          with open('build/streams/v1/images.json', 'w') as f:
               json.dump(images_data, f, indent=2)
           
           print(f"Generated index with {len(products)} products and {len(images)} images")
@@ -180,7 +181,7 @@ jobs:
           
       - name: Create CNAME file
         run: |
-          echo "lxdimages.spiritlhl.net" > CNAME
+          echo "lxdimages.spiritlhl.net" > build/CNAME
           
       - name: Generate HTML frontend
         run: |
@@ -189,7 +190,7 @@ jobs:
           import os
           from datetime import datetime
           
-          with open('streams/v1/images.json', 'r') as f:
+          with open('build/streams/v1/images.json', 'r') as f:
               images_data = json.load(f)
           
           html_content = """<!DOCTYPE html>
@@ -334,10 +335,11 @@ jobs:
               <div class="usage">
                   <h2>🚀 使用方法</h2>
                   <p>添加此镜像源到你的 LXD 客户端:</p>
+                  <pre><code>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol=simplestreams --public</code></pre>
+                  <p>启动容器:</p>
+                  <pre><code>lxc launch spiritlhl:ubuntu/22.04/amd64 my-container</code></pre>
+                  <p>或者直接使用远程 URL:</p>
                   <pre><code>lxc launch --remote https://lxdimages.spiritlhl.net ubuntu:22.04:amd64 my-container</code></pre>
-                  <p>或者添加为远程源:</p>
-                  <pre><code>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol=simplestreams --public
-          lxc launch spiritlhl:ubuntu/22.04/amd64 my-container</code></pre>
               </div>
               
               <div class="stats">
@@ -369,7 +371,9 @@ jobs:
               <div class="images-grid">
           """
           
-          for product_name, product_info in images_data['products'].items():
+          sorted_products = sorted(images_data['products'].items(), key=lambda x: (x[0].split(':')[0], x[0].split(':')[1], x[0].split(':')[2]))
+          
+          for product_name, product_info in sorted_products:
               distro, version, arch = product_name.split(':')
               variant = product_info.get('variant', 'default')
               
@@ -412,20 +416,19 @@ jobs:
           </html>
           """
           
-          with open('index.html', 'w', encoding='utf-8') as f:
+          with open('build/index.html', 'w', encoding='utf-8') as f:
               f.write(html_content)
           
           print("Generated HTML frontend")
           EOF
           
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-        
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
         with:
-          path: '.'
-          
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build
+          publish_branch: gh-pages
+          force_orphan: true
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          commit_message: 'Deploy SimpleStreams index and frontend'
