@@ -1,4 +1,4 @@
-name: Build & Deploy Simplestreams from GitHub Releases
+name: Build & Deploy SimpleStreams from GitHub Releases
 
 on:
   push:
@@ -9,11 +9,11 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      # 1. Checkout the repo
+      # 1. Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Set up Python for fetching Release assets & generating tree.yml + ssb.json files
+      # 2. Set up Python for fetching release assets and generating inputs
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -24,7 +24,7 @@ jobs:
         run: |
           pip install requests pyyaml
 
-      # 4. Fetch Release assets, generate per-product ssb.json + tree.yml
+      # 4. Fetch GitHub Release assets, generate per-product ssb.json and tree.yml under build/
       - name: Generate inputs for simplestreams-builder
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -33,70 +33,66 @@ jobs:
           import os, requests, json, yaml, hashlib
           from datetime import datetime, timezone
 
-          # --- Configuration ---
-          GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '')
+          # Configuration
           REPO = 'oneclickvirt/lxd_images'
           TAG = 'processed'
           BASE_URL = f'https://github.com/{REPO}/releases/download/{TAG}'
+          OUT = 'build'
+
           PREFIX = ""
           IMAGES_PATH = "streams/v1"
           DATATYPE = "image-downloads"
           FORMAT = "products:1.0"
 
-          # --- Helper functions ---
+          # Helpers
           def parse_filename(name):
-              # expected: os-release-arch-variant-lxd.tar.xz / -rootfs.squashfs
-              base = (name[:-11] if name.endswith('-lxd.tar.xz') else
-                      name[:-15] if name.endswith('-rootfs.squashfs') else None)
-              if not base:
+              if name.endswith('-lxd.tar.xz'):
+                  base = name[:-11]
+              elif name.endswith('-rootfs.squashfs'):
+                  base = name[:-15]
+              else:
                   return None
               parts = base.split('-')
               if len(parts) < 4:
                   return None
-              return {
-                  'os': parts[0],
-                  'release': parts[1],
-                  'arch': parts[2],
-                  'variant': parts[3],
-                  'name': base
-              }
+              return dict(os=parts[0], release=parts[1],
+                          arch=parts[2], variant=parts[3], name=base)
 
           def sha256_placeholder():
               return hashlib.sha256(b'placeholder').hexdigest()
 
-          # --- Fetch release data ---
-          headers = {'Authorization': f'token {GITHUB_TOKEN}'} if GITHUB_TOKEN else {}
+          # Fetch release info
+          headers = {'Authorization': f'token {os.getenv("GITHUB_TOKEN","")}'}
           resp = requests.get(f'https://api.github.com/repos/{REPO}/releases/tags/{TAG}', headers=headers)
           resp.raise_for_status()
           assets = resp.json().get('assets', [])
 
-          # --- Build product entries and ssb.json files ---
+          # Prepare output dirs
+          os.makedirs(OUT, exist_ok=True)
           products = []
           timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
 
-          # group LXD & rootfs assets
+          # Pair up lxd and rootfs assets
           lxd_assets = [a for a in assets if a['name'].endswith('-lxd.tar.xz')]
-          rootfs_assets = {a['name']: a for a in assets if a['name'].endswith('-rootfs.squashfs')}
+          rootfs_map = {a['name']: a for a in assets if a['name'].endswith('-rootfs.squashfs')}
 
           for lxd in lxd_assets:
               info = parse_filename(lxd['name'])
               if not info:
                   continue
-              root_name = lxd['name'].replace('-lxd.tar.xz', '-rootfs.squashfs')
-              root = rootfs_assets.get(root_name)
+              root_name = f"{info['name']}-rootfs.squashfs"
+              root = rootfs_map.get(root_name)
               if not root:
                   continue
 
-              # determine product directory: os/release/arch[/variant]
-              variant = info['variant']
+              # Build product directory under build/
               parts = [info['os'], info['release'], info['arch']]
-              if variant != 'default':
-                  parts.append(variant)
-              directory = os.path.join(*parts)
+              if info['variant'] != 'default':
+                  parts.append(info['variant'])
+              prod_dir = os.path.join(OUT, *parts)
+              os.makedirs(prod_dir, exist_ok=True)
 
-              os.makedirs(directory, exist_ok=True)
-
-              # create ssb.json
+              # Create ssb.json
               ssb = {
                   "version": timestamp,
                   "items": {
@@ -112,30 +108,29 @@ jobs:
                       }
                   }
               }
-              with open(f"{directory}/ssb.json", "w") as f:
+              with open(os.path.join(prod_dir, 'ssb.json'), 'w') as f:
                   json.dump(ssb, f, indent=2, sort_keys=True)
 
-              # build aliases list
-              aliases = []
+              # Build aliases
               base_alias = f"{info['os']}/{info['release']}"
               if info['arch'] != 'amd64':
                   base_alias += f"/{info['arch']}"
-              aliases.append(base_alias)
-              if variant != 'default':
-                  aliases.append(base_alias + f"/{variant}")
+              aliases = [base_alias]
+              if info['variant'] != 'default':
+                  aliases.append(base_alias + f"/{info['variant']}")
 
               products.append({
-                  "name": info['name'] + (f"-{variant}" if variant != 'default' else ''),
+                  "name": info['name'] + (f"-{info['variant']}" if info['variant']!='default' else ""),
                   "os": info['os'],
                   "arch": info['arch'],
                   "release": info['release'],
                   "release_title": f"{info['os'].title()} {info['release']}",
-                  "directory": directory.replace("\\","/"),
+                  "directory": "/".join(parts),
                   "days": 1,
                   "aliases": aliases
               })
 
-          # --- Generate tree.yml ---
+          # Write tree.yml under build/
           tree = {
               "prefix": PREFIX,
               "images_path": IMAGES_PATH,
@@ -143,11 +138,11 @@ jobs:
               "format": FORMAT,
               "products": products
           }
-          with open("tree.yml", "w") as f:
+          with open(os.path.join(OUT, 'tree.yml'), 'w') as f:
               yaml.safe_dump(tree, f, sort_keys=False)
           EOF
 
-      # 5. Install Go & simplestreams-builder
+      # 5. Set up Go and install simplestreams-builder
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
@@ -158,27 +153,25 @@ jobs:
           go install github.com/MottainaiCI/simplestreams-builder@latest
           echo "$HOME/go/bin" >> $GITHUB_PATH
 
-      # 6. Run simplestreams-builder to produce images.json & index.json
+      # 6. Build images.json and index.json in build/
       - name: Build images.json
         run: |
-          simplestreams-builder build-images-file --config tree.yml
+          simplestreams-builder build-images-file --config build/tree.yml --target-dir build
 
       - name: Build index.json
         run: |
-          simplestreams-builder build-index --config tree.yml
+          simplestreams-builder build-index --config build/tree.yml --target-dir build
 
-      # 7. Create a simple HTML landing page
+      # 7. Generate a simple HTML landing page
       - name: Create index.html
         run: |
-          mkdir -p build
           cat > build/index.html << 'EOF'
           <!DOCTYPE html>
-          <html>
-          <head><meta charset="utf-8"><title>LXD SimpleStreams</title></head>
+          <html><head><meta charset="utf-8"><title>SimpleStreams Index</title></head>
           <body>
-            <h1>GitHub Release–based SimpleStreams</h1>
-            <pre><code>lxc remote add spiritlhl https://${
-              { secrets.NETLIFY_SITE_ID } }/ --protocol simplestreams --public</code></pre>
+            <h1>SimpleStreams from GitHub Releases</h1>
+            <p>Use:</p>
+            <pre>lxc remote add spiritlhl https://<your-domain>/ --protocol simplestreams --public</pre>
             <ul>
               <li><a href="streams/v1/index.json">Index</a></li>
               <li><a href="streams/v1/images.json">Images</a></li>
@@ -187,7 +180,7 @@ jobs:
           </html>
           EOF
 
-      # 8. Generate Netlify config
+      # 8. Generate Netlify configuration
       - name: Create netlify.toml
         run: |
           cat > netlify.toml << 'EOF'
@@ -212,7 +205,7 @@ jobs:
       - name: Deploy to Netlify
         uses: nwtgck/actions-netlify@v3.0
         with:
-          publish-dir: './build'
+          publish-dir: 'build'
           production-branch: main
           github-token: ${{ secrets.GITHUB_TOKEN }}
         env:
