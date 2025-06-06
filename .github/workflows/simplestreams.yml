@@ -22,18 +22,14 @@ jobs:
       - name: 创建或获取 processed Release ID
         id: get_processed_release
         run: |
-          # 查询是否存在名为 processed 的 Release
           existing_release=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[] | select(.tag_name=="processed") | .id // empty')
-          
           if [ -z "$existing_release" ]; then
-            # 创建 processed Release
             echo "Creating new release 'processed'..."
             release_response=$(curl -s -X POST \
               -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               -H "Content-Type: application/json" \
               -d '{"tag_name":"processed","name":"Processed Assets","draft":false,"prerelease":false}' \
               "https://api.github.com/repos/${{ github.repository }}/releases")
-            
             processed_id=$(echo "$release_response" | jq -r '.id')
             if [ "$processed_id" = "null" ] || [ -z "$processed_id" ]; then
               echo "Failed to create release"
@@ -44,7 +40,6 @@ jobs:
             echo "Found existing release 'processed': $existing_release"
             processed_id=$existing_release
           fi
-          
           echo "release_id=$processed_id" >> $GITHUB_OUTPUT
 
       - name: 处理并上传解压文件
@@ -55,12 +50,7 @@ jobs:
         run: |
           mkdir -p work
           cd work
-
-          # 创建临时文件存储已处理的资产信息
           echo "[]" > processed_assets.json
-
-          # 从文件读取 releases 数据而不是环境变量
-          # 过滤掉 processed release 并提取需要处理的 assets
           cat ../releases.json | jq -r '
             .[] | 
             select(.tag_name != "processed") | 
@@ -68,66 +58,61 @@ jobs:
             select(.name | test("^[a-z0-9]+_[0-9a-z.-]+_[a-z0-9]+_[a-z0-9]+_[a-z]+\\.zip$")) |
             @base64
           ' > assets_to_process.txt
-
-          # 处理每个符合条件的 asset
           while IFS= read -r encoded_asset; do
             if [ -z "$encoded_asset" ]; then
               continue
             fi
-            
             asset=$(echo "$encoded_asset" | base64 -d)
             name=$(echo "$asset" | jq -r '.name')
             url=$(echo "$asset" | jq -r '.browser_download_url')
-
             echo "Processing $name"
-
-            # 解析文件名
             if [[ "$name" =~ ^([a-z0-9]+)_([0-9a-z\.\-]+)_([a-z0-9]+)_([a-z0-9]+)_([a-z]+)\.zip$ ]]; then
               os="${BASH_REMATCH[1]}"
               version="${BASH_REMATCH[2]}"
               codename="${BASH_REMATCH[3]}"
               arch="${BASH_REMATCH[4]}"
               variant="${BASH_REMATCH[5]}"
-
-              # 创建唯一的临时工作目录
               temp_dir="temp_${os}_${version}_${arch}_${variant}_$"
               mkdir -p "$temp_dir"
               cd "$temp_dir"
-
-              # 下载并解压
               echo "Downloading $name..."
               if curl -L -o image.zip "$url" && unzip -q image.zip; then
                 if [ -f rootfs.squashfs ] && [ -f lxd.tar.xz ]; then
-                  # 重命名文件
                   rootfs_file="${os}-${version}-${arch}-${variant}-rootfs.squashfs"
                   lxd_file="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
-
                   mv rootfs.squashfs "$rootfs_file"
                   mv lxd.tar.xz "$lxd_file"
-
-                  # 上传文件
+                  existing_assets=$(curl -s "https://api.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets")
+                  rootfs_asset_id=$(echo "$existing_assets" | jq -r --arg name "$rootfs_file" '.[] | select(.name == $name) | .id // empty')
+                  lxd_asset_id=$(echo "$existing_assets" | jq -r --arg name "$lxd_file" '.[] | select(.name == $name) | .id // empty')
+                  if [ -n "$rootfs_asset_id" ]; then
+                    echo "Deleting existing $rootfs_file..."
+                    curl -s -X DELETE \
+                      -H "Authorization: token $GITHUB_TOKEN" \
+                      "https://api.github.com/repos/$REPO/releases/assets/$rootfs_asset_id"
+                  fi
+                  if [ -n "$lxd_asset_id" ]; then
+                    echo "Deleting existing $lxd_file..."
+                    curl -s -X DELETE \
+                      -H "Authorization: token $GITHUB_TOKEN" \
+                      "https://api.github.com/repos/$REPO/releases/assets/$lxd_asset_id"
+                  fi
                   echo "Uploading $rootfs_file..."
                   rootfs_response=$(curl -s -X POST \
                     -H "Authorization: token $GITHUB_TOKEN" \
                     -H "Content-Type: application/octet-stream" \
                     --data-binary @"$rootfs_file" \
                     "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$rootfs_file")
-
                   echo "Uploading $lxd_file..."
                   lxd_response=$(curl -s -X POST \
                     -H "Authorization: token $GITHUB_TOKEN" \
                     -H "Content-Type: application/octet-stream" \
                     --data-binary @"$lxd_file" \
                     "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$lxd_file")
-
-                  # 检查上传是否成功
                   rootfs_url=$(echo "$rootfs_response" | jq -r '.browser_download_url // empty')
                   lxd_url=$(echo "$lxd_response" | jq -r '.browser_download_url // empty')
-
                   if [ -n "$rootfs_url" ] && [ -n "$lxd_url" ]; then
                     echo "Successfully uploaded both files for $name"
-                    
-                    # 记录成功处理的资产
                     jq --arg os "$os" \
                        --arg version "$version" \
                        --arg arch "$arch" \
@@ -142,7 +127,6 @@ jobs:
                          rootfs_url: $rootfs_url,
                          lxd_url: $lxd_url
                        }]' ../processed_assets.json > ../processed_assets_temp.json
-                    
                     mv ../processed_assets_temp.json ../processed_assets.json
                   else
                     echo "Failed to upload files for $name"
@@ -155,104 +139,75 @@ jobs:
               else
                 echo "Failed to download or extract $name"
               fi
-
-              # 清理临时目录
               cd ..
               rm -rf "$temp_dir"
             fi
           done < assets_to_process.txt
-
-          # 将结果文件移动到根目录
           mv processed_assets.json /tmp/processed_assets.json
-
       - name: 生成 Simplestreams JSON
         run: |
           mkdir -p pages/images/streams/v1
-          
-          # 获取processed release中已存在的文件
           echo "Getting existing assets from processed release..."
-          
-          # 创建包含现有资产的数组
           echo "[]" > all_assets.json
-          
-          # 获取processed release的assets，并处理可能的空结果
-          processed_assets=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" | \
-            jq -r '.[] | select(.tag_name=="processed") | .assets[]?' 2>/dev/null || echo "")
-          
-          if [ -n "$processed_assets" ]; then
-            # 先将assets保存为数组到文件
-            echo "$processed_assets" | jq -s '.' > existing_assets_array.json
-            
-            # 创建临时文件来收集匹配的资产
-            echo "[]" > temp_existing_assets.json
-            
-            # 处理每个asset来查找rootfs文件
-            jq -r '.[] | select(.name | test("^[a-z0-9]+-[0-9a-z\\.-]+-[a-z0-9]+-[a-z]+-rootfs\\.squashfs$")) | @base64' existing_assets_array.json | while IFS= read -r encoded_asset; do
-              if [ -z "$encoded_asset" ]; then
-                continue
-              fi
-              
-              asset=$(echo "$encoded_asset" | base64 -d)
-              name=$(echo "$asset" | jq -r '.name')
-              rootfs_url=$(echo "$asset" | jq -r '.browser_download_url')
-              
-              echo "Processing existing asset: $name"
-              
-              # 匹配rootfs文件模式: os-version-arch-variant-rootfs.squashfs
-              if [[ "$name" =~ ^([a-z0-9]+)-([0-9a-z\.\-]+)-([a-z0-9]+)-([a-z]+)-rootfs\.squashfs$ ]]; then
-                os="${BASH_REMATCH[1]}"
-                version="${BASH_REMATCH[2]}"
-                arch="${BASH_REMATCH[3]}"
-                variant="${BASH_REMATCH[4]}"
-                
-                # 查找对应的lxd文件
-                lxd_name="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
-                lxd_url=$(jq -r --arg name "$lxd_name" '.[] | select(.name == $name) | .browser_download_url // empty' existing_assets_array.json)
-                
-                if [ -n "$lxd_url" ] && [ "$lxd_url" != "null" ]; then
-                  echo "Found existing asset pair: $name and $lxd_name"
-                  # 添加到临时资产列表
-                  jq --arg os "$os" \
-                     --arg version "$version" \
-                     --arg arch "$arch" \
-                     --arg variant "$variant" \
-                     --arg rootfs_url "$rootfs_url" \
-                     --arg lxd_url "$lxd_url" \
-                     '. += [{
-                       os: $os,
-                       version: $version,
-                       arch: $arch,
-                       variant: $variant,
-                       rootfs_url: $rootfs_url,
-                       lxd_url: $lxd_url
-                     }]' temp_existing_assets.json > temp_existing_assets_new.json
-                  mv temp_existing_assets_new.json temp_existing_assets.json
+          processed_assets_response=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[] | select(.tag_name=="processed") | .assets // empty')
+          if [ "$processed_assets_response" != "null" ] && [ "$processed_assets_response" != "empty" ] && [ -n "$processed_assets_response" ]; then
+            echo "$processed_assets_response" > existing_assets_array.json
+            if [ "$(jq length existing_assets_array.json)" -gt 0 ]; then
+              jq -r '.[] | select(.name | test("^[a-z0-9]+-[0-9a-z\\.-]+-[a-z0-9]+-[a-z]+-rootfs\\.squashfs$")) | @base64' existing_assets_array.json | while IFS= read -r encoded_asset; do
+                if [ -z "$encoded_asset" ]; then
+                  continue
                 fi
+                asset=$(echo "$encoded_asset" | base64 -d)
+                name=$(echo "$asset" | jq -r '.name')
+                rootfs_url=$(echo "$asset" | jq -r '.browser_download_url')
+                echo "Processing existing asset: $name"
+                if [[ "$name" =~ ^([a-z0-9]+)-([0-9a-z\.\-]+)-([a-z0-9]+)-([a-z]+)-rootfs\.squashfs$ ]]; then
+                  os="${BASH_REMATCH[1]}"
+                  version="${BASH_REMATCH[2]}"
+                  arch="${BASH_REMATCH[3]}"
+                  variant="${BASH_REMATCH[4]}"
+                  lxd_name="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
+                  lxd_url=$(jq -r --arg name "$lxd_name" '.[] | select(.name == $name) | .browser_download_url // empty' existing_assets_array.json)
+                  if [ -n "$lxd_url" ] && [ "$lxd_url" != "null" ] && [ "$lxd_url" != "empty" ]; then
+                    echo "Found existing asset pair: $name and $lxd_name"
+                    temp_asset=$(jq -n --arg os "$os" \
+                       --arg version "$version" \
+                       --arg arch "$arch" \
+                       --arg variant "$variant" \
+                       --arg rootfs_url "$rootfs_url" \
+                       --arg lxd_url "$lxd_url" \
+                       '{
+                         os: $os,
+                         version: $version,
+                         arch: $arch,
+                         variant: $variant,
+                         rootfs_url: $rootfs_url,
+                         lxd_url: $lxd_url
+                       }')
+                    echo "$temp_asset" >> temp_assets.jsonl
+                  fi
+                fi
+              done
+              if [ -f temp_assets.jsonl ]; then
+                jq -s '.' temp_assets.jsonl > temp_existing_assets.json
+                jq -s '.[0] + .[1]' all_assets.json temp_existing_assets.json > all_assets_temp.json
+                mv all_assets_temp.json all_assets.json
+                rm -f temp_assets.jsonl temp_existing_assets.json
               fi
-            done
-            
-            # 将临时文件合并到all_assets.json
-            jq -s '.[0] + .[1]' all_assets.json temp_existing_assets.json > all_assets_temp.json
-            mv all_assets_temp.json all_assets.json
+            fi
           else
             echo "No existing assets found in processed release"
           fi
-          
-          # 合并新处理的资产
           if [ -f /tmp/processed_assets.json ] && [ "$(jq length /tmp/processed_assets.json)" -gt 0 ]; then
             jq -s '.[0] + .[1]' all_assets.json /tmp/processed_assets.json > combined_assets.json
             mv combined_assets.json all_assets.json
           fi
-          
-          # 检查是否有任何资产
           if [ "$(jq length all_assets.json)" -eq 0 ]; then
             echo "No assets found, creating empty structure"
             echo '{"index": {"images": {}}}' > pages/images/streams/v1/index.json
             echo '{"products": {}}' > pages/images/streams/v1/products.json
             exit 0
           fi
-
-          # 生成 products.json - 修正后的结构
           jq -n --slurpfile assets all_assets.json '
             {
               products: (
@@ -273,13 +228,11 @@ jobs:
                                     value: (
                                       group_by(.variant)
                                       | if length == 1 then
-                                          # 只有一个变体，直接使用
                                           {
                                             rootfs: .[0].rootfs_url,
                                             lxd: .[0].lxd_url
                                           }
                                         elif (map(select(.variant == "cloud")) | length) > 0 then
-                                          # 有cloud变体，使用cloud作为默认，同时提供所有变体
                                           (map(select(.variant == "cloud"))[0] | {
                                             rootfs: .rootfs_url,
                                             lxd: .lxd_url
@@ -295,7 +248,6 @@ jobs:
                                             )
                                           }
                                         else
-                                          # 没有cloud变体，使用第一个作为默认
                                           (.[0] | {
                                             rootfs: .rootfs_url,
                                             lxd: .lxd_url
@@ -325,8 +277,6 @@ jobs:
               )
             }
           ' > pages/images/streams/v1/products.json
-
-          # 生成 index.json
           jq '{
             index: {
               images: (
@@ -340,7 +290,6 @@ jobs:
               )
             }
           }' pages/images/streams/v1/products.json > pages/images/streams/v1/index.json
-
           echo "Generated Simplestreams JSON files:"
           echo "products.json:"
           cat pages/images/streams/v1/products.json | jq .
@@ -349,7 +298,6 @@ jobs:
 
       - name: 生成网页界面
         run: |
-          # 生成主页 index.html
           cat > pages/index.html << 'EOF'
           <!DOCTYPE html>
           <html lang="zh-CN">
@@ -383,37 +331,29 @@ jobs:
               <div class="container">
                   <h1>LXD Images Repository</h1>
                   <p>本仓库提供各种 Linux 发行版的 LXD 容器镜像。</p>
-                  
                   <div class="usage-section">
                       <h2>使用方法</h2>
                       <p>添加此镜像源到您的 LXD 配置：</p>
                       <pre>lxc remote add spiritlhl-images http://lxdimages.spiritlhl.net --protocol=simplestreams --public</pre>
-                      
                       <div class="usage-examples">
                           <p><strong>基本使用（使用默认变体）：</strong></p>
                           <pre>lxc launch spiritlhl-images:debian/11 my-container</pre>
-                          
                           <p><strong>指定架构：</strong></p>
                           <pre>lxc launch spiritlhl-images:debian/11/arm64 my-arm-container</pre>
-                          
                           <p><strong>指定特定变体：</strong></p>
                           <pre>lxc launch spiritlhl-images:debian/11/amd64/default my-default-container</pre>
                       </div>
-                      
                       <div class="note">
                           <strong>注意：</strong> 如果存在多个变体，默认会使用 cloud 变体。如需使用其他变体，请在命令中明确指定。
                       </div>
-                      
                       <p>列出可用镜像：</p>
                       <pre>lxc image list spiritlhl-images:</pre>
                   </div>
-                  
                   <h2>可用镜像</h2>
                   <div id="images-container">
                       <p>加载中...</p>
                   </div>
               </div>
-              
               <script>
                   async function loadImages() {
                       try {
@@ -429,15 +369,12 @@ jobs:
                           document.getElementById('images-container').innerHTML = '<p>加载镜像列表失败: ' + error.message + '</p>';
                       }
                   }
-                  
                   function displayImages(products) {
                       const container = document.getElementById('images-container');
-                      
                       if (!products || Object.keys(products).length === 0) {
                           container.innerHTML = '<p>暂无可用镜像</p>';
                           return;
                       }
-                      
                       const imageCards = Object.entries(products).map(([productId, product]) => {
                           const versions = Object.entries(product.versions).map(([version, versionData]) => {
                               const architectures = Object.entries(versionData.items).map(([arch, archData]) => {
@@ -447,7 +384,6 @@ jobs:
                                           <a href="${archData.lxd}" download>metadata</a>
                                       </div>
                                   `;
-                                  
                                   let variantsHtml = '';
                                   if (archData.variants) {
                                       const variantsList = Object.entries(archData.variants).map(([variant, files]) => `
@@ -457,7 +393,6 @@ jobs:
                                               <a href="${files.lxd}" download style="margin-left: 5px; font-size: 11px;">metadata</a>
                                           </div>
                                       `).join('');
-                                      
                                       variantsHtml = `
                                           <div class="variants">
                                               <strong>可用变体：</strong>
@@ -465,7 +400,6 @@ jobs:
                                           </div>
                                       `;
                                   }
-                                  
                                   return `
                                       <div class="arch-item">
                                           <strong>${arch}</strong> (默认变体)
@@ -474,7 +408,6 @@ jobs:
                                       </div>
                                   `;
                               }).join('');
-                              
                               return `
                                   <div class="version-item">
                                       <strong>版本: ${version}</strong>
@@ -482,7 +415,6 @@ jobs:
                                   </div>
                               `;
                           }).join('');
-                          
                           return `
                               <div class="image-card">
                                   <h3>${productId}</h3>
@@ -493,22 +425,16 @@ jobs:
                               </div>
                           `;
                       }).join('');
-                      
                       container.innerHTML = `<div class="image-grid">${imageCards}</div>`;
                   }
-                  
-                  // 页面加载完成后执行
                   document.addEventListener('DOMContentLoaded', loadImages);
               </script>
           </body>
           </html>
           EOF
-
-          # 创建CNAME文件用于自定义域名
           echo "lxdimages.spiritlhl.net" > pages/CNAME
-
       - name: 部署 GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+        uses:peaceir/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./pages
