@@ -308,74 +308,74 @@ jobs:
           fi
           current_time=$(date -u +"%Y%m%d_%H:%M")
           jq -n --slurpfile assets all_assets.json --arg updated "$current_time" '
-          {
-            "datatype": "image-downloads",
-            "format": "products:1.0",
-            "products": (
-              $assets[0]
-              | group_by(.os)
-              | map({
-                  key: .[0].os,
-                  value: {
-                    "arch": (map(.arch) | unique),
-                    "release": .[0].os,
-                    "os": .[0].os,
-                    "versions": (
-                      group_by(.version)
-                      | map({
-                          key: .[0].version,
-                          value: {
-                            "items": (
-                              group_by(.arch)
-                              | map({
-                                  key: .[0].arch,
-                                  value: (
-                                    group_by(.variant)
-                                    | map({
-                                        key: .[0].variant,
-                                        value: {
-                                          "ftype": "squashfs",
-                                          "os": .[0].os,
-                                          "release": .[0].version,
-                                          "version": .[0].version,
-                                          "arch": .[0].arch,
-                                          "variant": .[0].variant,
-                                          "combined_sha256": .[0].combined_sha256,
-                                          "path": ("images/" + .[0].os + "/" + .[0].version + "/" + .[0].arch + "/" + .[0].variant + "/"),
-                                          "versions": {
-                                            ($updated): {
-                                              "items": {
-                                                "lxd.tar.xz": {
-                                                  "ftype": "lxd.tar.xz",
-                                                  "size": .[0].lxd_size,
-                                                  "sha256": .[0].lxd_sha256,
-                                                  "path": ("images/" + .[0].os + "/" + .[0].version + "/" + .[0].arch + "/" + .[0].variant + "/" + $updated + "/lxd.tar.xz")
-                                                },
-                                                "rootfs.squashfs": {
-                                                  "ftype": "squashfs",
-                                                  "size": .[0].rootfs_size,
-                                                  "sha256": .[0].rootfs_sha256,
-                                                  "path": ("images/" + .[0].os + "/" + .[0].version + "/" + .[0].arch + "/" + .[0].variant + "/" + $updated + "/rootfs.squashfs")
+            {
+              "datatype": "image-downloads",
+              "format": "products:1.0",
+              "products": (
+                $assets[0]
+                | group_by(.os)
+                | map({
+                    key: .[0].os,
+                    value: {
+                      "arch": (map(.arch) | unique),
+                      "release": .[0].os,
+                      "os": .[0].os,
+                      "versions": (
+                        group_by(.version)
+                        | map({
+                            key: .[0].version,
+                            value: {
+                              "items": (
+                                group_by(.arch)
+                                | map({
+                                    key: .[0].arch,
+                                    value: (
+                                      group_by(.variant)
+                                      | map({
+                                          key: .[0].variant,
+                                          value: {
+                                            "ftype": "squashfs",
+                                            "os": .[0][0].os,
+                                            "release": .[0][0].version,
+                                            "version": .[0][0].version,
+                                            "arch": .[0][0].arch,
+                                            "variant": .[0][0].variant,
+                                            "combined_sha256": .[0][0].combined_sha256,
+                                            "path": ("images/" + .[0][0].os + "/" + .[0][0].version + "/" + .[0][0].arch + "/" + .[0][0].variant + "/"),
+                                            "versions": {
+                                              ($updated): {
+                                                "items": {
+                                                  "lxd.tar.xz": {
+                                                    "ftype": "lxd.tar.xz",
+                                                    "size": .[0][0].lxd_size,
+                                                    "sha256": .[0][0].lxd_sha256,
+                                                    "path": ("images/" + .[0][0].os + "/" + .[0][0].version + "/" + .[0][0].arch + "/" + .[0][0].variant + "/" + $updated + "/lxd.tar.xz")
+                                                  },
+                                                  "rootfs.squashfs": {
+                                                    "ftype": "squashfs",
+                                                    "size": .[0][0].rootfs_size,
+                                                    "sha256": .[0][0].rootfs_sha256,
+                                                    "path": ("images/" + .[0][0].os + "/" + .[0][0].version + "/" + .[0][0].arch + "/" + .[0][0].variant + "/" + $updated + "/rootfs.squashfs")
+                                                  }
                                                 }
                                               }
                                             }
                                           }
-                                        }
-                                      })
-                                    | from_entries
-                                  )
-                                })
-                              | from_entries
-                            )
-                          }
-                        })
-                      | from_entries
-                    )
-                  }
-                })
-              | from_entries
-            )
-          }
+                                        })
+                                      | from_entries
+                                    )
+                                  })
+                                | from_entries
+                              )
+                            }
+                          })
+                        | from_entries
+                      )
+                    }
+                  })
+                | from_entries
+              )
+            }
           ' > pages/streams/v1/products.json
           echo '{
             "index": {
