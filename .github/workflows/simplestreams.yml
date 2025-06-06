@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [ main ]
   schedule:
-    # 每天UTC时间2点运行，确保镜像保持最新
     - cron: '0 2 * * *'
   workflow_dispatch:
 
@@ -39,27 +38,14 @@ jobs:
         import os
         import re
         from datetime import datetime, timezone
-        from urllib.parse import urlparse
         
-        # GitHub API配置
         REPO_OWNER = "oneclickvirt"
         REPO_NAME = "lxd_images"
         RELEASE_TAG = "processed"
         
-        def get_file_info_from_url(url):
-            """从URL获取文件信息而不下载"""
-            try:
-                response = requests.head(url, allow_redirects=True)
-                if response.status_code == 200:
-                    size = int(response.headers.get('content-length', 0))
-                    return size
-                return 0
-            except:
-                return 0
-        
         def calculate_sha256_from_url(url):
-            """从URL计算SHA256而不保存文件"""
             try:
+                print(f"Calculating SHA256 for: {url}")
                 response = requests.get(url, stream=True)
                 if response.status_code == 200:
                     sha256_hash = hashlib.sha256()
@@ -67,28 +53,30 @@ jobs:
                         sha256_hash.update(chunk)
                     return sha256_hash.hexdigest()
                 return None
-            except:
+            except Exception as e:
+                print(f"Error calculating SHA256: {e}")
                 return None
         
         def parse_image_filename(filename):
-            """解析镜像文件名，提取操作系统、版本、架构信息"""
-            # 移除文件扩展名
             base_name = filename
-            for ext in ['.tar.xz', '.tar.gz', '.tar', '.rootfs.tar.xz']:
+            for ext in ['.tar.xz', '.tar.gz', '.tar', '.squashfs']:
                 if base_name.endswith(ext):
                     base_name = base_name[:-len(ext)]
                     break
             
-            # 常见的镜像命名模式
+            if base_name.endswith('-rootfs'):
+                base_name = base_name[:-7]
+            if base_name.endswith('-lxd'):
+                base_name = base_name[:-4]
+            if base_name.endswith('-cloud'):
+                base_name = base_name[:-6]
+            if base_name.endswith('-default'):
+                base_name = base_name[:-8]
+            
             patterns = [
-                # ubuntu-22.04-amd64, debian-11-arm64, centos-8-x86_64
                 r'^([a-z]+)-([0-9]+(?:\.[0-9]+)*)-([a-z0-9_]+)$',
-                # ubuntu22.04-amd64, debian11-arm64
                 r'^([a-z]+)([0-9]+(?:\.[0-9]+)*)-([a-z0-9_]+)$',
-                # ubuntu_22_04_amd64, debian_11_arm64
                 r'^([a-z]+)_([0-9_]+)_([a-z0-9_]+)$',
-                # alpine-3.18-x86_64, rocky-9-aarch64
-                r'^([a-z]+)-([0-9]+(?:\.[0-9]+)*)-([a-z0-9_]+)$',
             ]
             
             for pattern in patterns:
@@ -98,7 +86,6 @@ jobs:
                     version = match.group(2).replace('_', '.')
                     arch = match.group(3).lower()
                     
-                    # 标准化架构名称
                     arch_mapping = {
                         'x86_64': 'amd64',
                         'aarch64': 'arm64',
@@ -110,11 +97,9 @@ jobs:
                     
                     return os_name, version, arch
             
-            # 如果无法解析，使用默认值
             print(f"Warning: Could not parse filename {filename}, using defaults")
             return "unknown", "latest", "amd64"
         
-        # 获取GitHub Release信息
         api_url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/tags/{RELEASE_TAG}"
         print(f"Fetching release data from: {api_url}")
         
@@ -129,7 +114,9 @@ jobs:
         assets = release_data.get('assets', [])
         print(f"Found {len(assets)} assets in release")
         
-        # 处理每个镜像文件
+        for asset in assets:
+            print(f"Asset: {asset['name']} - {asset['browser_download_url']}")
+        
         products = {}
         current_time = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
         
@@ -137,56 +124,58 @@ jobs:
             filename = asset['name']
             download_url = asset['browser_download_url']
             
-            # 只处理镜像文件
-            if not any(filename.endswith(ext) for ext in ['.tar.xz', '.tar.gz', '.tar']):
+            if not any(filename.endswith(ext) for ext in ['.tar.xz', '.tar.gz', '.tar', '.squashfs']):
                 continue
                 
             print(f"Processing: {filename}")
             
-            # 解析镜像信息
             os_name, version, arch = parse_image_filename(filename)
-            
-            # 获取文件大小
             file_size = asset.get('size', 0)
-            if file_size == 0:
-                file_size = get_file_info_from_url(download_url)
             
             print(f"  OS: {os_name}, Version: {version}, Arch: {arch}, Size: {file_size}")
             
-            # 生成产品ID
+            sha256_hash = calculate_sha256_from_url(download_url)
+            if not sha256_hash:
+                print(f"  Warning: Could not calculate SHA256 for {filename}")
+                sha256_hash = ""
+            else:
+                print(f"  SHA256: {sha256_hash}")
+            
             product_id = f"{os_name}:{version}:{arch}"
             
-            # 为每个镜像创建产品条目
             if product_id not in products:
                 products[product_id] = {
-                    "aliases": f"{os_name}/{version}/{arch},s/{os_name}/{version}/{arch}",
+                    "aliases": f"{os_name}/{version}/{arch}",
                     "arch": arch,
                     "os": os_name,
                     "release": version,
                     "release_title": f"{os_name.title()} {version}",
-                    "supported": True,
                     "versions": {}
                 }
             
-            # 添加版本信息
+            file_type = "rootfs.tar.xz"
+            if filename.endswith('.squashfs'):
+                file_type = "rootfs.squashfs"
+            elif filename.endswith('.tar.gz'):
+                file_type = "rootfs.tar.gz"
+            elif filename.endswith('.tar'):
+                file_type = "rootfs.tar"
+            
             products[product_id]["versions"][current_time] = {
                 "items": {
-                    "rootfs.tar.xz": {
-                        "ftype": "rootfs.tar.xz",
+                    file_type: {
+                        "ftype": file_type,
                         "path": download_url,
-                        "sha256": "",  # 将在下一步计算
+                        "sha256": sha256_hash,
                         "size": file_size
                     }
-                },
-                "public_name": f"{os_name}-{version}-{arch}-{current_time}"
+                }
             }
         
         print(f"Generated {len(products)} products")
         
-        # 创建streams目录结构
         os.makedirs("build/streams/v1", exist_ok=True)
         
-        # 生成index.json
         index_data = {
             "index": {
                 "images": {
@@ -206,12 +195,10 @@ jobs:
         
         print("Generated index.json")
         
-        # 生成images.json
         images_data = {
             "content_id": "images",
             "datatype": "image-downloads",
             "format": "products:1.0", 
-            "license": "Various (check individual distributions)",
             "products": products,
             "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         }
@@ -221,22 +208,6 @@ jobs:
         
         print("Generated images.json")
         
-        # 生成streams.json (LXD客户端可能需要)
-        streams_data = {
-            "streams": {
-                "images": {
-                    "datatype": "image-downloads",
-                    "path": "streams/v1/images.json"
-                }
-            }
-        }
-        
-        with open("build/streams.json", "w") as f:
-            json.dump(streams_data, f, indent=2)
-        
-        print("Generated streams.json")
-        
-        # 生成产品摘要
         summary = {
             "total_products": len(products),
             "architectures": list(set(p["arch"] for p in products.values())),
@@ -279,16 +250,16 @@ jobs:
         </head>
         <body>
             <div class="container">
-                <h1>🚀 LXD Simplestreams Image Server</h1>
+                <h1>LXD Simplestreams Image Server</h1>
                 
                 <div class="info-box">
-                    <h3>📋 Server Information</h3>
+                    <h3>Server Information</h3>
                     <p>This is an automated LXD Simplestreams image server, providing pre-built container images from the oneclickvirt project.</p>
                     <p><strong>Source:</strong> <a href="https://github.com/oneclickvirt/lxd_images">oneclickvirt/lxd_images</a></p>
                     <p><strong>Updated:</strong> <span id="last-updated">Loading...</span></p>
                 </div>
                 
-                <h2>🔗 API Endpoints</h2>
+                <h2>API Endpoints</h2>
                 <div class="endpoint">
                     <strong>Index:</strong> <a href="./streams/v1/index.json">./streams/v1/index.json</a>
                 </div>
@@ -299,7 +270,7 @@ jobs:
                     <strong>Summary:</strong> <a href="./summary.json">./summary.json</a>
                 </div>
                 
-                <h2>📖 Usage Examples</h2>
+                <h2>Usage Examples</h2>
                 
                 <h3>Add this server as a remote in LXD:</h3>
                 <div class="usage-example">
@@ -317,21 +288,18 @@ jobs:
                 </div>
                 
                 <div id="images-table-container">
-                    <h2>📦 Available Images</h2>
+                    <h2>Available Images</h2>
                     <p>Loading image list...</p>
                 </div>
             </div>
             
             <script>
-                // 动态加载镜像信息
                 Promise.all([
                     fetch('./streams/v1/images.json').then(r => r.json()),
                     fetch('./summary.json').then(r => r.json())
                 ]).then(([images, summary]) => {
-                    // 更新最后更新时间
                     document.getElementById('last-updated').textContent = new Date(summary.generated_at).toLocaleString();
                     
-                    // 生成镜像表格
                     const products = images.products;
                     const tableHtml = `
                         <table>
@@ -362,11 +330,11 @@ jobs:
                     `;
                     
                     document.getElementById('images-table-container').innerHTML = 
-                        '<h2>📦 Available Images</h2>' + tableHtml;
+                        '<h2>Available Images</h2>' + tableHtml;
                 }).catch(error => {
                     console.error('Error loading image data:', error);
                     document.getElementById('images-table-container').innerHTML = 
-                        '<h2>📦 Available Images</h2><p>Error loading image list. Please check the console.</p>';
+                        '<h2>Available Images</h2><p>Error loading image list. Please check the console.</p>';
                 });
             </script>
         </body>
@@ -376,7 +344,6 @@ jobs:
     - name: Create _redirects file for Netlify
       run: |
         cat > build/_redirects << 'EOF'
-        # Netlify重定向规则 - 确保API端点正确工作
         /streams/v1/* /streams/v1/:splat 200
         /streams/* /streams/:splat 200
         /*.json /:splat 200
@@ -385,7 +352,6 @@ jobs:
     - name: Create _headers file for Netlify
       run: |
         cat > build/_headers << 'EOF'
-        # 为JSON文件设置正确的CORS和缓存头
         /*.json
           Access-Control-Allow-Origin: *
           Access-Control-Allow-Methods: GET, HEAD, OPTIONS
@@ -400,7 +366,6 @@ jobs:
           Content-Type: application/json
           Cache-Control: public, max-age=300
         
-        # 静态文件缓存
         /*.html
           Cache-Control: public, max-age=60
         EOF
@@ -411,9 +376,9 @@ jobs:
         find build -type f -exec ls -la {} \;
         
         echo -e "\n=== Verifying JSON files ==="
-        python3 -m json.tool build/streams/v1/index.json > /dev/null && echo "✅ index.json is valid"
-        python3 -m json.tool build/streams/v1/images.json > /dev/null && echo "✅ images.json is valid"
-        python3 -m json.tool build/summary.json > /dev/null && echo "✅ summary.json is valid"
+        python3 -m json.tool build/streams/v1/index.json > /dev/null && echo "index.json is valid"
+        python3 -m json.tool build/streams/v1/images.json > /dev/null && echo "images.json is valid"
+        python3 -m json.tool build/summary.json > /dev/null && echo "summary.json is valid"
         
         echo -e "\n=== Sample content ==="
         echo "--- index.json ---"
@@ -427,7 +392,7 @@ jobs:
         publish-dir: './build'
         production-branch: main
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        deploy-message: "🚀 Deploy LXD Simplestreams - $(date)"
+        deploy-message: "Deploy LXD Simplestreams - $(date)"
         alias: deploy-preview-${{ github.event.number }}
       env:
         NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
@@ -436,45 +401,39 @@ jobs:
         
     - name: Output deployment information
       run: |
-        echo "🎉 Deployment completed successfully!"
-        echo "📋 Deployment Details:"
-        echo "  • Deploy URL: ${{ steps.netlify-deploy.outputs.deploy-url }}"
-        echo "  • Live URL: ${{ steps.netlify-deploy.outputs.live-url }}"
+        echo "Deployment completed successfully!"
+        echo "Deploy URL: ${{ steps.netlify-deploy.outputs.deploy-url }}"
+        echo "Live URL: ${{ steps.netlify-deploy.outputs.live-url }}"
         echo ""
-        echo "🔧 LXD Configuration:"
-        echo "  lxc remote add oneclickvirt ${{ steps.netlify-deploy.outputs.live-url }} --protocol=simplestreams --public"
+        echo "LXD Configuration:"
+        echo "lxc remote add oneclickvirt ${{ steps.netlify-deploy.outputs.live-url }} --protocol=simplestreams --public"
         echo ""
-        echo "📖 Usage Examples:"
-        echo "  lxc image list oneclickvirt:"
-        echo "  lxc launch oneclickvirt:ubuntu/22.04/amd64 my-container"
+        echo "Usage Examples:"
+        echo "lxc image list oneclickvirt:"
+        echo "lxc launch oneclickvirt:ubuntu/24.04/amd64 my-container"
         
     - name: Test simplestreams endpoints
       run: |
-        # 等待部署完成和DNS传播
-        echo "⏳ Waiting for deployment to be ready..."
+        echo "Waiting for deployment to be ready..."
         sleep 45
         
         DEPLOY_URL="${{ steps.netlify-deploy.outputs.live-url }}"
         if [ ! -z "$DEPLOY_URL" ]; then
-          echo "🧪 Testing simplestreams endpoints..."
+          echo "Testing simplestreams endpoints..."
           
-          # 测试主页
           echo "Testing main page..."
-          curl -f -s "$DEPLOY_URL/" > /dev/null && echo "✅ Main page OK" || echo "❌ Main page failed"
+          curl -f -s "$DEPLOY_URL/" > /dev/null && echo "Main page OK" || echo "Main page failed"
           
-          # 测试index.json
           echo "Testing index.json..."
-          curl -f -s "$DEPLOY_URL/streams/v1/index.json" | python3 -m json.tool > /dev/null && echo "✅ index.json OK" || echo "❌ index.json failed"
+          curl -f -s "$DEPLOY_URL/streams/v1/index.json" | python3 -m json.tool > /dev/null && echo "index.json OK" || echo "index.json failed"
           
-          # 测试images.json
           echo "Testing images.json..."
-          curl -f -s "$DEPLOY_URL/streams/v1/images.json" | python3 -m json.tool > /dev/null && echo "✅ images.json OK" || echo "❌ images.json failed"
+          curl -f -s "$DEPLOY_URL/streams/v1/images.json" | python3 -m json.tool > /dev/null && echo "images.json OK" || echo "images.json failed"
           
-          # 测试summary.json
           echo "Testing summary.json..."
-          curl -f -s "$DEPLOY_URL/summary.json" | python3 -m json.tool > /dev/null && echo "✅ summary.json OK" || echo "❌ summary.json failed"
+          curl -f -s "$DEPLOY_URL/summary.json" | python3 -m json.tool > /dev/null && echo "summary.json OK" || echo "summary.json failed"
           
-          echo "🏁 Endpoint testing completed!"
+          echo "Endpoint testing completed!"
         else
-          echo "❌ No deployment URL available for testing"
+          echo "No deployment URL available for testing"
         fi
