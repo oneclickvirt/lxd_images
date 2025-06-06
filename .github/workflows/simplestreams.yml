@@ -170,16 +170,70 @@ jobs:
         run: |
           mkdir -p pages/images/streams/v1
           
-          # 检查是否有已处理的资产
-          if [ ! -f /tmp/processed_assets.json ] || [ "$(jq length /tmp/processed_assets.json)" -eq 0 ]; then
-            echo "No processed assets found, creating empty structure"
+          # 获取processed release中已存在的文件
+          echo "Getting existing assets from processed release..."
+          curl -s "https://api.github.com/repos/${{ github.repository }}/releases" | \
+            jq -r '.[] | select(.tag_name=="processed") | .assets[]' > existing_assets.json
+          
+          # 创建包含现有资产的数组
+          echo "[]" > all_assets.json
+          
+          # 解析现有的processed文件并添加到all_assets.json
+          if [ -s existing_assets.json ]; then
+            while IFS= read -r asset; do
+              name=$(echo "$asset" | jq -r '.name')
+              url=$(echo "$asset" | jq -r '.browser_download_url')
+              
+              # 匹配rootfs文件模式: os-version-arch-variant-rootfs.squashfs
+              if [[ "$name" =~ ^([a-z0-9]+)-([0-9a-z\.\-]+)-([a-z0-9]+)-([a-z]+)-rootfs\.squashfs$ ]]; then
+                os="${BASH_REMATCH[1]}"
+                version="${BASH_REMATCH[2]}"
+                arch="${BASH_REMATCH[3]}"
+                variant="${BASH_REMATCH[4]}"
+                
+                # 查找对应的lxd文件
+                lxd_name="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
+                lxd_url=$(cat existing_assets.json | jq -r --arg name "$lxd_name" 'select(.name == $name) | .browser_download_url // empty')
+                
+                if [ -n "$lxd_url" ]; then
+                  # 添加到资产列表
+                  jq --arg os "$os" \
+                     --arg version "$version" \
+                     --arg arch "$arch" \
+                     --arg variant "$variant" \
+                     --arg rootfs_url "$url" \
+                     --arg lxd_url "$lxd_url" \
+                     '. += [{
+                       os: $os,
+                       version: $version,
+                       arch: $arch,
+                       variant: $variant,
+                       rootfs_url: $rootfs_url,
+                       lxd_url: $lxd_url,
+                       product_id: "\($os)-\($version)-\($arch)-\($variant)"
+                     }]' all_assets.json > all_assets_temp.json
+                  mv all_assets_temp.json all_assets.json
+                fi
+              fi
+            done < existing_assets.json
+          fi
+          
+          # 合并新处理的资产
+          if [ -f /tmp/processed_assets.json ] && [ "$(jq length /tmp/processed_assets.json)" -gt 0 ]; then
+            jq -s '.[0] + .[1]' all_assets.json /tmp/processed_assets.json > combined_assets.json
+            mv combined_assets.json all_assets.json
+          fi
+          
+          # 检查是否有任何资产
+          if [ "$(jq length all_assets.json)" -eq 0 ]; then
+            echo "No assets found, creating empty structure"
             echo '{"index": {"images": {}}}' > pages/images/streams/v1/index.json
             echo '{"products": {}}' > pages/images/streams/v1/products.json
             exit 0
           fi
 
           # 生成 products.json
-          jq -n --slurpfile assets /tmp/processed_assets.json '
+          jq -n --slurpfile assets all_assets.json '
             {
               products: (
                 $assets[0]
