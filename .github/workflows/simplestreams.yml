@@ -2,9 +2,6 @@ name: Build LXD Simplestreams
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   build-simplestreams:
@@ -122,7 +119,7 @@ jobs:
       uses: nwtgck/actions-netlify@v3.0
       with:
         publish-dir: './build'
-        production-branch: main
+        production-branch: gh-pages
         github-token: ${{ secrets.GITHUB_TOKEN }}
       env:
         NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
