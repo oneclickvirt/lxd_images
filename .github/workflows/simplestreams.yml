@@ -34,7 +34,7 @@ jobs:
     - name: Download assets from GitHub Release
       run: |
         python3 <<EOF
-        import requests, os, re
+        import requests, os, re, glob
         API_URL = "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
         OUTDIR = "build/images"
         os.makedirs(OUTDIR, exist_ok=True)
@@ -45,11 +45,9 @@ jobs:
         for a in assets:
             name = a["name"]
             url = a["browser_download_url"]
-            # 解析文件名（示例: debian-13-amd64-cloud-rootfs.squashfs）
             m = re.match(r"([a-zA-Z0-9]+)-([^-]+)-([^-]+)-([^-]+)-(rootfs|lxd)\.(squashfs|tar\.xz)", name)
             if not m: continue
             os_name, rel, arch, variant, t, ext = m.groups()
-            # 保持时间戳简单，全部归入一个时间，如20240607_0000
             dt = "20240607_0000"
             local_dir = f"{OUTDIR}/{os_name}/{rel}/{arch}/{variant}/{dt}"
             os.makedirs(local_dir, exist_ok=True)
@@ -60,7 +58,6 @@ jobs:
                 with open(local_file, "wb") as f:
                     for chunk in resp.iter_content(8192):
                         f.write(chunk)
-            # 自动为每个镜像目录生成 meta.yaml（只需做一次）
             if local_dir not in seen_dirs:
                 meta_file = f"{local_dir}/meta.yaml"
                 if not os.path.exists(meta_file):
@@ -72,6 +69,12 @@ jobs:
                         mf.write(f"type: {t}\n")
                         mf.write(f"created_at: {dt}\n")
                 seen_dirs.add(local_dir)
+        # 下载后统一重命名
+        for d, _, _ in os.walk(OUTDIR):
+            for f in glob.glob(os.path.join(d, "*-rootfs.squashfs")):
+                os.rename(f, os.path.join(d, "rootfs.squashfs"))
+            for f in glob.glob(os.path.join(d, "*-lxd.tar.xz")):
+                os.rename(f, os.path.join(d, "lxd.tar.xz"))
         EOF
 
     - name: Build simplestreams index and webpage
