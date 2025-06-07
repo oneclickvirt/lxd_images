@@ -30,6 +30,7 @@ jobs:
         go build -o simplestream-maintainer .
         sudo mv simplestream-maintainer /usr/local/bin/
         simplestream-maintainer --version
+        simplestream-maintainer build -h
 
     - name: Download assets from GitHub Release
       run: |
