@@ -16,9 +16,9 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y python3 python3-pip golang-go wget
+        sudo apt-get install -y python3 python3-pip snapd wget
         pip install PyYAML
-        go install github.com/canonical/simplestream-maintainer/cmd/simplestream-maintainer@latest
+        sudo snap install lxd-imagebuilder --classic
         echo "$HOME/go/bin" >> $GITHUB_PATH
 
     - name: Download assets from GitHub Release
