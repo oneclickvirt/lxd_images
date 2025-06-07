@@ -20,6 +20,15 @@ jobs:
         sudo pip install PyYAML
         sudo snap install --edge lxd-imagebuilder --classic
         lxd-imagebuilder --version
+        
+    - name: Install simplestream-maintainer
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y golang git
+        git clone https://github.com/lxc/lxd-imagebuilder
+        cd lxd-imagebuilder/simplestream-maintainer
+        go build -o simplestream-maintainer .
+        sudo mv simplestream-maintainer /usr/local/bin/
 
     - name: Download assets from GitHub Release
       run: |
