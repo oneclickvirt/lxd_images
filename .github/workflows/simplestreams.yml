@@ -24,33 +24,33 @@ jobs:
     - name: Download assets from GitHub Release
       run: |
         python3 <<EOF
-import requests, os, re
-
-API_URL = "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
-OUTDIR = "build/images"
-os.makedirs(OUTDIR, exist_ok=True)
-r = requests.get(API_URL)
-r.raise_for_status()
-assets = r.json().get("assets", [])
-for a in assets:
-    name = a["name"]
-    url = a["browser_download_url"]
-    # 解析文件名（示例: debian-13-amd64-cloud-rootfs.squashfs）
-    m = re.match(r"([a-zA-Z0-9]+)-([^-]+)-([^-]+)-([^-]+)-(rootfs|lxd)\.(squashfs|tar\.xz)", name)
-    if not m: continue
-    os_name, rel, arch, variant, t, ext = m.groups()
-    # 保持时间戳简单，全部归入一个时间，如20240607_0000（可用真实日期/或自定义）
-    dt = "20240607_0000"
-    local_dir = f"{OUTDIR}/{os_name}/{rel}/{arch}/{variant}/{dt}"
-    os.makedirs(local_dir, exist_ok=True)
-    local_file = f"{local_dir}/{name}"
-    if not os.path.exists(local_file):
-        print("Downloading", url)
-        resp = requests.get(url, stream=True)
-        with open(local_file, "wb") as f:
-            for chunk in resp.iter_content(8192):
-                f.write(chunk)
-EOF
+        import requests, os, re
+        
+        API_URL = "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
+        OUTDIR = "build/images"
+        os.makedirs(OUTDIR, exist_ok=True)
+        r = requests.get(API_URL)
+        r.raise_for_status()
+        assets = r.json().get("assets", [])
+        for a in assets:
+            name = a["name"]
+            url = a["browser_download_url"]
+            # 解析文件名（示例: debian-13-amd64-cloud-rootfs.squashfs）
+            m = re.match(r"([a-zA-Z0-9]+)-([^-]+)-([^-]+)-([^-]+)-(rootfs|lxd)\.(squashfs|tar\.xz)", name)
+            if not m: continue
+            os_name, rel, arch, variant, t, ext = m.groups()
+            # 保持时间戳简单，全部归入一个时间，如20240607_0000（可用真实日期/或自定义）
+            dt = "20240607_0000"
+            local_dir = f"{OUTDIR}/{os_name}/{rel}/{arch}/{variant}/{dt}"
+            os.makedirs(local_dir, exist_ok=True)
+            local_file = f"{local_dir}/{name}"
+            if not os.path.exists(local_file):
+                print("Downloading", url)
+                resp = requests.get(url, stream=True)
+                with open(local_file, "wb") as f:
+                    for chunk in resp.iter_content(8192):
+                        f.write(chunk)
+        EOF
 
     - name: Build simplestreams index and webpage
       run: |
@@ -60,28 +60,28 @@ EOF
     - name: Patch simplestreams for GitHub download redirect
       run: |
         python3 <<EOF
-import os, json, re
-API_URL = "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
-r = requests.get(API_URL)
-r.raise_for_status()
-assets = r.json().get("assets", [])
-url_map = {a["name"]: a["browser_download_url"] for a in assets}
-
-json_path = "build/streams/v1/images.json"
-with open(json_path, "r") as f:
-    images = json.load(f)
-changed = False
-for prod in images["products"].values():
-    for ver in prod["versions"].values():
-        for item in ver["items"].values():
-            basename = os.path.basename(item["path"])
-            if basename in url_map:
-                item["path"] = url_map[basename]
-                changed = True
-if changed:
-    with open(json_path, "w") as f:
-        json.dump(images, f, indent=2)
-EOF
+        import os, json, re
+        API_URL = "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
+        r = requests.get(API_URL)
+        r.raise_for_status()
+        assets = r.json().get("assets", [])
+        url_map = {a["name"]: a["browser_download_url"] for a in assets}
+        
+        json_path = "build/streams/v1/images.json"
+        with open(json_path, "r") as f:
+            images = json.load(f)
+        changed = False
+        for prod in images["products"].values():
+            for ver in prod["versions"].values():
+                for item in ver["items"].values():
+                    basename = os.path.basename(item["path"])
+                    if basename in url_map:
+                        item["path"] = url_map[basename]
+                        changed = True
+        if changed:
+            with open(json_path, "w") as f:
+                json.dump(images, f, indent=2)
+        EOF
 
     - name: List build contents
       run: |
