@@ -2,6 +2,8 @@ name: Build LXD Simplestreams
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 0 */10 * *'
 
 jobs:
   build-simplestreams:
