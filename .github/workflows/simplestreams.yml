@@ -1,321 +1,93 @@
 name: Build LXD Simplestreams
 
 on:
-  schedule:
-    - cron: '0 6 * * *'  # 每天早上6点运行
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:
   push:
     branches:
       - main
-  release:
-    types: [published]
 
 jobs:
   build-simplestreams:
     runs-on: ubuntu-latest
-    
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
-        
+
     - name: Install dependencies
       run: |
-        pip install requests PyYAML
-        
-    - name: Create build directory
+        sudo apt-get update
+        sudo apt-get install -y python3 python3-pip golang-go wget
+        pip install PyYAML
+        go install github.com/canonical/simplestream-maintainer/cmd/simplestream-maintainer@latest
+        echo "$HOME/go/bin" >> $GITHUB_PATH
+
+    - name: Download assets from GitHub Release
       run: |
-        mkdir -p build/images
-        
-    - name: Create image parser script
+        python3 <<EOF
+import requests, os, re
+
+API_URL = "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
+OUTDIR = "build/images"
+os.makedirs(OUTDIR, exist_ok=True)
+r = requests.get(API_URL)
+r.raise_for_status()
+assets = r.json().get("assets", [])
+for a in assets:
+    name = a["name"]
+    url = a["browser_download_url"]
+    # 解析文件名（示例: debian-13-amd64-cloud-rootfs.squashfs）
+    m = re.match(r"([a-zA-Z0-9]+)-([^-]+)-([^-]+)-([^-]+)-(rootfs|lxd)\.(squashfs|tar\.xz)", name)
+    if not m: continue
+    os_name, rel, arch, variant, t, ext = m.groups()
+    # 保持时间戳简单，全部归入一个时间，如20240607_0000（可用真实日期/或自定义）
+    dt = "20240607_0000"
+    local_dir = f"{OUTDIR}/{os_name}/{rel}/{arch}/{variant}/{dt}"
+    os.makedirs(local_dir, exist_ok=True)
+    local_file = f"{local_dir}/{name}"
+    if not os.path.exists(local_file):
+        print("Downloading", url)
+        resp = requests.get(url, stream=True)
+        with open(local_file, "wb") as f:
+            for chunk in resp.iter_content(8192):
+                f.write(chunk)
+EOF
+
+    - name: Build simplestreams index and webpage
       run: |
-        cat > parse_github_releases.py << 'EOF'
-        #!/usr/bin/env python3
-        import requests
-        import json
-        import os
-        import sys
-        import re
-        import hashlib
-        import datetime
-        from urllib.parse import urlparse
-        import tarfile
-        import tempfile
-        import yaml
-        
-        def download_file(url, local_path):
-            print(f"Downloading {url}")
-            response = requests.get(url, stream=True)
-            response.raise_for_status()
-            with open(local_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            return local_path
-        
-        def get_file_hash(filepath):
-            hash_sha256 = hashlib.sha256()
-            with open(filepath, "rb") as f:
-                for chunk in iter(lambda: f.read(4096), b""):
-                    hash_sha256.update(chunk)
-            return hash_sha256.hexdigest()
-        
-        def parse_metadata_from_tar(tar_path):
-            metadata = {}
-            try:
-                with tarfile.open(tar_path, 'r:xz') as tar:
-                    try:
-                        metadata_member = tar.getmember('metadata.yaml')
-                        metadata_file = tar.extractfile(metadata_member)
-                        if metadata_file:
-                            content = metadata_file.read().decode('utf-8')
-                            metadata = yaml.safe_load(content)
-                    except KeyError:
-                        pass
-            except Exception as e:
-                pass
-            return metadata
-        
-        def parse_filename(filename):
-            patterns = [
-                r'(\w+)-([^-]+)-(\w+)-([\w-]+)-(rootfs|lxd)\.(\w+(?:\.\w+)*)',
-                r'(\w+)-([^-]+)-(\w+)-(rootfs|lxd)\.(\w+(?:\.\w+)*)',
-            ]
-            for pattern in patterns:
-                match = re.match(pattern, filename)
-                if match:
-                    if len(match.groups()) == 6:
-                        os_name, version, arch, variant, file_type, ext = match.groups()
-                    else:
-                        os_name, version, arch, file_type, ext = match.groups()
-                        variant = 'default'
-                    return {
-                        'os': os_name,
-                        'release': version,
-                        'arch': arch,
-                        'variant': variant,
-                        'type': file_type,
-                        'extension': ext
-                    }
-            return None
-        
-        def fetch_github_releases():
-            url = "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
-            try:
-                response = requests.get(url)
-                response.raise_for_status()
-                release_data = response.json()
-                assets = []
-                for asset in release_data.get('assets', []):
-                    filename = asset['name']
-                    if any(filename.endswith(ext) for ext in ['.squashfs', '.tar.xz']):
-                        assets.append(asset)
-                return assets
-            except Exception as e:
-                print(f"Error fetching releases: {e}")
-                return []
-        
-        def group_files_by_image(assets):
-            images = {}
-            for asset in assets:
-                parsed = parse_filename(asset['name'])
-                if not parsed:
-                    continue
-                image_key = f"{parsed['os']}:{parsed['release']}:{parsed['arch']}:{parsed['variant']}"
-                if image_key not in images:
-                    images[image_key] = {
-                        'os': parsed['os'],
-                        'release': parsed['release'],
-                        'arch': parsed['arch'],
-                        'variant': parsed['variant'],
-                        'files': {}
-                    }
-                file_key = f"{parsed['type']}.{parsed['extension']}"
-                asset_info = {
-                    'name': asset['name'],
-                    'download_url': asset['browser_download_url'],
-                    'size': asset['size']
-                }
-                images[image_key]['files'][file_key] = asset_info
-            return images
-        
-        def create_directory_structure(images, build_dir):
-            current_time = datetime.datetime.utcnow()
-            timestamp = current_time.strftime('%Y%m%d_%H:%M')
-            for image_key, image_info in images.items():
-                image_dir = os.path.join(
-                    build_dir, 'images',
-                    image_info['os'],
-                    image_info['release'], 
-                    image_info['arch'],
-                    image_info['variant'],
-                    timestamp
-                )
-                os.makedirs(image_dir, exist_ok=True)
-                items = {}
-                temp_files = []
-                try:
-                    for file_key, asset in image_info['files'].items():
-                        temp_file = tempfile.NamedTemporaryFile(delete=False)
-                        temp_files.append(temp_file.name)
-                        download_file(asset['download_url'], temp_file.name)
-                        file_hash = get_file_hash(temp_file.name)
-                        if file_key.endswith('.squashfs'):
-                            ftype = 'root.squashfs'
-                        elif file_key.endswith('.tar.xz'):
-                            if 'lxd' in file_key:
-                                ftype = 'lxd.tar.xz'
-                            else:
-                                ftype = 'root.tar.xz'
-                        else:
-                            ftype = file_key
-                        items[file_key.replace('.', '_')] = {
-                            'ftype': ftype,
-                            'path': f"images/{image_info['os']}/{image_info['release']}/{image_info['arch']}/{image_info['variant']}/{timestamp}/{asset['name']}",
-                            'size': asset['size'],
-                            'sha256': file_hash,
-                        }
-                        if 'lxd' in file_key and file_key.endswith('.tar.xz'):
-                            try:
-                                metadata = parse_metadata_from_tar(temp_file.name)
-                                if metadata:
-                                    if 'architecture' in metadata:
-                                        arch = metadata['architecture']
-                                        if arch == 'x86_64':
-                                            arch = 'amd64'
-                                        image_info['arch'] = arch
-                                    if 'creation_date' in metadata:
-                                        creation_date = datetime.datetime.utcfromtimestamp(int(metadata['creation_date']))
-                                        timestamp = creation_date.strftime('%Y%m%d_%H:%M')
-                            except Exception as e:
-                                pass
-                finally:
-                    for temp_file in temp_files:
-                        try:
-                            os.unlink(temp_file)
-                        except:
-                            pass
-                with open(os.path.join(image_dir, '.items.json'), 'w') as f:
-                    json.dump(items, f, indent=2)
-                images[image_key]['timestamp'] = timestamp
-                images[image_key]['items'] = items
-            return images
-        
-        def build_aliases(os_name, release, variant):
-            aliases = [f"{os_name}/{release}/{variant}"]
-            if variant == 'default':
-                aliases.append(f"{os_name}/{release}")
-            return ','.join(aliases)
-        
-        def generate_simplestreams(images, build_dir):
-            products = {}
-            for image_key, image_info in images.items():
-                product_key = f"{image_info['os']}:{image_info['release']}:{image_info['arch']}:{image_info['variant']}"
-                products[product_key] = {
-                    'aliases': build_aliases(image_info['os'], image_info['release'], image_info['variant']),
-                    'arch': image_info['arch'],
-                    'os': image_info['os'],
-                    'release': image_info['release'],
-                    'release_title': image_info['release'],
-                    'variant': image_info['variant'],
-                    'versions': {
-                        image_info['timestamp']: {
-                            'items': image_info['items']
-                        }
-                    }
-                }
-            images_data = {
-                'content_id': 'images',
-                'datatype': 'image-downloads', 
-                'format': 'products:1.0',
-                'products': products
-            }
-            index_data = {
-                'format': 'index:1.0',
-                'index': {
-                    'images': {
-                        'datatype': 'image-downloads',
-                        'path': 'streams/v1/images.json',
-                        'format': 'products:1.0',
-                        'products': list(products.keys())
-                    }
-                }
-            }
-            streams_dir = os.path.join(build_dir, 'streams', 'v1')
-            os.makedirs(streams_dir, exist_ok=True)
-            with open(os.path.join(streams_dir, 'images.json'), 'w') as f:
-                json.dump(images_data, f, indent=2)
-            with open(os.path.join(streams_dir, 'index.json'), 'w') as f:
-                json.dump(index_data, f, indent=2)
-        
-        def main():
-            build_dir = './build'
-            print("Fetching GitHub releases...")
-            assets = fetch_github_releases()
-            if not assets:
-                print("No assets found!")
-                return 1
-            print(f"Found {len(assets)} assets")
-            print("Grouping files by image...")
-            images = group_files_by_image(assets)
-            print(f"Found {len(images)} images")
-            for key in images.keys():
-                print(f"  - {key}")
-            print("Creating directory structure...")
-            images = create_directory_structure(images, build_dir)
-            print("Generating simplestreams...")
-            generate_simplestreams(images, build_dir)
-            print("Build completed successfully!")
-            return 0
-        
-        if __name__ == '__main__':
-            exit(main())
-        EOF
-        
-    - name: Run image parser
-      run: python parse_github_releases.py
-      
-    - name: Create simple index.html
+        export PATH=$PATH:$HOME/go/bin
+        simplestream-maintainer build build --build-webpage
+
+    - name: Patch simplestreams for GitHub download redirect
       run: |
-        cat > build/index.html << 'EOF'
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>LXD Simplestreams</title>
-            <meta charset="utf-8">
-            <style>
-                body { font-family: Arial, sans-serif; margin: 40px; }
-                h1 { color: #333; }
-                .code { background: #f4f4f4; padding: 10px; border-radius: 4px; }
-            </style>
-        </head>
-        <body>
-            <h1>LXD Simplestreams Server</h1>
-            <p>This is a simplestreams server for LXD images.</p>
-            
-            <h2>Usage</h2>
-            <p>Add this server to your LXD client:</p>
-            <div class="code">
-                <code>lxc remote add myserver https://lxdimages.spiritlhl.net --protocol=simplestreams</code>
-            </div>
-            
-            <h2>Available Files</h2>
-            <ul>
-                <li><a href="streams/v1/index.json">Index</a></li>
-                <li><a href="streams/v1/images.json">Images</a></li>
-            </ul>
-        </body>
-        </html>
-        EOF
-        
+        python3 <<EOF
+import os, json, re
+API_URL = "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
+r = requests.get(API_URL)
+r.raise_for_status()
+assets = r.json().get("assets", [])
+url_map = {a["name"]: a["browser_download_url"] for a in assets}
+
+json_path = "build/streams/v1/images.json"
+with open(json_path, "r") as f:
+    images = json.load(f)
+changed = False
+for prod in images["products"].values():
+    for ver in prod["versions"].values():
+        for item in ver["items"].values():
+            basename = os.path.basename(item["path"])
+            if basename in url_map:
+                item["path"] = url_map[basename]
+                changed = True
+if changed:
+    with open(json_path, "w") as f:
+        json.dump(images, f, indent=2)
+EOF
+
     - name: List build contents
       run: |
         echo "Build directory contents:"
-        find build -type f | head -20
-        
+        find build -type f | head -30
+
     - name: Deploy to Netlify
       uses: nwtgck/actions-netlify@v3.0
       with:
