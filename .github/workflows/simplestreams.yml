@@ -81,7 +81,8 @@ jobs:
 
     - name: Build simplestreams index and webpage
       run: |
-        simplestream-maintainer build build --build-webpage
+        ls
+        simplestream-maintainer build build --build-webpage -d spiritlhl
 
     - name: Patch simplestreams for GitHub download redirect
       run: |
