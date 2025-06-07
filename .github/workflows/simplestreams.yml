@@ -105,7 +105,7 @@ jobs:
           sed -i 's/images:/spiritlhl:/g' "$f"
           sed -i 's/The images provided via this image server are unofficial images,/ /g' "$f"
           sed -i 's/provided as a convenience and for testing purposes. Whenever possible, you/lxc remote add spiritlhl https:\/\/lxdimages.spiritlhl.net --protocol simplestreams --public/g' "$f"
-          sed -i 's/should try to use official images from your Linux distribution of choice./&& lxc image list spiritlhl:debian/g' "$f"
+          sed -i 's/should try to use official images from your Linux distribution of choice./lxc image list spiritlhl:debian/g' "$f"
           sed -i 's@https://github.com/canonical/lxd/issues/new@https://github.com/oneclickvirt/lxd_images@g' "$f"
           sed -i 's@https://documentation.ubuntu.com/lxd/en/latest/howto/images_manage/@https://www.spiritlhl.net@g' "$f"
           echo "Patched $f"
