@@ -28,6 +28,8 @@ Releases中的镜像(每日拉取镜像进行自动修补和更新)：
 
 本仓库的容器镜像服务于： https://github.com/oneclickvirt/lxd
 
+远程镜像源地址: https://lxdimages.spiritlhl.net/
+
 ## Introduce
 
 Mirrors in Releases (pulls mirrors daily for automatic patching and updating):
@@ -47,6 +49,8 @@ A list of names for all images in this repository: [x86_64_all_images.txt](https
 A list of names of images in this repository that have been tested without error: [x86_64_fixed_images.txt](https://github.com/oneclickvirt/lxd_images/blob/main/x86_64_fixed_images.txt) and [arm64_fixed_images.txt](https://github.com/oneclickvirt/lxd_images/blob/main/arm64_fixed_images.txt)
 
 This repository container images serves https://github.com/oneclickvirt/lxd
+
+Remote mirror source address: https://lxdimages.spiritlhl.net/
 
 ## 测试-test
 
