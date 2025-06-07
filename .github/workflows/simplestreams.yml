@@ -86,6 +86,7 @@ jobs:
 
     - name: Patch simplestreams for GitHub download redirect
       run: |
+        ls build/streams/v1/
         python3 <<EOF
         import os, json, re, requests
         API_URL = "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
