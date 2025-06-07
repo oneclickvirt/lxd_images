@@ -107,53 +107,35 @@ jobs:
           sed -i 's/images:/spiritlhl:/g' "$f"
           echo "Patched $f"
         done
-        sed -i '/<p class="lxd-note/{N;N;N;c\
-        <p class="lxd-note py-4 p-3"><b>NOTE:</b>  \
-        To use this image server in LXD, run:<br>\
-        <code>\
-        lxc remote remove spiritlhl<br>\
-        lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public<br>\
-        lxc image list spiritlhl:debian\
-        </code><br>\
-        Source: <a href="https://github.com/oneclickvirt/lxd_images" target="_blank">oneclickvirt/lxd_images</a> ·  \
-        Maintainer: <a href="https://t.me/spiritlhl" target="_blank">@spiritlhl</a> ·  \
-        Maintenance guide: <a href="https://www.spiritlhl.net/guide/lxd/lxd_precheck.html" target="_blank">lxd_precheck</a>\
-        </p>' build/index.html
-        sed -i '/Images hosted on this server are available in LXD through the predefined remote images:/,/<\/p>/c\
-        <p>\
-        Images on this server are unofficial and provided for convenience and testing purposes.<br>\
-        See the remote spiritlhl usage above for adding to LXD.<br>\
-        For details and maintenance, check:  \
-        <a href="https://github.com/oneclickvirt/lxd_images" target="_blank">GitHub source</a> ·  \
-        <a href="https://www.spiritlhl.net/guide/lxd/lxd_precheck.html" target="_blank">Maintenance guide</a> ·  \
-        Maintainer: <a href="https://t.me/spiritlhl" target="_blank">@spiritlhl</a>\
-        </p>' build/index.html
-
-    - name: Patch simplestreams for GitHub download redirect
+        
+    - name: Patch index.html for spiritlhl (content-only)
       run: |
-        ls build/streams/v1/
-        python3 <<EOF
-        import os, json, re, requests
-        API_URL = "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
-        r = requests.get(API_URL)
-        r.raise_for_status()
-        assets = r.json().get("assets", [])
-        url_map = {a["name"]: a["browser_download_url"] for a in assets}
-        json_path = "build/streams/v1/spiritlhl.json"
-        with open(json_path, "r") as f:
-            images = json.load(f)
-        changed = False
-        for prod in images["products"].values():
-            for ver in prod["versions"].values():
-                for item in ver["items"].values():
-                    basename = os.path.basename(item["path"])
-                    if basename in url_map:
-                        item["path"] = url_map[basename]
-                        changed = True
-        if changed:
-            with open(json_path, "w") as f:
-                json.dump(images, f, indent=2)
-        EOF
+        find build -name "index.html" | while read -r f; do
+          # 1) 全局 images: → spiritlhl:
+          sed -i 's/images:/spiritlhl:/g' "$f"
+    
+          # 2) 替换 NOTE 段落的 inner HTML（保留 <p class="lxd-note…"> 和 </p> 原样）
+          sed -z -i \
+            -E 's#(<p class="lxd-note[^>]*>)[\s\S]*?(</p>)#\1<b>NOTE:</b> To use this image server in LXD, run:<br>\
+                <code>lxc remote remove spiritlhl; lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public; lxc image list spiritlhl:debian</code><br>\
+                Source: <a href="https://github.com/oneclickvirt/lxd_images" target="_blank">oneclickvirt/lxd_images</a> · \
+                Maintainer: <a href="https://t.me/spiritlhl" target="_blank">@spiritlhl</a> · \
+                Maintenance guide: <a href="https://www.spiritlhl.net/guide/lxd/lxd_precheck.html" target="_blank">lxd_precheck</a>\2#' \
+            "$f"
+    
+          # 3) 替换 “Images hosted on this server…” 段落的 inner HTML（保留 <p>…</p> 原样）
+          sed -z -i \
+            -E 's#(<p>)[\s\S]*?(</p>)#\1Images on this server are unofficial and provided for convenience and testing purposes.<br>\
+                See the remote spiritlhl usage above for adding to LXD.<br>\
+                For details and maintenance, check: \
+                <a href="https://github.com/oneclickvirt/lxd_images" target="_blank">GitHub source</a> · \
+                <a href="https://www.spiritlhl.net/guide/lxd/lxd_precheck.html" target="_blank">Maintenance guide</a> · \
+                Maintainer: <a href="https://t.me/spiritlhl" target="_blank">@spiritlhl</a>\2#' \
+            "$f"
+    
+          echo "Patched $f"
+        done
+
 
     - name: List build contents
       run: |
