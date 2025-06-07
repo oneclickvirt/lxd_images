@@ -70,7 +70,6 @@ jobs:
                         mf.write(f"type: {t}\n")
                         mf.write(f"created_at: {dt}\n")
                 seen_dirs.add(local_dir)
-        # 下载后统一重命名
         for d, _, _ in os.walk(OUTDIR):
             for f in glob.glob(os.path.join(d, "*-rootfs.squashfs")):
                 os.rename(f, os.path.join(d, "rootfs.squashfs"))
