@@ -101,41 +101,23 @@ jobs:
         ls
         simplestream-maintainer build build --build-webpage -d spiritlhl
 
-    - name: Patch index.html for spiritlhl
-      run: |
-        find build -name "index.html" | while read f; do
-          sed -i 's/images:/spiritlhl:/g' "$f"
-          echo "Patched $f"
-        done
-        
     - name: Patch index.html for spiritlhl (content-only)
       run: |
         find build -name "index.html" | while read -r f; do
-          # 1) 全局 images: → spiritlhl:
           sed -i 's/images:/spiritlhl:/g' "$f"
-    
-          # 2) 替换 NOTE 段落的 inner HTML（保留 <p class="lxd-note…"> 和 </p> 原样）
-          sed -z -i \
-            -E 's#(<p class="lxd-note[^>]*>)[\s\S]*?(</p>)#\1<b>NOTE:</b> To use this image server in LXD, run:<br>\
-                <code>lxc remote remove spiritlhl; lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public; lxc image list spiritlhl:debian</code><br>\
-                Source: <a href="https://github.com/oneclickvirt/lxd_images" target="_blank">oneclickvirt/lxd_images</a> · \
-                Maintainer: <a href="https://t.me/spiritlhl" target="_blank">@spiritlhl</a> · \
-                Maintenance guide: <a href="https://www.spiritlhl.net/guide/lxd/lxd_precheck.html" target="_blank">lxd_precheck</a>\2#' \
-            "$f"
-    
-          # 3) 替换 “Images hosted on this server…” 段落的 inner HTML（保留 <p>…</p> 原样）
-          sed -z -i \
-            -E 's#(<p>)[\s\S]*?(</p>)#\1Images on this server are unofficial and provided for convenience and testing purposes.<br>\
-                See the remote spiritlhl usage above for adding to LXD.<br>\
-                For details and maintenance, check: \
-                <a href="https://github.com/oneclickvirt/lxd_images" target="_blank">GitHub source</a> · \
-                <a href="https://www.spiritlhl.net/guide/lxd/lxd_precheck.html" target="_blank">Maintenance guide</a> · \
-                Maintainer: <a href="https://t.me/spiritlhl" target="_blank">@spiritlhl</a>\2#' \
-            "$f"
-    
+          sed -i 's@NOTE: The images provided via this image server are unofficial images, provided as a convenience and for testing purposes. Whenever possible, you should try to use official images from your Linux distribution of choice.@NOTE: To use this image server in LXD, run:\
+          lxc remote remove spiritlhl; lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public; lxc image list spiritlhl:debian\
+          Source: oneclickvirt/lxd_images · Maintainer: @spiritlhl · Maintenance guide: lxd_precheck@g' "$f"
+          sed -i 's@Images hosted on this server are available in LXD through the predefined remote .*\. For detailed instructions about LXD image management, please refer to our How to Manage Images guide in the official documentation\.@Images on this server are unofficial and provided for convenience and testing purposes.\
+          See the remote spiritlhl usage above for adding to LXD.\
+          For details and maintenance, check: GitHub source · Maintenance guide · Maintainer: @spiritlhl@g' "$f"
+          sed -i 's@https://documentation.ubuntu.com/lxd/en/latest/howto/images_manage/@https://github.com/oneclickvirt/lxd_images@g' "$f"
+          sed -i 's@https://github.com/canonical/lxd/issues/new@https://github.com/oneclickvirt/lxd_images@g' "$f"
+          sed -i 's@https://github.com/canonical/lxd@https://t.me/spiritlhl@g' "$f"
+          sed -i 's@https://documentation.ubuntu.com/lxd/en/latest/howto/images_manage/@https://www.spiritlhl.net/guide/lxd/lxd_precheck.html@g' "$f"
+          sed -i 's@lxd_precheck@https://www.spiritlhl.net/guide/lxd/lxd_precheck.html@g' "$f"
           echo "Patched $f"
         done
-
 
     - name: List build contents
       run: |
