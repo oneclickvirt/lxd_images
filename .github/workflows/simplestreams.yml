@@ -25,7 +25,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y golang git
-        git clone https://github.com/lxc/lxd-imagebuilder
+        git clone https://github.com/canonical/lxd-imagebuilder
         cd lxd-imagebuilder/simplestream-maintainer
         go build -o simplestream-maintainer .
         sudo mv simplestream-maintainer /usr/local/bin/
