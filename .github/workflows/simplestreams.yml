@@ -29,6 +29,7 @@ jobs:
         cd lxd-imagebuilder/simplestream-maintainer
         go build -o simplestream-maintainer .
         sudo mv simplestream-maintainer /usr/local/bin/
+        simplestream-maintainer --version
 
     - name: Download assets from GitHub Release
       run: |
@@ -68,7 +69,7 @@ jobs:
     - name: Patch simplestreams for GitHub download redirect
       run: |
         python3 <<EOF
-        import os, json, re
+        import os, json, re, requests
         API_URL = "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
         r = requests.get(API_URL)
         r.raise_for_status()
