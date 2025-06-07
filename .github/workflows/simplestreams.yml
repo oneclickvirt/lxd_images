@@ -79,10 +79,34 @@ jobs:
                 os.rename(f, os.path.join(d, "lxd.tar.xz"))
         EOF
 
+    - name: Generate SHA256SUMS for images
+      run: |
+        find build/spiritlhl -type d | while read d; do
+          cd "$d"
+          files=""
+          for f in rootfs.squashfs lxd.tar.xz; do
+            if [ -f "$f" ]; then
+              files="$files $f"
+            fi
+          done
+          if [ -n "$files" ]; then
+            sha256sum $files > SHA256SUMS
+            echo "Generated SHA256SUMS in $d"
+          fi
+          cd - >/dev/null
+        done
+
     - name: Build simplestreams index and webpage
       run: |
         ls
         simplestream-maintainer build build --build-webpage -d spiritlhl
+
+    - name: Patch index.html for spiritlhl
+      run: |
+        find build -name "index.html" | while read f; do
+          sed -i 's/images:/spiritlhl:/g' "$f"
+          echo "Patched $f"
+        done
 
     - name: Patch simplestreams for GitHub download redirect
       run: |
