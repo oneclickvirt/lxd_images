@@ -50,7 +50,7 @@ A list of names of images in this repository that have been tested without error
 
 This repository container images serves https://github.com/oneclickvirt/lxd
 
-Remote mirror source address: https://lxdimages.spiritlhl.net/
+Remote images source address: https://lxdimages.spiritlhl.net/
 
 ## 测试-test
 
