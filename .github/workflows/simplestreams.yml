@@ -18,8 +18,8 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y python3 python3-pip snapd wget
         sudo pip install PyYAML
-        sudo snap install --edge lxd-imagebuilder
-        echo "$HOME/go/bin" >> $GITHUB_PATH
+        sudo snap install --edge lxd-imagebuilder --classic
+        lxd-imagebuilder --version
 
     - name: Download assets from GitHub Release
       run: |
@@ -54,7 +54,6 @@ jobs:
 
     - name: Build simplestreams index and webpage
       run: |
-        export PATH=$PATH:$HOME/go/bin
         simplestream-maintainer build build --build-webpage
 
     - name: Patch simplestreams for GitHub download redirect
