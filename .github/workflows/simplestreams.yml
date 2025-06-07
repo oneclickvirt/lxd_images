@@ -107,6 +107,20 @@ jobs:
           sed -i 's/images:/spiritlhl:/g' "$f"
           echo "Patched $f"
         done
+        sed -i '/<div class=col-md-6>/,/<\/div>/c\
+        <div class=col-md-6>\
+        <p><b>使用方式：</b><br>\
+        <code>lxc remote remove spiritlhl</code><br>\
+        <code>lxc remote add spiritlhl https://lxdimages.spiritlhl.net --protocol simplestreams --public</code><br>\
+        <code>lxc image list spiritlhl:debian</code>\
+        </p>\
+        <p>该镜像仓库每日自动构建。<br>\
+        使用中如遇到问题，或有建议，欢迎前往 <a href="https://github.com/oneclickvirt/lxd_images">源仓库</a> 提Issue，或加入 <a href="https://t.me/spiritlhl">维护者TG频道</a> 交流。<br>\
+        更详细的维护说明见 <a href="https://www.spiritlhl.net/guide/lxd/lxd_precheck.html">使用与维护文档</a>。</p>\
+        </div>' build/index.html
+        sed -i '/<div class="lxd-note py-4 p-3">/,/<\/div>/c\
+        <div class="lxd-note py-4 p-3"><b>NOTE:</b> 本镜像仓库由 <b>spiritlhl</b> 个人维护，仅供学习和测试用途，生产环境建议使用官方镜像。\
+        </div>' build/index.html
 
     - name: Patch simplestreams for GitHub download redirect
       run: |
@@ -118,7 +132,6 @@ jobs:
         r.raise_for_status()
         assets = r.json().get("assets", [])
         url_map = {a["name"]: a["browser_download_url"] for a in assets}
-        
         json_path = "build/streams/v1/spiritlhl.json"
         with open(json_path, "r") as f:
             images = json.load(f)
