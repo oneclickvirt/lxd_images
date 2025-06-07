@@ -95,7 +95,7 @@ jobs:
         assets = r.json().get("assets", [])
         url_map = {a["name"]: a["browser_download_url"] for a in assets}
         
-        json_path = "build/streams/v1/images.json"
+        json_path = "build/streams/v1/spiritlhl.json"
         with open(json_path, "r") as f:
             images = json.load(f)
         changed = False
