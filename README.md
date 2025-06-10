@@ -68,11 +68,7 @@ lxc image delete myc
 
 ## Sponsor
 
-Thanks to [dartnode](https://dartnode.com/?via=server) for providing support for images compiling.
-
-<a href="https://dartnode.com/?via=server" target="_blank">
-  <img src="https://snaju.com/assets/img/logo_dark.svg" alt="ekire">
-</a>
+[![Powered by DartNode](https://dartnode.com/branding/DN-Open-Source-sm.png)](https://dartnode.com?aff=bonus "Powered by DartNode - Free VPS for Open Source")
 
 ## Thanks
 
