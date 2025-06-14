@@ -1,6 +1,8 @@
 name: simplestreams_pre_build
 
 on:
+  schedule:
+      - cron: '0 18 * * *'
   workflow_dispatch:
 
 jobs:
@@ -78,7 +80,7 @@ jobs:
               rootfs_asset_id=$(echo "$existing_assets" | jq -r --arg name "$rootfs_file" '.[] | select(.name == $name) | .id // empty')
               lxd_asset_id=$(echo "$existing_assets" | jq -r --arg name "$lxd_file" '.[] | select(.name == $name) | .id // empty')
               if [ -n "$rootfs_asset_id" ]; then
-                sleep 1
+                sleep 3
                 echo "Deleting existing $rootfs_file..."
                 curl -s -X DELETE \
                   -H "Authorization: token $GITHUB_TOKEN" \
@@ -90,7 +92,7 @@ jobs:
                   -H "Authorization: token $GITHUB_TOKEN" \
                   "https://api.github.com/repos/$REPO/releases/assets/$lxd_asset_id"
               fi
-              sleep 1
+              sleep 3
               jq --arg name "$name" \
                  --arg url "$url" \
                  --arg os "$os" \
@@ -117,7 +119,7 @@ jobs:
       - name: 等待API同步
         run: |
           echo "Waiting for GitHub API to sync after deletions..."
-          sleep 60
+          sleep 360
 
       - name: 处理并上传解压文件
         env:
