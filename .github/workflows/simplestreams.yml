@@ -108,6 +108,8 @@ jobs:
 
     - name: List build contents
       run: |
+        wget https://raw.githubusercontent.com/oneclickvirt/lxd_images/refs/heads/main/back/google9217a97bfdec3a8f.html -O ./build/google9217a97bfdec3a8f.html
+        chmod 777 ./build/google9217a97bfdec3a8f.html
         echo "Build directory contents:"
         find build -type f | head -30
 
