@@ -336,6 +336,14 @@ packages:
     - openssh-server
     - openssh-keygen
     - iptables
+    - curl
+    - wget
+    - bash
+    - lsof
+    - sshpass
+    - openssh-server
+    - openssh-keygen
+    - iptables
     action: install
 
 actions:
@@ -362,6 +370,39 @@ actions:
     sed -i 's/procd_add_jail/: \0/g' /etc/init.d/dnsmasq
     # Disable conflicting sysntpd service to avoid crash loop
     rm -f /etc/rc.d/*sysntpd
+- trigger: post-files
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    cd /etc/ssh || true
+    ssh-keygen -A || true
+    sed -i "s/^#\?\(Port\).*/\1 22/" /etc/ssh/sshd_config || true
+    sed -i -E 's/^#?(Port).*/\1 22/' /etc/ssh/sshd_config || true
+    sed -i 's/^#\?Port.*/Port 22/g' /etc/ssh/sshd_config || true
+    sed -i '/^#PermitRootLogin\|PermitRootLogin/c PermitRootLogin yes' /etc/ssh/sshd_config || true
+    sed -i "s/^#\?PasswordAuthentication.*/PasswordAuthentication yes/g" /etc/ssh/sshd_config || true
+    sed -i 's/#ListenAddress 0.0.0.0/ListenAddress 0.0.0.0/' /etc/ssh/sshd_config || true
+    sed -i 's/#ListenAddress ::/ListenAddress ::/' /etc/ssh/sshd_config || true
+    sed -i '/^#AddressFamily\|AddressFamily/c AddressFamily any' /etc/ssh/sshd_config || true
+    sed -i '/^#UsePAM\|UsePAM/c #UsePAM no' /etc/ssh/sshd_config || true
+    sed -E -i 's/preserve_hostname:[[:space:]]*false/preserve_hostname: true/g' /etc/cloud/cloud.cfg || true
+    sed -E -i 's/disable_root:[[:space:]]*true/disable_root: false/g' /etc/cloud/cloud.cfg || true
+    sed -E -i 's/ssh_pwauth:[[:space:]]*false/ssh_pwauth:   true/g' /etc/cloud/cloud.cfg || true
+    # other config
+    /usr/sbin/sshd || true
+    rc-update add sshd default || true
+    /etc/init.d/cron enable || true
+    /etc/init.d/cron start || true
+    grep -q '^PermitRootLogin yes' /etc/ssh/sshd_config || echo "PermitRootLogin yes" >> /etc/ssh/sshd_config || truez
+    echo -e "Related repo https://github.com/oneclickvirt/lxc_amd64_images\n--by https://t.me/spiritlhl" >> /etc/motd || true
+    echo -e "Related repo https://github.com/oneclickvirt/lxc_amd64_images\n--by https://t.me/spiritlhl" >> /etc/banner || true
+    
+  types:
+  - container
+  variants:
+  - cloud
+  - default
 - trigger: post-files
   action: |-
     #!/bin/sh
