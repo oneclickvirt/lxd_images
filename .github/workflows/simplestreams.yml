@@ -3,122 +3,127 @@ name: Build LXD Simplestreams
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 23 * * *'
+    - cron: "0 23 * * *"
 
 jobs:
   build-simplestreams:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y python3 python3-pip snapd wget
-        sudo pip install PyYAML
-        sudo snap install lxd-imagebuilder --classic --edge
-        lxd-imagebuilder --version
-        
-    - name: Install simplestream-maintainer
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y golang git
-        git clone https://github.com/oneclickvirt/lxd-imagebuilder.git
-        cd lxd-imagebuilder/simplestream-maintainer
-        go build -o simplestream-maintainer .
-        sudo mv simplestream-maintainer /usr/local/bin/
-        simplestream-maintainer --version
-        simplestream-maintainer build -h
-
-    - name: Download assets from GitHub Release
-      run: |
-        python3 <<EOF
-        import requests, os, re, glob
-        from datetime import datetime
-        API_URL = "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
-        OUTDIR = "build/spiritlhl"
-        os.makedirs(OUTDIR, exist_ok=True)
-        r = requests.get(API_URL)
-        r.raise_for_status()
-        assets = r.json().get("assets", [])
-        seen_dirs = set()
-        dt = datetime.now().strftime("%Y%m%d_%H%M")
-        for a in assets:
-            name = a["name"]
-            url = a["browser_download_url"]
-            m = re.match(r"([a-zA-Z0-9]+)-([^-]+)-([^-]+)-([^-]+)-(rootfs|lxd)\.(squashfs|tar\.xz)", name)
-            if not m: continue
-            os_name, rel, arch, variant, t, ext = m.groups()
-            local_dir = f"{OUTDIR}/{os_name}/{rel}/{arch}/{variant}/{dt}"
-            os.makedirs(local_dir, exist_ok=True)
-            local_file = f"{local_dir}/{name}"
-            if not os.path.exists(local_file):
-                print("Downloading", url)
-                resp = requests.get(url, stream=True)
-                with open(local_file, "wb") as f:
-                    for chunk in resp.iter_content(8192):
-                        f.write(chunk)
-            if local_dir not in seen_dirs:
-                meta_file = f"{local_dir}/meta.yaml"
-                if not os.path.exists(meta_file):
-                    with open(meta_file, "w") as mf:
-                        mf.write(f"architecture: {arch}\n")
-                        mf.write(f"os: {os_name}\n")
-                        mf.write(f"release: {rel}\n")
-                        mf.write(f"variant: {variant}\n")
-                        mf.write(f"type: {t}\n")
-                        mf.write(f"created_at: {dt}\n")
-                seen_dirs.add(local_dir)
-        for d, _, _ in os.walk(OUTDIR):
-            for f in glob.glob(os.path.join(d, "*-rootfs.squashfs")):
-                os.rename(f, os.path.join(d, "rootfs.squashfs"))
-            for f in glob.glob(os.path.join(d, "*-lxd.tar.xz")):
-                os.rename(f, os.path.join(d, "lxd.tar.xz"))
-        EOF
-
-    - name: Generate SHA256SUMS for images
-      run: |
-        find build/spiritlhl -type d | while read d; do
-          cd "$d"
-          files=""
-          for f in rootfs.squashfs lxd.tar.xz; do
-            if [ -f "$f" ]; then
-              files="$files $f"
-            fi
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-pip snapd wget
+          sudo pip install PyYAML
+          # snap 安装加重试逻辑，避免因网络问题失败
+          for i in 1 2 3; do
+            sudo snap install lxd-imagebuilder --classic --edge && break
+            echo "Retrying snap install... ($i)"
+            sleep 15
           done
-          if [ -n "$files" ]; then
-            sha256sum $files > SHA256SUMS
-            echo "Generated SHA256SUMS in $d"
-          fi
-          cd - >/dev/null
-        done
+          lxd-imagebuilder --version
 
-    - name: Build simplestreams index and webpage
-      run: |
-        ls
-        simplestream-maintainer build build --build-webpage -d spiritlhl
+      - name: Install simplestream-maintainer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y golang git
+          git clone https://github.com/oneclickvirt/lxd-imagebuilder.git
+          cd lxd-imagebuilder/simplestream-maintainer
+          go build -o simplestream-maintainer .
+          sudo mv simplestream-maintainer /usr/local/bin/
+          simplestream-maintainer --version
+          simplestream-maintainer build -h
 
-    - name: Patch index.html for spiritlhl (content-only)
-      run: |
-        find build -name "index.html" | while read -r f; do
-          sed -i 's/images:/spiritlhl:/g' "$f"
-          echo "Patched $f"
-        done
+      - name: Download assets from GitHub Release
+        run: |
+          python3 <<EOF
+          import requests, os, re, glob
+          from datetime import datetime
+          API_URL = "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/processed"
+          OUTDIR = "build/spiritlhl"
+          os.makedirs(OUTDIR, exist_ok=True)
+          r = requests.get(API_URL)
+          r.raise_for_status()
+          assets = r.json().get("assets", [])
+          seen_dirs = set()
+          dt = datetime.now().strftime("%Y%m%d_%H%M")
+          for a in assets:
+              name = a["name"]
+              url = a["browser_download_url"]
+              m = re.match(r"([a-zA-Z0-9]+)-([^-]+)-([^-]+)-([^-]+)-(rootfs|lxd)\.(squashfs|tar\.xz)", name)
+              if not m: continue
+              os_name, rel, arch, variant, t, ext = m.groups()
+              local_dir = f"{OUTDIR}/{os_name}/{rel}/{arch}/{variant}/{dt}"
+              os.makedirs(local_dir, exist_ok=True)
+              local_file = f"{local_dir}/{name}"
+              if not os.path.exists(local_file):
+                  print("Downloading", url)
+                  resp = requests.get(url, stream=True)
+                  with open(local_file, "wb") as f:
+                      for chunk in resp.iter_content(8192):
+                          f.write(chunk)
+              if local_dir not in seen_dirs:
+                  meta_file = f"{local_dir}/meta.yaml"
+                  if not os.path.exists(meta_file):
+                      with open(meta_file, "w") as mf:
+                          mf.write(f"architecture: {arch}\n")
+                          mf.write(f"os: {os_name}\n")
+                          mf.write(f"release: {rel}\n")
+                          mf.write(f"variant: {variant}\n")
+                          mf.write(f"type: {t}\n")
+                          mf.write(f"created_at: {dt}\n")
+                  seen_dirs.add(local_dir)
+          for d, _, _ in os.walk(OUTDIR):
+              for f in glob.glob(os.path.join(d, "*-rootfs.squashfs")):
+                  os.rename(f, os.path.join(d, "rootfs.squashfs"))
+              for f in glob.glob(os.path.join(d, "*-lxd.tar.xz")):
+                  os.rename(f, os.path.join(d, "lxd.tar.xz"))
+          EOF
 
-    - name: List build contents
-      run: |
-        wget https://raw.githubusercontent.com/oneclickvirt/lxd_images/refs/heads/main/back/google9217a97bfdec3a8f.html -O ./build/google9217a97bfdec3a8f.html
-        chmod 777 ./build/google9217a97bfdec3a8f.html
-        echo "Build directory contents:"
-        find build -type f | head -30
+      - name: Generate SHA256SUMS for images
+        run: |
+          find build/spiritlhl -type d | while read d; do
+            cd "$d"
+            files=""
+            for f in rootfs.squashfs lxd.tar.xz; do
+              if [ -f "$f" ]; then
+                files="$files $f"
+              fi
+            done
+            if [ -n "$files" ]; then
+              sha256sum $files > SHA256SUMS
+              echo "Generated SHA256SUMS in $d"
+            fi
+            cd - >/dev/null
+          done
 
-    - name: Deploy to Netlify
-      uses: nwtgck/actions-netlify@v3.0
-      with:
-        publish-dir: './build'
-        production-branch: main
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-      env:
-        NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-        NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      - name: Build simplestreams index and webpage
+        run: |
+          ls
+          simplestream-maintainer build build --build-webpage -d spiritlhl
+
+      - name: Patch index.html for spiritlhl (content-only)
+        run: |
+          find build -name "index.html" | while read -r f; do
+            sed -i 's/images:/spiritlhl:/g' "$f"
+            echo "Patched $f"
+          done
+
+      - name: List build contents
+        run: |
+          wget https://raw.githubusercontent.com/oneclickvirt/lxd_images/refs/heads/main/back/google9217a97bfdec3a8f.html -O ./build/google9217a97bfdec3a8f.html
+          chmod 777 ./build/google9217a97bfdec3a8f.html
+          echo "Build directory contents:"
+          find build -type f | head -30
+
+      - name: Deploy to Netlify
+        uses: nwtgck/actions-netlify@v3.0
+        with:
+          publish-dir: "./build"
+          production-branch: main
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}

@@ -2,7 +2,7 @@ name: Multi-Distro Images Build
 
 on:
   schedule:
-    - cron: '0 4 * * *'
+    - cron: "0 4 * * *"
   workflow_dispatch:
 
 jobs:
@@ -13,9 +13,21 @@ jobs:
       fail-fast: false
       max-parallel: 6
       matrix:
-        distro: ["debian", "kali", "almalinux", "rockylinux", 
-                "fedora", "opensuse", "alpine", "archlinux", "gentoo",
-                "oracle", "openeuler", "ubuntu"]
+        distro:
+          [
+            "debian",
+            "kali",
+            "almalinux",
+            "rockylinux",
+            "fedora",
+            "opensuse",
+            "alpine",
+            "archlinux",
+            "gentoo",
+            "oracle",
+            "openeuler",
+            "ubuntu",
+          ]
         # distro: [ "oracle", "fedora", "alpine", "openwrt", "centos"]
         arch:
           - name: amd64
@@ -32,86 +44,86 @@ jobs:
     timeout-minutes: 120
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Check workspace
-      run: pwd
+      - name: Check workspace
+        run: pwd
 
-    - name: Build environment
-      run: |
-        sudo apt update -y
-        sudo apt install -y polkit || sudo apt install -y policykit-1
-        sudo apt install -y jq
-        
-    - name: Configure Git Identity
-      run: |
-        git config --global user.name "daily-update"
-        git config --global user.email "tg@spiritlhl.top"
+      - name: Build environment
+        run: |
+          sudo apt update -y
+          sudo apt install -y polkit || sudo apt install -y policykit-1
+          sudo apt install -y jq
 
-    - name: Build and Upload Images
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        set +e  # 禁止错误退出
-        # set -eo pipefail
-        # 获取构建参数
-        DISTRO="${{ matrix.distro }}"
-        ARCH="${{ matrix.arch.name }}"
-        echo "Processing $DISTRO for $ARCH architecture"
-        # 首次运行获取文件名列表
-        echo "---zip_name_list---"
-        output=$(bash build_images.sh $DISTRO false $ARCH | tail -n 1)
-        zip_name_list=($output)  # 让shell自动按空格分割
-        echo "---zip_name_list---"
-        for item in "${zip_name_list[@]}"; do
-          echo "$item"
-        done
-        echo "-------"
-        # 获取或创建Release
-        release_response=$(curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
-          -H "Accept: application/vnd.github.v3+json" \
-          "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/$DISTRO" || true)
-        if [ "$(jq -r '.id' <<< "$release_response")" == "null" ]; then
-          echo "Creating new release for $DISTRO"
-          release_response=$(curl -sS -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+      - name: Configure Git Identity
+        run: |
+          git config --global user.name "daily-update"
+          git config --global user.email "tg@spiritlhl.top"
+
+      - name: Build and Upload Images
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e  # 禁止错误退出
+          # set -eo pipefail
+          # 获取构建参数
+          DISTRO="${{ matrix.distro }}"
+          ARCH="${{ matrix.arch.name }}"
+          echo "Processing $DISTRO for $ARCH architecture"
+          # 首次运行获取文件名列表
+          echo "---zip_name_list---"
+          output=$(bash build_images.sh $DISTRO false $ARCH | tail -n 1)
+          zip_name_list=($output)  # 让shell自动按空格分割
+          echo "---zip_name_list---"
+          for item in "${zip_name_list[@]}"; do
+            echo "$item"
+          done
+          echo "-------"
+          # 获取或创建Release
+          release_response=$(curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
-            -d '{"tag_name":"'"$DISTRO"'", "name":"'"$DISTRO Images"'", "generate_release_notes":true}' \
-            "https://api.github.com/repos/oneclickvirt/lxd_images/releases" || true)
-        fi
-        release_id=$(jq -r '.id' <<< "$release_response")
-        # 执行实际构建
-        echo "Building $DISTRO and packaging zips for $ARCH"
-        sudo bash build_images.sh $DISTRO true $ARCH || true
-        echo "------------"
-        pwd
-        du -sh *
-        echo "------------"
-        # 处理构建产物
-        for file in "${zip_name_list[@]}"; do
-          if [ -f "$file" ] && [ $(stat -c %s "$file") -gt 10485760 ]; then
-            echo "Processing $file (size: $(numfmt --to=iec-i --suffix=B $(stat -c %s "$file")))"
-            # 检查现有资产
-            asset_name=$(basename "$file")
-            existing_asset=$(curl -sS -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/oneclickvirt/lxd_images/releases/$release_id/assets" \
-              | jq -r --arg name "$asset_name" '.[] | select(.name == $name)')
-            # 删除已存在的资产
-            if [ -n "$existing_asset" ]; then
-              asset_id=$(jq -r '.id' <<< "$existing_asset")
-              echo "Removing existing asset ID $asset_id"
-              curl -sS -X DELETE -H "Authorization: Bearer $GITHUB_TOKEN" \
-                "https://api.github.com/repos/oneclickvirt/lxd_images/releases/assets/$asset_id" || true
-            fi
-            # 上传新资产
-            echo "Uploading $asset_name..."
-            curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
-              -H "Content-Type: application/zip" \
-              --data-binary @"$file" \
-              "https://uploads.github.com/repos/oneclickvirt/lxd_images/releases/$release_id/assets?name=$asset_name" || true
-            sudo rm -vf "$file"
-          else
-            echo "Skipping $file - does not exist or size <10MB"
-            [ -f "$file" ] && rm -vf "$file"
+            "https://api.github.com/repos/oneclickvirt/lxd_images/releases/tags/$DISTRO" || true)
+          if [ "$(jq -r '.id' <<< "$release_response")" == "null" ]; then
+            echo "Creating new release for $DISTRO"
+            release_response=$(curl -sS -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -d '{"tag_name":"'"$DISTRO"'", "name":"'"$DISTRO Images"'", "generate_release_notes":true}' \
+              "https://api.github.com/repos/oneclickvirt/lxd_images/releases" || true)
           fi
-        done
-      # continue-on-error: true
+          release_id=$(jq -r '.id' <<< "$release_response")
+          # 执行实际构建
+          echo "Building $DISTRO and packaging zips for $ARCH"
+          sudo bash build_images.sh $DISTRO true $ARCH || true
+          echo "------------"
+          pwd
+          du -sh *
+          echo "------------"
+          # 处理构建产物
+          for file in "${zip_name_list[@]}"; do
+            if [ -f "$file" ] && [ $(stat -c %s "$file") -gt 10485760 ]; then
+              echo "Processing $file (size: $(numfmt --to=iec-i --suffix=B $(stat -c %s "$file")))"
+              # 检查现有资产
+              asset_name=$(basename "$file")
+              existing_asset=$(curl -sS -H "Accept: application/vnd.github.v3+json" \
+                "https://api.github.com/repos/oneclickvirt/lxd_images/releases/$release_id/assets" \
+                | jq -r --arg name "$asset_name" '.[] | select(.name == $name)')
+              # 删除已存在的资产
+              if [ -n "$existing_asset" ]; then
+                asset_id=$(jq -r '.id' <<< "$existing_asset")
+                echo "Removing existing asset ID $asset_id"
+                curl -sS -X DELETE -H "Authorization: Bearer $GITHUB_TOKEN" \
+                  "https://api.github.com/repos/oneclickvirt/lxd_images/releases/assets/$asset_id" || true
+              fi
+              # 上传新资产
+              echo "Uploading $asset_name..."
+              curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Content-Type: application/zip" \
+                --data-binary @"$file" \
+                "https://uploads.github.com/repos/oneclickvirt/lxd_images/releases/$release_id/assets?name=$asset_name" || true
+              sudo rm -vf "$file"
+            else
+              echo "Skipping $file - does not exist or size <10MB"
+              [ -f "$file" ] && rm -vf "$file"
+            fi
+          done
+        # continue-on-error: true

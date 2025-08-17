@@ -2,7 +2,7 @@ name: simplestreams_pre_build
 
 on:
   schedule:
-      - cron: '0 18 * * *'
+    - cron: "0 18 * * *"
   workflow_dispatch:
 
 jobs:
@@ -130,7 +130,7 @@ jobs:
           mkdir -p work
           cd work
           echo "[]" > processed_assets.json
-          
+
           jq -r '.[] | @base64' /tmp/files_to_upload.json | while IFS= read -r encoded_file; do
             if [ -z "$encoded_file" ]; then
               continue

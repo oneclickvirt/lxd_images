@@ -2,7 +2,7 @@ name: Run LXD Tests
 
 on:
   schedule:
-    - cron: '0 4 2-30/2 * *'
+    - cron: "0 4 2-30/2 * *"
   workflow_dispatch:
 
 jobs:
@@ -17,26 +17,26 @@ jobs:
           # 下载两个平台的镜像列表
           curl -o x86_64_all_images.txt https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/x86_64_all_images.txt
           curl -o arm64_all_images.txt https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/arm64_all_images.txt
-          
+
           echo "构建测试矩阵..."
           matrix_json="{\"include\":["
-          
+
           while IFS= read -r image; do
             if [[ -n "$image" ]]; then
               matrix_json+="{\"image\":\"$image\",\"arch\":\"amd64\",\"runner\":\"ubuntu-latest\"},"
             fi
           done < x86_64_all_images.txt
-          
+
           while IFS= read -r image; do
             if [[ -n "$image" ]]; then
               matrix_json+="{\"image\":\"$image\",\"arch\":\"arm64\",\"runner\":\"ubuntu-24.04-arm\"},"
             fi
           done < arm64_all_images.txt
-          
+
           # 去掉最后一个逗号
           matrix_json=${matrix_json%,}
           matrix_json+="]}"
-          
+
           echo "matrix=$matrix_json" >> "$GITHUB_OUTPUT"
 
   test-single-image:
