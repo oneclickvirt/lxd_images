@@ -1,10 +1,11 @@
 #!/bin/bash
 # from https://github.com/oneclickvirt/lxd_images
 # Thanks https://images.lxd.canonical.com/
-# 2025.08.17
+# 2025.08.13
 
 BASE_URL="https://images.lxd.canonical.com/images"
-SAVE_DIR="/home/runner/work/lxd_images/lxd_images/images_yaml"
+CURRENT_DIR=$(pwd)
+SAVE_DIR="$CURRENT_DIR/images_yaml"
 
 # 创建保存目录
 mkdir -p "$SAVE_DIR"
@@ -56,7 +57,7 @@ for SYS in "${!LATEST_YAML[@]}"; do
     fi
 done
 
-cd /home/runner/work/lxd_images/lxd_images/images_yaml/
+cd "$SAVE_DIR"
 
 # 修改 YAML 文件的函数
 modify_yaml_file() {
@@ -84,7 +85,7 @@ modify_yaml_file() {
     
     # 添加脚本内容
     if [ "$use_bash_insert" = "true" ]; then
-        insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text 2>/dev/null || echo "# bash_insert_content.text not found")
+        insert_content_2=$(cat "$CURRENT_DIR/bash_insert_content.text" 2>/dev/null || echo "# bash_insert_content.text not found")
         if grep -q "mappings:" "$file_name"; then
             line_number=$(($(wc -l <"$file_name") - 2))
             head -n $line_number "$file_name" >temp.yaml
@@ -99,7 +100,7 @@ modify_yaml_file() {
             mv temp.yaml "$file_name"
         fi
     else
-        insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/sh_insert_content.text 2>/dev/null || echo "# sh_insert_content.text not found")
+        insert_content_2=$(cat "$CURRENT_DIR/sh_insert_content.text" 2>/dev/null || echo "# sh_insert_content.text not found")
         if grep -q "mappings:" "$file_name"; then
             line_number=$(($(wc -l <"$file_name") - 2))
             head -n $line_number "$file_name" >temp.yaml
@@ -158,7 +159,7 @@ modify_yaml_file "opensuse.yaml" "- vim-minimal" "    - curl\n    - wget\n    - 
 # OpenEuler 系统修改
 modify_yaml_file "openeuler.yaml" "- vim-minimal" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie" "true"
 
-cd /home/runner/work/lxd_images/lxd_images
+cd "$CURRENT_DIR"
 
 build_or_list_images() {
     local versions=()
