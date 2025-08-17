@@ -3,67 +3,45 @@
 # Thanks https://images.lxd.canonical.com/
 # 2025.08.17
 
-BASE_URL="https://images.lxd.canonical.com/images"
+BASE_URL="https://images.linuxcontainers.org/images"
 CURRENT_DIR=$(pwd)
 SAVE_DIR="$CURRENT_DIR/images_yaml"
 
 mkdir -p "$SAVE_DIR"
 
-parse_links() {
-    local html_content="$1"
-    echo "$html_content" | grep -oP '(?<=<a href=")[^"]+(?=">)' | grep '/$' | sed 's:/$::' | sort -u
-    if [ ${PIPESTATUS[0]} -ne 0 ] || [ -z "$(echo "$html_content" | grep -oP '(?<=<a href=")[^"]+(?=">)' | grep '/$')" ]; then
-        echo "$html_content" | grep -oP '(?<=href=")[^"]+' | grep '/$' | sed 's:/$::' | sort -u
-    fi
-}
+echo "Fetching image data from simplestreams..."
+IMAGES_JSON=$(curl -s "https://images.linuxcontainers.org/streams/v1/images.json")
 
-echo "Fetching system list..."
-SYSTEMS_HTML=$(curl -s "$BASE_URL/")
-SYSTEMS=$(parse_links "$SYSTEMS_HTML")
+if [ -z "$IMAGES_JSON" ]; then
+    echo "Failed to fetch images.json"
+    exit 1
+fi
+
 declare -A LATEST_YAML
 
-if [ -z "$SYSTEMS" ]; then
-    echo "Failed to fetch systems list. Trying direct system names..."
-    SYSTEMS="debian ubuntu kali centos almalinux rockylinux oracle archlinux fedora alpine openwrt opensuse openeuler gentoo"
-fi
+SYSTEMS="debian ubuntu kali centos almalinux rockylinux oracle archlinux fedora alpine openwrt opensuse openeuler gentoo"
 
 for SYSTEM in $SYSTEMS; do
     echo "Processing: $SYSTEM"
-    VERSIONS_HTML=$(curl -s "$BASE_URL/$SYSTEM/")
-    VERSIONS=$(parse_links "$VERSIONS_HTML")
-    LATEST_VERSION=$(echo "$VERSIONS" | sort -V | tail -n1)
-    if [ -n "$LATEST_VERSION" ]; then
-        ARCHES_HTML=$(curl -s "$BASE_URL/$SYSTEM/$LATEST_VERSION/")
-        ARCHES=$(parse_links "$ARCHES_HTML")
-        if echo "$ARCHES" | grep -q '^amd64$'; then
-            PROFILES_HTML=$(curl -s "$BASE_URL/$SYSTEM/$LATEST_VERSION/amd64/")
-            PROFILES=$(parse_links "$PROFILES_HTML")
-            if echo "$PROFILES" | grep -q '^default$'; then
-                PROFILE="default"
-            elif echo "$PROFILES" | grep -q '^cloud$'; then
-                PROFILE="cloud"
-            else
-                PROFILE=$(echo "$PROFILES" | sort -V | tail -n1)
-            fi
-            if [ -n "$PROFILE" ]; then
-                DATES_HTML=$(curl -s "$BASE_URL/$SYSTEM/$LATEST_VERSION/amd64/$PROFILE/")
-                DATES=$(parse_links "$DATES_HTML")
-                LATEST_DATE=$(echo "$DATES" | sort -V | tail -n1)
-                if [ -n "$LATEST_DATE" ]; then
-                    YAML_URL="$BASE_URL/$SYSTEM/$LATEST_VERSION/amd64/$PROFILE/$LATEST_DATE/image.yaml"
-                    LATEST_YAML[$SYSTEM]="$YAML_URL"
-                    echo "Found: $SYSTEM -> $YAML_URL"
-                else
-                    echo "No dates found for $SYSTEM"
-                fi
-            else
-                echo "No profiles found for $SYSTEM"
-            fi
+    
+    LATEST_TIMESTAMP=$(echo "$IMAGES_JSON" | jq -r ".products | to_entries[] | select(.key | test(\"^$SYSTEM:\")) | select(.key | contains(\":amd64:\")) | select(.key | contains(\":cloud\") or contains(\":default\")) | .value.versions | to_entries[] | .key" | sort | tail -n1)
+    
+    if [ -n "$LATEST_TIMESTAMP" ]; then
+        PRODUCT_KEY=$(echo "$IMAGES_JSON" | jq -r ".products | to_entries[] | select(.key | test(\"^$SYSTEM:\")) | select(.key | contains(\":amd64:\")) | select(.key | contains(\":cloud\") or contains(\":default\")) | select(.value.versions | has(\"$LATEST_TIMESTAMP\")) | .key" | head -n1)
+        
+        if [ -n "$PRODUCT_KEY" ]; then
+            VERSION=$(echo "$PRODUCT_KEY" | cut -d':' -f2)
+            ARCH=$(echo "$PRODUCT_KEY" | cut -d':' -f3)
+            VARIANT=$(echo "$PRODUCT_KEY" | cut -d':' -f4)
+            
+            YAML_URL="$BASE_URL/$SYSTEM/$VERSION/$ARCH/$VARIANT/$LATEST_TIMESTAMP/image.yaml"
+            LATEST_YAML[$SYSTEM]="$YAML_URL"
+            echo "Found: $SYSTEM -> $YAML_URL"
         else
-            echo "No amd64 architecture found for $SYSTEM"
+            echo "No product key found for $SYSTEM"
         fi
     else
-        echo "No versions found for $SYSTEM"
+        echo "No timestamps found for $SYSTEM"
     fi
 done
 
@@ -210,7 +188,7 @@ build_or_list_images() {
 
 get_versions() {
     local system=$1
-    local url="https://images.lxd.canonical.com/images/$system/"
+    local url="https://images.linuxcontainers.org/images/$system/"
     versions=$(curl -s "$url" | grep -oE '>[0-9]+\.[0-9]+/?<' | sed 's/[><]//g' | sed 's#/$##' | tr '\n' ' ')
     echo "$versions"
 }
