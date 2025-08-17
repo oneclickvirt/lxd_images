@@ -1,10 +1,14 @@
 #!/bin/bash
 # from https://github.com/oneclickvirt/lxd_images
 # Thanks https://images.lxd.canonical.com/
-# 2025.01.31
+# 2025.08.17
 
 BASE_URL="https://images.lxd.canonical.com/images"
 SAVE_DIR="/home/runner/work/lxd_images/lxd_images/images_yaml"
+
+# 创建保存目录
+mkdir -p "$SAVE_DIR"
+
 # 获取系统列表
 echo "Fetching system list..."
 SYSTEMS=$(curl -s "$BASE_URL/" | grep -oP '(?<=href=")[^"]+' | grep '/$' | sed 's:/$::')
@@ -46,168 +50,190 @@ done
 echo "All YAML files downloaded successfully."
 
 cd /home/runner/work/lxd_images/lxd_images/images_yaml/
+
+# 通用函数：检查并添加包到 packages 部分
+add_packages_if_not_exists() {
+    local yaml_file="$1"
+    local insert_after="$2"
+    local packages="$3"
+    
+    # 检查是否已经添加过这些包
+    if grep -q "curl" "$yaml_file" && grep -q "wget" "$yaml_file" && grep -q "openssh-server" "$yaml_file"; then
+        echo "Packages already added to $yaml_file, skipping..."
+        return 0
+    fi
+    
+    # 添加包
+    sed -i "/$insert_after/ a\\$packages" "$yaml_file"
+}
+
+# 通用函数：添加配置内容到文件末尾（如果不存在）
+add_config_if_not_exists() {
+    local yaml_file="$1"
+    local content_file="$2"
+    local lines_from_end="$3"
+    
+    # 检查是否已经添加过配置（通过检查特定标识）
+    if grep -q "root:root" "$yaml_file" || grep -q "PermitRootLogin yes" "$yaml_file"; then
+        echo "Configuration already added to $yaml_file, skipping..."
+        return 0
+    fi
+    
+    local insert_content=$(cat "$content_file")
+    local line_number=$(($(wc -l <"$yaml_file") - $lines_from_end))
+    head -n $line_number "$yaml_file" >temp.yaml
+    echo "$insert_content" >>temp.yaml
+    tail -n $lines_from_end "$yaml_file" >>temp.yaml
+    mv temp.yaml "$yaml_file"
+}
+
+# 通用函数：直接添加配置到文件末尾（如果不存在）
+add_config_to_end_if_not_exists() {
+    local yaml_file="$1"
+    local content_file="$2"
+    
+    # 检查是否已经添加过配置
+    if grep -q "root:root" "$yaml_file" || grep -q "PermitRootLogin yes" "$yaml_file"; then
+        echo "Configuration already added to $yaml_file, skipping..."
+        return 0
+    fi
+    
+    local insert_content=$(cat "$content_file")
+    cat "$yaml_file" >temp.yaml
+    echo "" >>temp.yaml
+    echo "$insert_content" >>temp.yaml
+    mv temp.yaml "$yaml_file"
+}
+
 # debian
-chmod 777 debian.yaml
-insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cron"
-sed -i "/- vim/ a\\$insert_content_1" debian.yaml
-insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-line_number=$(($(wc -l <debian.yaml) - 2))
-head -n $line_number debian.yaml >temp.yaml
-echo "$insert_content_2" >>temp.yaml
-tail -n 2 debian.yaml >>temp.yaml
-mv temp.yaml debian.yaml
-sed -i -e '/mappings:/i \ ' debian.yaml
+if [ -f "debian.yaml" ]; then
+    chmod 777 debian.yaml
+    insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cron"
+    add_packages_if_not_exists "debian.yaml" "- vim" "$insert_content_1"
+    add_config_if_not_exists "debian.yaml" "/home/runner/work/lxd_images/lxd_images/bash_insert_content.text" 2
+    sed -i -e '/mappings:/i \ ' debian.yaml
+fi
 
 # ubuntu
-chmod 777 ubuntu.yaml
-insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cron"
-sed -i "/- vim/ a\\$insert_content_1" ubuntu.yaml
-insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-line_number=$(($(wc -l <ubuntu.yaml) - 2))
-head -n $line_number ubuntu.yaml >temp.yaml
-echo "$insert_content_2" >>temp.yaml
-tail -n 2 ubuntu.yaml >>temp.yaml
-mv temp.yaml ubuntu.yaml
-sed -i -e '/mappings:/i \ ' ubuntu.yaml
+if [ -f "ubuntu.yaml" ]; then
+    chmod 777 ubuntu.yaml
+    insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cron"
+    add_packages_if_not_exists "ubuntu.yaml" "- vim" "$insert_content_1"
+    add_config_if_not_exists "ubuntu.yaml" "/home/runner/work/lxd_images/lxd_images/bash_insert_content.text" 2
+    sed -i -e '/mappings:/i \ ' ubuntu.yaml
+fi
 
 # kali
-chmod 777 kali.yaml
-insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cron"
-sed -i "/- systemd/ a\\$insert_content_1" kali.yaml
-insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-line_number=$(($(wc -l <kali.yaml) - 2))
-head -n $line_number kali.yaml >temp.yaml
-echo "$insert_content_2" >>temp.yaml
-tail -n 2 kali.yaml >>temp.yaml
-mv temp.yaml kali.yaml
-sed -i -e '/mappings:/i \ ' kali.yaml
+if [ -f "kali.yaml" ]; then
+    chmod 777 kali.yaml
+    insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cron"
+    add_packages_if_not_exists "kali.yaml" "- systemd" "$insert_content_1"
+    add_config_if_not_exists "kali.yaml" "/home/runner/work/lxd_images/lxd_images/bash_insert_content.text" 2
+    sed -i -e '/mappings:/i \ ' kali.yaml
+fi
 
 # centos
-chmod 777 centos.yaml
-# epel-relase 不可用 cron 不可用
-insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
-sed -i "/- vim-minimal/ a\\$insert_content_1" centos.yaml
-insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-cat centos.yaml >temp.yaml
-echo "" >>temp.yaml
-echo "$insert_content_2" >>temp.yaml
-mv temp.yaml centos.yaml
+if [ -f "centos.yaml" ]; then
+    chmod 777 centos.yaml
+    # epel-relase 不可用 cron 不可用
+    insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
+    add_packages_if_not_exists "centos.yaml" "- vim-minimal" "$insert_content_1"
+    add_config_to_end_if_not_exists "centos.yaml" "/home/runner/work/lxd_images/lxd_images/bash_insert_content.text"
+fi
 
 # almalinux
-chmod 777 almalinux.yaml
-# cron 不可用
-insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
-sed -i "/- vim-minimal/ a\\$insert_content_1" almalinux.yaml
-insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-cat almalinux.yaml >temp.yaml
-echo "" >>temp.yaml
-echo "$insert_content_2" >>temp.yaml
-mv temp.yaml almalinux.yaml
+if [ -f "almalinux.yaml" ]; then
+    chmod 777 almalinux.yaml
+    # cron 不可用
+    insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
+    add_packages_if_not_exists "almalinux.yaml" "- vim-minimal" "$insert_content_1"
+    add_config_to_end_if_not_exists "almalinux.yaml" "/home/runner/work/lxd_images/lxd_images/bash_insert_content.text"
+fi
 
 # rockylinux
-chmod 777 rockylinux.yaml
-# cron 不可用
-insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
-sed -i "/- vim-minimal/ a\\$insert_content_1" rockylinux.yaml
-insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-cat rockylinux.yaml >temp.yaml
-echo "" >>temp.yaml
-echo "$insert_content_2" >>temp.yaml
-mv temp.yaml rockylinux.yaml
+if [ -f "rockylinux.yaml" ]; then
+    chmod 777 rockylinux.yaml
+    # cron 不可用
+    insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
+    add_packages_if_not_exists "rockylinux.yaml" "- vim-minimal" "$insert_content_1"
+    add_config_to_end_if_not_exists "rockylinux.yaml" "/home/runner/work/lxd_images/lxd_images/bash_insert_content.text"
+fi
 
 # oracle
-chmod 777 oracle.yaml
-# cron 不可用
-insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
-sed -i "/- vim-minimal/ a\\$insert_content_1" oracle.yaml
-insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-cat oracle.yaml >temp.yaml
-echo "" >>temp.yaml
-echo "$insert_content_2" >>temp.yaml
-mv temp.yaml oracle.yaml
+if [ -f "oracle.yaml" ]; then
+    chmod 777 oracle.yaml
+    # cron 不可用
+    insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
+    add_packages_if_not_exists "oracle.yaml" "- vim-minimal" "$insert_content_1"
+    add_config_to_end_if_not_exists "oracle.yaml" "/home/runner/work/lxd_images/lxd_images/bash_insert_content.text"
+fi
 
 # archlinux
-chmod 777 archlinux.yaml
-# cronie 不可用 cron 不可用
-insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - iptables\n    - dos2unix"
-sed -i "/- which/ a\\$insert_content_1" archlinux.yaml
-insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-line_number=$(($(wc -l <archlinux.yaml) - 2))
-head -n $line_number archlinux.yaml >temp.yaml
-echo "$insert_content_2" >>temp.yaml
-tail -n 2 archlinux.yaml >>temp.yaml
-mv temp.yaml archlinux.yaml
-sed -i -e '/mappings:/i \ ' archlinux.yaml
+if [ -f "archlinux.yaml" ]; then
+    chmod 777 archlinux.yaml
+    # cronie 不可用 cron 不可用
+    insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - iptables\n    - dos2unix"
+    add_packages_if_not_exists "archlinux.yaml" "- which" "$insert_content_1"
+    add_config_if_not_exists "archlinux.yaml" "/home/runner/work/lxd_images/lxd_images/bash_insert_content.text" 2
+    sed -i -e '/mappings:/i \ ' archlinux.yaml
+fi
 
-# # gentoo
-# chmod 777 gentoo.yaml
-# # cronie 不可用 cron 不可用
-# insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - iptables\n    - dos2unix"
-# sed -i "/- sudo/ a\\$insert_content_1" gentoo.yaml
-# insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-# line_number=$(($(wc -l < gentoo.yaml) - 3))
-# head -n $line_number gentoo.yaml > temp.yaml
-# echo "$insert_content_2" >> temp.yaml
-# tail -n 3 gentoo.yaml >> temp.yaml
-# mv temp.yaml gentoo.yaml
-# sed -i -e '/environment:/i \ ' gentoo.yaml
-# sed -i 's/- default/- openrc/g' gentoo.yaml
+# gentoo (注释部分保持原样)
+# if [ -f "gentoo.yaml" ]; then
+#     chmod 777 gentoo.yaml
+#     # cronie 不可用 cron 不可用
+#     insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - iptables\n    - dos2unix"
+#     add_packages_if_not_exists "gentoo.yaml" "- sudo" "$insert_content_1"
+#     add_config_if_not_exists "gentoo.yaml" "/home/runner/work/lxd_images/lxd_images/bash_insert_content.text" 3
+#     sed -i -e '/environment:/i \ ' gentoo.yaml
+#     sed -i 's/- default/- openrc/g' gentoo.yaml
+# fi
 
 # fedora
-chmod 777 fedora.yaml
-# cron 不可用
-insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
-sed -i "/- xz/ a\\$insert_content_1" fedora.yaml
-insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-cat fedora.yaml >temp.yaml
-echo "" >>temp.yaml
-echo "$insert_content_2" >>temp.yaml
-mv temp.yaml fedora.yaml
+if [ -f "fedora.yaml" ]; then
+    chmod 777 fedora.yaml
+    # cron 不可用
+    insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
+    add_packages_if_not_exists "fedora.yaml" "- xz" "$insert_content_1"
+    add_config_to_end_if_not_exists "fedora.yaml" "/home/runner/work/lxd_images/lxd_images/bash_insert_content.text"
+fi
 
 # alpine
-chmod 777 alpine.yaml
-# cronie 不可用 cron 不可用
-insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - openssh-keygen\n    - cronie\n    - iptables\n    - dos2unix"
-sed -i "/- doas/ a\\$insert_content_1" alpine.yaml
-insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/sh_insert_content.text)
-line_number=$(($(wc -l <alpine.yaml) - 2))
-head -n $line_number alpine.yaml >temp.yaml
-echo "$insert_content_2" >>temp.yaml
-tail -n 2 alpine.yaml >>temp.yaml
-mv temp.yaml alpine.yaml
-sed -i -e '/mappings:/i \ ' alpine.yaml
+if [ -f "alpine.yaml" ]; then
+    chmod 777 alpine.yaml
+    # cronie 不可用 cron 不可用
+    insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - openssh-keygen\n    - cronie\n    - iptables\n    - dos2unix"
+    add_packages_if_not_exists "alpine.yaml" "- doas" "$insert_content_1"
+    add_config_if_not_exists "alpine.yaml" "/home/runner/work/lxd_images/lxd_images/sh_insert_content.text" 2
+    sed -i -e '/mappings:/i \ ' alpine.yaml
+fi
 
 # openwrt
-chmod 777 openwrt.yaml
-# cronie 不可用 cron 不可用
-insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - openssh-keygen\n    - iptables"
-sed -i "/- sudo/ a\\$insert_content_1" openwrt.yaml
-insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/sh_insert_content.text)
-cat openwrt.yaml >temp.yaml
-echo "$insert_content_2" >>temp.yaml
-mv temp.yaml openwrt.yaml
+if [ -f "openwrt.yaml" ]; then
+    chmod 777 openwrt.yaml
+    # cronie 不可用 cron 不可用
+    insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - openssh-keygen\n    - iptables"
+    add_packages_if_not_exists "openwrt.yaml" "- sudo" "$insert_content_1"
+    add_config_to_end_if_not_exists "openwrt.yaml" "/home/runner/work/lxd_images/lxd_images/sh_insert_content.text"
+fi
 
 # opensuse
-chmod 777 opensuse.yaml
-# cron 不可用
-insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
-sed -i "/- vim-minimal/ a\\$insert_content_1" opensuse.yaml
-insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-cat opensuse.yaml >temp.yaml
-echo "" >>temp.yaml
-echo "$insert_content_2" >>temp.yaml
-mv temp.yaml opensuse.yaml
+if [ -f "opensuse.yaml" ]; then
+    chmod 777 opensuse.yaml
+    # cron 不可用
+    insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
+    add_packages_if_not_exists "opensuse.yaml" "- vim-minimal" "$insert_content_1"
+    add_config_to_end_if_not_exists "opensuse.yaml" "/home/runner/work/lxd_images/lxd_images/bash_insert_content.text"
+fi
 
 # openeuler
-chmod 777 openeuler.yaml
-# cron 不可用
-insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
-sed -i "/- vim-minimal/ a\\$insert_content_1" openeuler.yaml
-insert_content_2=$(cat /home/runner/work/lxd_images/lxd_images/bash_insert_content.text)
-cat openeuler.yaml >temp.yaml
-echo "" >>temp.yaml
-echo "$insert_content_2" >>temp.yaml
-mv temp.yaml openeuler.yaml
+if [ -f "openeuler.yaml" ]; then
+    chmod 777 openeuler.yaml
+    # cron 不可用
+    insert_content_1="    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie"
+    add_packages_if_not_exists "openeuler.yaml" "- vim-minimal" "$insert_content_1"
+    add_config_to_end_if_not_exists "openeuler.yaml" "/home/runner/work/lxd_images/lxd_images/bash_insert_content.text"
+fi
 
 cd /home/runner/work/lxd_images/lxd_images
 
@@ -266,6 +292,9 @@ process_file() {
         sed -i '/^$/d' "$file"
     fi
 }
+
+# 在开始构建之前清理旧的文件列表
+rm -f x86_64_all_images.txt arm64_all_images.txt
 
 # 不同发行版的配置
 # build_or_list_images 镜像名字 镜像版本号 variants的值
