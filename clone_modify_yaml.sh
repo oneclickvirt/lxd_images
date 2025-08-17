@@ -25,25 +25,37 @@ for SYSTEM in $SYSTEMS; do
     echo "Processing: $SYSTEM"
     LATEST_VERSION=""
     LATEST_TIMESTAMP=""
+    LATEST_PROFILE=""
     
-    while IFS= read -r line; do
-        if echo "$line" | grep -q "\"$SYSTEM/" && echo "$line" | grep -q "/amd64/"; then
-            VERSION=$(echo "$line" | sed -n "s/.*\"$SYSTEM\/\([^\/]*\)\/amd64\/.*/\1/p")
-            PROFILE="default"
-            if echo "$line" | grep -q "/cloud/"; then
-                PROFILE="cloud"
-            fi
-            TIMESTAMP=$(echo "$line" | sed -n 's/.*\/\([0-9]\{8\}_[0-9]\{4\}\)\/.*/\1/p')
+    # 从JSON中提取该系统的所有产品键
+    PRODUCT_KEYS=$(echo "$IMAGES_JSON" | grep -o "\"$SYSTEM:[^\"]*:amd64:[^\"]*\"" | sed 's/"//g')
+    
+    for PRODUCT_KEY in $PRODUCT_KEYS; do
+        # 解析产品键: system:version:arch:variant
+        IFS=':' read -ra KEY_PARTS <<< "$PRODUCT_KEY"
+        if [ ${#KEY_PARTS[@]} -eq 4 ]; then
+            VERSION="${KEY_PARTS[1]}"
+            VARIANT="${KEY_PARTS[3]}"
             
-            if [ -n "$VERSION" ] && [ -n "$TIMESTAMP" ]; then
-                if [ -z "$LATEST_TIMESTAMP" ] || [ "$TIMESTAMP" \> "$LATEST_TIMESTAMP" ]; then
-                    LATEST_VERSION="$VERSION"
-                    LATEST_TIMESTAMP="$TIMESTAMP"
-                    LATEST_PROFILE="$PROFILE"
-                fi
+            # 获取该产品的版本信息
+            VERSIONS_DATA=$(echo "$IMAGES_JSON" | jq -r ".products.\"$PRODUCT_KEY\".versions // {}" 2>/dev/null)
+            if [ "$VERSIONS_DATA" != "{}" ] && [ "$VERSIONS_DATA" != "null" ]; then
+                # 获取所有时间戳版本
+                TIMESTAMPS=$(echo "$VERSIONS_DATA" | jq -r 'keys[]' 2>/dev/null | grep -E '^[0-9]{8}_[0-9]{4}$')
+                
+                for TIMESTAMP in $TIMESTAMPS; do
+                    if [ -n "$TIMESTAMP" ]; then
+                        # 比较时间戳，找到最新的
+                        if [ -z "$LATEST_TIMESTAMP" ] || [[ "$TIMESTAMP" > "$LATEST_TIMESTAMP" ]]; then
+                            LATEST_VERSION="$VERSION"
+                            LATEST_TIMESTAMP="$TIMESTAMP"
+                            LATEST_PROFILE="$VARIANT"
+                        fi
+                    fi
+                done
             fi
         fi
-    done < <(echo "$IMAGES_JSON" | grep -o "\"[^\"]*$SYSTEM/[^\"]*" | sort -u)
+    done
     
     if [ -n "$LATEST_VERSION" ] && [ -n "$LATEST_TIMESTAMP" ]; then
         YAML_URL="$BASE_URL/$SYSTEM/$LATEST_VERSION/amd64/$LATEST_PROFILE/$LATEST_TIMESTAMP/image.yaml"
