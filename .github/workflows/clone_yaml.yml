@@ -1,47 +1,51 @@
 name: Clone Yaml
-
 on:
   schedule:
     - cron: "55 1 2-30/2 * *"
   workflow_dispatch:
-
 jobs:
   clone_yaml:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v2
-
-      - name: check path
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check path
         run: |
           pwd
-
-      - name: clone yaml
+          ls -la
+      - name: Create necessary directories
+        run: |
+          mkdir -p images_yaml
+      - name: Clone yaml
         run: |
           bash clone_modify_yaml.sh
-
       - name: Configure Git
         run: |
           git config --global user.name "daily-update"
           git config --global user.email "tg@spiritlhl.top"
-
-      - name: Add files to Git staging area
+      - name: Check for changes
+        id: changes
         run: |
-          ls
-          pwd
           git add .
-
-      - name: Check Git status
-        run: |
-          git branch -a
-          git remote -v
-          git status
-
+          if git diff --staged --quiet; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No changes detected"
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Changes detected"
+            git status
+          fi
       - name: Commit changes
+        if: steps.changes.outputs.has_changes == 'true'
         run: |
-          git commit -m "Update files" | true
-
+          git commit -m "Update YAML files - $(date '+%Y-%m-%d %H:%M:%S')"
       - name: Push changes
+        if: steps.changes.outputs.has_changes == 'true'
         uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: No changes to push
+        if: steps.changes.outputs.has_changes == 'false'
+        run: |
+          echo "No changes to commit and push"
