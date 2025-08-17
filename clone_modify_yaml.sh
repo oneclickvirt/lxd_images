@@ -1,42 +1,69 @@
 #!/bin/bash
 # from https://github.com/oneclickvirt/lxd_images
 # Thanks https://images.lxd.canonical.com/
-# 2025.08.13
+# 2025.08.17
 
 BASE_URL="https://images.lxd.canonical.com/images"
 CURRENT_DIR=$(pwd)
 SAVE_DIR="$CURRENT_DIR/images_yaml"
 
-# 创建保存目录
 mkdir -p "$SAVE_DIR"
 
-# 获取系统列表
+parse_links() {
+    local html_content="$1"
+    echo "$html_content" | grep -oP '(?<=<a href=")[^"]+(?=">)' | grep '/$' | sed 's:/$::' | sort -u
+    if [ ${PIPESTATUS[0]} -ne 0 ] || [ -z "$(echo "$html_content" | grep -oP '(?<=<a href=")[^"]+(?=">)' | grep '/$')" ]; then
+        echo "$html_content" | grep -oP '(?<=href=")[^"]+' | grep '/$' | sed 's:/$::' | sort -u
+    fi
+}
+
 echo "Fetching system list..."
-SYSTEMS=$(curl -s "$BASE_URL/" | grep -oP '(?<=href=")[^"]+' | grep '/$' | sed 's:/$::')
+SYSTEMS_HTML=$(curl -s "$BASE_URL/")
+SYSTEMS=$(parse_links "$SYSTEMS_HTML")
 declare -A LATEST_YAML
+
+if [ -z "$SYSTEMS" ]; then
+    echo "Failed to fetch systems list. Trying direct system names..."
+    SYSTEMS="debian ubuntu kali centos almalinux rockylinux oracle archlinux fedora alpine openwrt opensuse openeuler gentoo"
+fi
 
 for SYSTEM in $SYSTEMS; do
     echo "Processing: $SYSTEM"
-    VERSIONS=$(curl -s "$BASE_URL/$SYSTEM/" | grep -oP '(?<=href=")[^"]+' | grep '/$' | sed 's:/$::')
+    VERSIONS_HTML=$(curl -s "$BASE_URL/$SYSTEM/")
+    VERSIONS=$(parse_links "$VERSIONS_HTML")
     LATEST_VERSION=$(echo "$VERSIONS" | sort -V | tail -n1)
     if [ -n "$LATEST_VERSION" ]; then
-        ARCHES=$(curl -s "$BASE_URL/$SYSTEM/$LATEST_VERSION/" | grep -oP '(?<=href=")[^"]+' | grep '/$' | sed 's:/$::')
+        ARCHES_HTML=$(curl -s "$BASE_URL/$SYSTEM/$LATEST_VERSION/")
+        ARCHES=$(parse_links "$ARCHES_HTML")
         if echo "$ARCHES" | grep -q '^amd64$'; then
-            PROFILES=$(curl -s "$BASE_URL/$SYSTEM/$LATEST_VERSION/amd64/" | grep -oP '(?<=href=")[^"]+' | grep '/$' | sed 's:/$::')
+            PROFILES_HTML=$(curl -s "$BASE_URL/$SYSTEM/$LATEST_VERSION/amd64/")
+            PROFILES=$(parse_links "$PROFILES_HTML")
             if echo "$PROFILES" | grep -q '^default$'; then
                 PROFILE="default"
             elif echo "$PROFILES" | grep -q '^cloud$'; then
                 PROFILE="cloud"
             else
-                PROFILE=$(echo "$PROFILES" | sort -V | tail -n1) # 选最后一个
+                PROFILE=$(echo "$PROFILES" | sort -V | tail -n1)
             fi
             if [ -n "$PROFILE" ]; then
-                DATES=$(curl -s "$BASE_URL/$SYSTEM/$LATEST_VERSION/amd64/$PROFILE/" | grep -oP '(?<=href=")[^"]+' | grep '/$' | sed 's:/$::')
+                DATES_HTML=$(curl -s "$BASE_URL/$SYSTEM/$LATEST_VERSION/amd64/$PROFILE/")
+                DATES=$(parse_links "$DATES_HTML")
                 LATEST_DATE=$(echo "$DATES" | sort -V | tail -n1)
-                YAML_URL="$BASE_URL/$SYSTEM/$LATEST_VERSION/amd64/$PROFILE/$LATEST_DATE/image.yaml"
-                LATEST_YAML[$SYSTEM]="$YAML_URL"
+                if [ -n "$LATEST_DATE" ]; then
+                    YAML_URL="$BASE_URL/$SYSTEM/$LATEST_VERSION/amd64/$PROFILE/$LATEST_DATE/image.yaml"
+                    LATEST_YAML[$SYSTEM]="$YAML_URL"
+                    echo "Found: $SYSTEM -> $YAML_URL"
+                else
+                    echo "No dates found for $SYSTEM"
+                fi
+            else
+                echo "No profiles found for $SYSTEM"
             fi
+        else
+            echo "No amd64 architecture found for $SYSTEM"
         fi
+    else
+        echo "No versions found for $SYSTEM"
     fi
 done
 
@@ -48,10 +75,19 @@ done
 echo "Downloading YAML files..."
 for SYS in "${!LATEST_YAML[@]}"; do
     YAML_FILE="$SAVE_DIR/$SYS.yaml"
-    # 只有当文件不存在或者需要更新时才下载
+    YAML_URL="${LATEST_YAML[$SYS]}"
     if [ ! -f "$YAML_FILE" ] || [ ! -f "$YAML_FILE.modified" ]; then
-        curl -s -o "$YAML_FILE" "${LATEST_YAML[$SYS]}"
-        echo "Downloaded: $YAML_FILE"
+        echo "Downloading from: $YAML_URL"
+        if curl -s -o "$YAML_FILE" "$YAML_URL"; then
+            if [ -s "$YAML_FILE" ]; then
+                echo "Downloaded: $YAML_FILE"
+            else
+                echo "Downloaded empty file, removing: $YAML_FILE"
+                rm -f "$YAML_FILE"
+            fi
+        else
+            echo "Failed to download: $YAML_URL"
+        fi
     else
         echo "Skipped (already exists and modified): $YAML_FILE"
     fi
@@ -59,14 +95,12 @@ done
 
 cd "$SAVE_DIR"
 
-# 修改 YAML 文件的函数
 modify_yaml_file() {
     local file_name="$1"
     local insert_point="$2"
     local packages="$3"
     local use_bash_insert="$4"
     
-    # 检查文件是否已经被修改过
     if [ -f "${file_name}.modified" ]; then
         echo "Skipping ${file_name} - already modified"
         return
@@ -80,10 +114,8 @@ modify_yaml_file() {
     echo "Modifying: $file_name"
     chmod 777 "$file_name"
     
-    # 添加软件包
     sed -i "/${insert_point}/ a\\${packages}" "$file_name"
     
-    # 添加脚本内容
     if [ "$use_bash_insert" = "true" ]; then
         insert_content_2=$(cat "$CURRENT_DIR/bash_insert_content.text" 2>/dev/null || echo "# bash_insert_content.text not found")
         if grep -q "mappings:" "$file_name"; then
@@ -115,48 +147,34 @@ modify_yaml_file() {
         fi
     fi
     
-    # 创建修改标记文件
     touch "${file_name}.modified"
     echo "Modified: $file_name"
 }
 
-# Debian 系统修改
 modify_yaml_file "debian.yaml" "- vim" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cron" "true"
 
-# Ubuntu 系统修改
 modify_yaml_file "ubuntu.yaml" "- vim" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cron" "true"
 
-# Kali 系统修改
 modify_yaml_file "kali.yaml" "- systemd" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cron" "true"
 
-# CentOS 系统修改
 modify_yaml_file "centos.yaml" "- vim-minimal" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie" "true"
 
-# AlmaLinux 系统修改
 modify_yaml_file "almalinux.yaml" "- vim-minimal" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie" "true"
 
-# RockyLinux 系统修改
 modify_yaml_file "rockylinux.yaml" "- vim-minimal" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie" "true"
 
-# Oracle 系统修改
 modify_yaml_file "oracle.yaml" "- vim-minimal" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie" "true"
 
-# ArchLinux 系统修改
 modify_yaml_file "archlinux.yaml" "- which" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - iptables\n    - dos2unix" "true"
 
-# Fedora 系统修改
 modify_yaml_file "fedora.yaml" "- xz" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie" "true"
 
-# Alpine 系统修改
 modify_yaml_file "alpine.yaml" "- doas" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - openssh-keygen\n    - cronie\n    - iptables\n    - dos2unix" "false"
 
-# OpenWrt 系统修改
 modify_yaml_file "openwrt.yaml" "- sudo" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - openssh-keygen\n    - iptables" "false"
 
-# OpenSUSE 系统修改
 modify_yaml_file "opensuse.yaml" "- vim-minimal" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie" "true"
 
-# OpenEuler 系统修改
 modify_yaml_file "openeuler.yaml" "- vim-minimal" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie" "true"
 
 cd "$CURRENT_DIR"
@@ -206,19 +224,14 @@ remove_duplicate_lines() {
 
 process_file() {
     local file="$1"
-    # 如果文件不存在，则创建空文件
     if [ ! -f "$file" ]; then
         touch "$file"
     else
-        # 删除重复行
         awk '!seen[$0]++' "$file" >temp && mv temp "$file"
-        # 删除空行
         sed -i '/^$/d' "$file"
     fi
 }
 
-# 不同发行版的配置
-# build_or_list_images 镜像名字 镜像版本号 variants的值
 arch_list=("amd64" "arm64")
 for build_arch in "${arch_list[@]}"; do
     echo "当前架构: $build_arch"
