@@ -9,6 +9,49 @@ SAVE_DIR="$CURRENT_DIR/images_yaml"
 
 mkdir -p "$SAVE_DIR"
 
+check_remote_file_updated() {
+    local remote_url="$1"
+    local local_file="$2"
+    
+    if [ ! -f "$local_file" ]; then
+        echo "true"
+        return
+    fi
+    
+    local remote_etag=$(curl -sI "$remote_url" | grep -i etag | cut -d' ' -f2- | tr -d '\r')
+    local remote_lastmod=$(curl -sI "$remote_url" | grep -i last-modified | cut -d' ' -f2- | tr -d '\r')
+    
+    local meta_file="${local_file}.meta"
+    if [ -f "$meta_file" ]; then
+        local cached_etag=$(grep "^etag:" "$meta_file" 2>/dev/null | cut -d' ' -f2-)
+        local cached_lastmod=$(grep "^last-modified:" "$meta_file" 2>/dev/null | cut -d' ' -f2-)
+        
+        if [ -n "$remote_etag" ] && [ -n "$cached_etag" ]; then
+            if [ "$remote_etag" = "$cached_etag" ]; then
+                echo "false"
+                return
+            fi
+        elif [ -n "$remote_lastmod" ] && [ -n "$cached_lastmod" ]; then
+            if [ "$remote_lastmod" = "$cached_lastmod" ]; then
+                echo "false"
+                return
+            fi
+        fi
+    fi
+    
+    echo "true"
+}
+
+save_remote_metadata() {
+    local remote_url="$1"
+    local local_file="$2"
+    local meta_file="${local_file}.meta"
+    
+    local headers=$(curl -sI "$remote_url")
+    echo "$headers" | grep -i etag | sed 's/^[Ee][Tt][Aa][Gg]: */etag: /' > "$meta_file"
+    echo "$headers" | grep -i last-modified | sed 's/^[Ll][Aa][Ss][Tt]-[Mm][Oo][Dd][Ii][Ff][Ii][Ee][Dd]: */last-modified: /' >> "$meta_file"
+}
+
 echo "Fetching images list..."
 IMAGES_JSON=$(curl -s "https://images.lxd.canonical.com/streams/v1/images.json")
 
@@ -18,6 +61,7 @@ if [ -z "$IMAGES_JSON" ]; then
 fi
 
 declare -A LATEST_YAML
+declare -A FILES_TO_MODIFY
 
 SYSTEMS="debian ubuntu kali centos almalinux rockylinux oracle archlinux fedora alpine openwrt opensuse openeuler gentoo"
 
@@ -27,25 +71,20 @@ for SYSTEM in $SYSTEMS; do
     LATEST_TIMESTAMP=""
     LATEST_PROFILE=""
     
-    # 从JSON中提取该系统的所有产品键
     PRODUCT_KEYS=$(echo "$IMAGES_JSON" | grep -o "\"$SYSTEM:[^\"]*:amd64:[^\"]*\"" | sed 's/"//g')
     
     for PRODUCT_KEY in $PRODUCT_KEYS; do
-        # 解析产品键: system:version:arch:variant
         IFS=':' read -ra KEY_PARTS <<< "$PRODUCT_KEY"
         if [ ${#KEY_PARTS[@]} -eq 4 ]; then
             VERSION="${KEY_PARTS[1]}"
             VARIANT="${KEY_PARTS[3]}"
             
-            # 获取该产品的版本信息
             VERSIONS_DATA=$(echo "$IMAGES_JSON" | jq -r ".products.\"$PRODUCT_KEY\".versions // {}" 2>/dev/null)
             if [ "$VERSIONS_DATA" != "{}" ] && [ "$VERSIONS_DATA" != "null" ]; then
-                # 获取所有时间戳版本
                 TIMESTAMPS=$(echo "$VERSIONS_DATA" | jq -r 'keys[]' 2>/dev/null | grep -E '^[0-9]{8}_[0-9]{4}$')
                 
                 for TIMESTAMP in $TIMESTAMPS; do
                     if [ -n "$TIMESTAMP" ]; then
-                        # 比较时间戳，找到最新的
                         if [ -z "$LATEST_TIMESTAMP" ] || [[ "$TIMESTAMP" > "$LATEST_TIMESTAMP" ]]; then
                             LATEST_VERSION="$VERSION"
                             LATEST_TIMESTAMP="$TIMESTAMP"
@@ -71,28 +110,46 @@ for SYS in "${!LATEST_YAML[@]}"; do
     echo "$SYS -> ${LATEST_YAML[$SYS]}"
 done
 
+cd "$SAVE_DIR"
+
+echo "Checking for updates..."
+for SYS in "${!LATEST_YAML[@]}"; do
+    YAML_FILE="$SYS.yaml"
+    YAML_URL="${LATEST_YAML[$SYS]}"
+    
+    needs_update=$(check_remote_file_updated "$YAML_URL" "$YAML_FILE")
+    
+    if [ "$needs_update" = "true" ]; then
+        echo "[$SYS] Remote file updated, will re-download and re-modify"
+        FILES_TO_MODIFY[$SYS]="$YAML_URL"
+        rm -f "${YAML_FILE}.modified"
+    else
+        echo "[$SYS] File is up-to-date, skipping"
+    fi
+done
+
 echo "Downloading YAML files..."
 for SYS in "${!LATEST_YAML[@]}"; do
-    YAML_FILE="$SAVE_DIR/$SYS.yaml"
+    YAML_FILE="$SYS.yaml"
     YAML_URL="${LATEST_YAML[$SYS]}"
-    if [ ! -f "$YAML_FILE" ] || [ ! -f "$YAML_FILE.modified" ]; then
+    
+    if [[ -v FILES_TO_MODIFY[$SYS] ]]; then
         echo "Downloading from: $YAML_URL"
         if curl -s -o "$YAML_FILE" "$YAML_URL"; then
             if [ -s "$YAML_FILE" ]; then
                 echo "Downloaded: $YAML_FILE"
+                save_remote_metadata "$YAML_URL" "$YAML_FILE"
             else
                 echo "Downloaded empty file, removing: $YAML_FILE"
-                rm -f "$YAML_FILE"
+                rm -f "$YAML_FILE" "${YAML_FILE}.meta"
             fi
         else
             echo "Failed to download: $YAML_URL"
         fi
     else
-        echo "Skipped (already exists and modified): $YAML_FILE"
+        echo "Skipped (already exists and up-to-date): $YAML_FILE"
     fi
 done
-
-cd "$SAVE_DIR"
 
 modify_yaml_file() {
     local file_name="$1"
@@ -141,6 +198,7 @@ modify_yaml_file() {
             sed -i -e '/mappings:/i \ ' "$file_name"
         else
             cat "$file_name" >temp.yaml
+            echo "" >>temp.yaml
             echo "$insert_content_2" >>temp.yaml
             mv temp.yaml "$file_name"
         fi
