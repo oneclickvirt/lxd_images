@@ -3,17 +3,17 @@
 # Thanks https://images.lxd.canonical.com/
 # 2025.08.17
 
-BASE_URL="https://images.linuxcontainers.org/images"
+BASE_URL="https://images.lxd.canonical.com/images"
 CURRENT_DIR=$(pwd)
 SAVE_DIR="$CURRENT_DIR/images_yaml"
 
 mkdir -p "$SAVE_DIR"
 
-echo "Fetching image data from simplestreams..."
-IMAGES_JSON=$(curl -s "https://images.linuxcontainers.org/streams/v1/images.json")
+echo "Fetching images list..."
+IMAGES_JSON=$(curl -s "https://images.lxd.canonical.com/streams/v1/images.json")
 
 if [ -z "$IMAGES_JSON" ]; then
-    echo "Failed to fetch images.json"
+    echo "Failed to fetch images list."
     exit 1
 fi
 
@@ -23,25 +23,34 @@ SYSTEMS="debian ubuntu kali centos almalinux rockylinux oracle archlinux fedora 
 
 for SYSTEM in $SYSTEMS; do
     echo "Processing: $SYSTEM"
+    LATEST_VERSION=""
+    LATEST_TIMESTAMP=""
     
-    LATEST_TIMESTAMP=$(echo "$IMAGES_JSON" | jq -r ".products | to_entries[] | select(.key | test(\"^$SYSTEM:\")) | select(.key | contains(\":amd64:\")) | select(.key | contains(\":cloud\") or contains(\":default\")) | .value.versions | to_entries[] | .key" | sort | tail -n1)
-    
-    if [ -n "$LATEST_TIMESTAMP" ]; then
-        PRODUCT_KEY=$(echo "$IMAGES_JSON" | jq -r ".products | to_entries[] | select(.key | test(\"^$SYSTEM:\")) | select(.key | contains(\":amd64:\")) | select(.key | contains(\":cloud\") or contains(\":default\")) | select(.value.versions | has(\"$LATEST_TIMESTAMP\")) | .key" | head -n1)
-        
-        if [ -n "$PRODUCT_KEY" ]; then
-            VERSION=$(echo "$PRODUCT_KEY" | cut -d':' -f2)
-            ARCH=$(echo "$PRODUCT_KEY" | cut -d':' -f3)
-            VARIANT=$(echo "$PRODUCT_KEY" | cut -d':' -f4)
+    while IFS= read -r line; do
+        if echo "$line" | grep -q "\"$SYSTEM/" && echo "$line" | grep -q "/amd64/"; then
+            VERSION=$(echo "$line" | sed -n "s/.*\"$SYSTEM\/\([^\/]*\)\/amd64\/.*/\1/p")
+            PROFILE="default"
+            if echo "$line" | grep -q "/cloud/"; then
+                PROFILE="cloud"
+            fi
+            TIMESTAMP=$(echo "$line" | sed -n 's/.*\/\([0-9]\{8\}_[0-9]\{4\}\)\/.*/\1/p')
             
-            YAML_URL="$BASE_URL/$SYSTEM/$VERSION/$ARCH/$VARIANT/$LATEST_TIMESTAMP/image.yaml"
-            LATEST_YAML[$SYSTEM]="$YAML_URL"
-            echo "Found: $SYSTEM -> $YAML_URL"
-        else
-            echo "No product key found for $SYSTEM"
+            if [ -n "$VERSION" ] && [ -n "$TIMESTAMP" ]; then
+                if [ -z "$LATEST_TIMESTAMP" ] || [ "$TIMESTAMP" \> "$LATEST_TIMESTAMP" ]; then
+                    LATEST_VERSION="$VERSION"
+                    LATEST_TIMESTAMP="$TIMESTAMP"
+                    LATEST_PROFILE="$PROFILE"
+                fi
+            fi
         fi
+    done < <(echo "$IMAGES_JSON" | grep -o "\"[^\"]*$SYSTEM/[^\"]*" | sort -u)
+    
+    if [ -n "$LATEST_VERSION" ] && [ -n "$LATEST_TIMESTAMP" ]; then
+        YAML_URL="$BASE_URL/$SYSTEM/$LATEST_VERSION/amd64/$LATEST_PROFILE/$LATEST_TIMESTAMP/image.yaml"
+        LATEST_YAML[$SYSTEM]="$YAML_URL"
+        echo "Found: $SYSTEM -> $YAML_URL"
     else
-        echo "No timestamps found for $SYSTEM"
+        echo "No suitable image found for $SYSTEM"
     fi
 done
 
@@ -188,7 +197,7 @@ build_or_list_images() {
 
 get_versions() {
     local system=$1
-    local url="https://images.linuxcontainers.org/images/$system/"
+    local url="https://images.lxd.canonical.com/images/$system/"
     versions=$(curl -s "$url" | grep -oE '>[0-9]+\.[0-9]+/?<' | sed 's/[><]//g' | sed 's#/$##' | tr '\n' ' ')
     echo "$versions"
 }
