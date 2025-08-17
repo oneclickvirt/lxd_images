@@ -1,11 +1,8 @@
 # lxd_images
 
-[![clone yaml](https://github.com/oneclickvirt/lxd_images/actions/workflows/clone_yaml.yml/badge.svg)](https://github.com/oneclickvirt/lxd_images/actions/workflows/clone_yaml.yml)
+[![Clone Yaml](https://github.com/oneclickvirt/lxd_images/actions/workflows/clone_yaml.yml/badge.svg)](https://github.com/oneclickvirt/lxd_images/actions/workflows/clone_yaml.yml)
 
 [![Multi-Distro Images Build](https://github.com/oneclickvirt/lxd_images/actions/workflows/create.yml/badge.svg)](https://github.com/oneclickvirt/lxd_images/actions/workflows/create.yml)
-
-[![Collect Logs](https://github.com/oneclickvirt/lxd_images/actions/workflows/collect.yml/badge.svg)](https://github.com/oneclickvirt/lxd_images/actions/workflows/collect.yml)
-
 
 
 ## 说明

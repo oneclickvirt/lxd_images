@@ -17,7 +17,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y python3 python3-pip snapd wget
           sudo pip install PyYAML
-          # snap 安装加重试逻辑，避免因网络问题失败
           for i in 1 2 3; do
             sudo snap install lxd-imagebuilder --classic --edge && break
             echo "Retrying snap install... ($i)"
