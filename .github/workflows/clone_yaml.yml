@@ -14,9 +14,6 @@ jobs:
         run: |
           pwd
           ls -la
-      - name: Create necessary directories
-        run: |
-          mkdir -p images_yaml
       - name: Clone yaml
         run: |
           bash clone_modify_yaml.sh
