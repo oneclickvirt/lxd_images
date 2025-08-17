@@ -14,7 +14,7 @@ ubuntu_24.04_noble_arm64_default.zip
 ubuntu_24.04_noble_arm64_cloud.zip
 kali_latest_kali-rolling_arm64_default.zip
 kali_latest_kali-rolling_arm64_cloud.zip
-gentoo_current_current_arm64_systemd.zip
-gentoo_current_current_arm64_openrc.zip
 archlinux_current_current_arm64_default.zip
 archlinux_current_current_arm64_cloud.zip
+gentoo_current_current_arm64_systemd.zip
+gentoo_current_current_arm64_openrc.zip
