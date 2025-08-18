@@ -15,14 +15,14 @@ show_help() {
     echo "选项:"
     echo "  -s, --source <source>    指定模板源 (lxd_original|incus_distro|custom)"
     echo "                          lxd_original: 使用原始 LXD 镜像元数据 (默认)"
-    echo "                          incus_distro: 使用 distrobuilder 官方模板"
+    echo "                          incus_distro: 使用 lxc-ci 官方模板"
     echo "                          custom: 使用自定义模板 URL"
     echo "  -u, --url <url>         自定义模板 URL (仅当 source=custom 时使用)"
     echo "  -h, --help              显示此帮助信息"
     echo ""
     echo "示例:"
     echo "  $0                                    # 使用默认 LXD 原始源"
-    echo "  $0 -s incus_distro                   # 使用 distrobuilder 模板"
+    echo "  $0 -s incus_distro                   # 使用 lxc-ci 模板"
     echo "  $0 -s custom -u https://example.com/templates"
     echo ""
 }
@@ -115,8 +115,8 @@ setup_template_urls() {
             fetch_lxd_original_templates
             ;;
         "incus_distro")
-            echo "使用 distrobuilder 官方模板..."
-            TEMPLATE_BASE_URL="https://raw.githubusercontent.com/lxc/distrobuilder/main/doc/examples"
+            echo "使用 lxc-ci 官方模板..."
+            TEMPLATE_BASE_URL="https://raw.githubusercontent.com/lxc/lxc-ci/refs/heads/main/images"
             TEMPLATE_URLS["debian"]="$TEMPLATE_BASE_URL/debian.yaml"
             TEMPLATE_URLS["ubuntu"]="$TEMPLATE_BASE_URL/ubuntu.yaml"
             TEMPLATE_URLS["centos"]="$TEMPLATE_BASE_URL/centos.yaml"
