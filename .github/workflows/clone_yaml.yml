@@ -16,7 +16,7 @@ jobs:
           ls -la
       - name: Clone yaml
         run: |
-          bash clone_modify_yaml.sh
+          bash clone_modify_yaml.sh -s incus_distro
       - name: Configure Git
         run: |
           git config --global user.name "daily-update"
