@@ -4,7 +4,6 @@
 
 [![Multi-Distro Images Build](https://github.com/oneclickvirt/lxd_images/actions/workflows/create.yml/badge.svg)](https://github.com/oneclickvirt/lxd_images/actions/workflows/create.yml)
 
-
 ## 说明
 
 Releases中的镜像(每日拉取镜像进行自动修补和更新)：
