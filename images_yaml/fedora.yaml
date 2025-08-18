@@ -55,10 +55,10 @@ files:
   types:
   - vm
 
-- path: /etc/dracut.conf.d/incus.conf
+- path: /etc/dracut.conf.d/lxd.conf
   generator: dump
   content: |-
-    add_drivers+=" virtio_scsi "
+    add_drivers+=" virtio_scsi virtio_blk "
   types:
   - vm
 
@@ -68,15 +68,14 @@ files:
 
 - path: /etc/machine-id
   generator: dump
-  content: uninitialized
-
-- path: /var/lib/dbus/machine-id
-  generator: remove
 
 - path: /etc/fstab
   generator: dump
   types:
   - container
+
+- path: /var/lib/dbus/machine-id
+  generator: remove
 
 - path: /etc/hostname
   generator: hostname
@@ -148,7 +147,7 @@ files:
   variants:
   - cloud
 
-- generator: incus-agent
+- generator: lxd-agent
   types:
   - vm
 
@@ -185,6 +184,7 @@ packages:
 
   - packages:
     - cloud-init
+    - openssh-server
     action: install
     variants:
     - cloud
@@ -196,6 +196,12 @@ packages:
     - vm
     variants:
     - cloud
+
+  - packages:
+    - libsss_idmap
+    - libsss_nss_idmap
+    - sssd-client
+    action: remove
 
   - packages:
     - grub2-efi-x64
@@ -292,20 +298,31 @@ actions:
     umount -l /etc/resolv.conf || true
     rm /etc/resolv.conf
     ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+    systemctl enable systemd-resolved
     cp -R /etc/skel/.bash* /root/
 
-    systemctl enable systemd-resolved
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
+    systemctl mask systemd-nsresourced.service systemd-nsresourced.socket
+  types:
+  - container
+  releases:
+  - 41
+
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
     systemctl enable systemd-networkd
+  variants:
+  - default
 
-    # Avoid being reset on reboot
-    rm -Rf /etc/systemd/system-preset
-    mkdir -p /etc/systemd/system-preset
-    for file in /usr/lib/systemd/system-preset/*; do
-        NAME=$(basename ${file})
-        ln -s /dev/null /etc/systemd/system-preset/${NAME}
-    done
-
-    systemctl mask systemd-homed-firstboot.service || true
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
+    systemctl enable systemd-networkd
+  variants:
+  - cloud
 
 - trigger: post-packages
   action: |-
@@ -313,7 +330,6 @@ actions:
     systemctl enable cloud-init
     systemctl enable cloud-config
     systemctl enable cloud-final
-    systemctl mask dhcpcd
   variants:
   - cloud
 
@@ -335,7 +351,7 @@ actions:
 
     target=/boot/efi/EFI/fedora/grub.cfg
     grub2-mkconfig -o "${target}"
-    sed -i "s#root=[^ ]*#root=${DISTROBUILDER_ROOT_UUID}#g" "${target}"
+    sed -i "s#root=[^ ]*#root=${LXD_IMAGEBUILDER_ROOT_UUID}#g" "${target}"
 
     sed -Eri "s#^(linux|initrd) .+/overlay/#\1 /#g" /boot/loader/entries/*
     sed -ri 's#^options .+#options $kernelopts#g' /boot/loader/entries/*

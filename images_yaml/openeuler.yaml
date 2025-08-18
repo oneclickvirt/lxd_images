@@ -240,15 +240,6 @@ packages:
     - sudo
     - rsyslog
     - vim-minimal
-    - curl
-    - wget
-    - bash
-    - lsof
-    - sshpass
-    - openssh-server
-    - iptables
-    - dos2unix
-    - cronie
     action: install
 
   - packages:
@@ -371,6 +362,16 @@ actions:
     done
   types:
   - container
+packages:
+    - curl
+    - wget
+    - bash
+    - lsof
+    - sshpass
+    - openssh-server
+    - iptables
+    - dos2unix
+    - cronie
 
 - trigger: post-files
   action: |-

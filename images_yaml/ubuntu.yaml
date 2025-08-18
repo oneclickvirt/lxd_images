@@ -1,6 +1,17 @@
 image:
   distribution: "ubuntu"
 
+simplestream:
+  release_aliases:
+    focal: 20.04
+    jammy: 22.04
+    noble: 24.04
+  requirements:
+  - requirements:
+      cgroup: v2
+    releases:
+    - noble
+
 source:
   downloader: debootstrap
   same_as: gutsy
@@ -325,7 +336,6 @@ files:
 
 - path: /etc/machine-id
   generator: dump
-  content: uninitialized
 
 - path: /var/lib/dbus/machine-id
   generator: remove
@@ -363,35 +373,27 @@ files:
 
 - name: meta-data
   generator: cloud-init
-  variants:
-  - cloud
 
 - name: network-config
   generator: cloud-init
-  variants:
-  - cloud
 
 - name: user-data
   generator: cloud-init
-  variants:
-  - cloud
 
 - name: vendor-data
   generator: cloud-init
-  variants:
-  - cloud
 
 - name: ext4
   generator: fstab
   types:
   - vm
 
-- name: incus-agent
-  generator: incus-agent
+- name: lxd-agent
+  generator: lxd-agent
   types:
   - vm
 
-- path: /etc/default/grub.d/50-incus.cfg
+- path: /etc/default/grub.d/50-lxd.cfg
   generator: dump
   content: |-
     GRUB_RECORDFAIL_TIMEOUT=0
@@ -401,7 +403,7 @@ files:
   types:
   - vm
 
-- path: /etc/sudoers.d/90-incus
+- path: /etc/sudoers.d/90-lxd
   generator: dump
   mode: 0440
   content: |-
@@ -410,7 +412,7 @@ files:
   variants:
     - default
 
-- path: /etc/sudoers.d/90-incus
+- path: /etc/sudoers.d/90-lxd
   generator: dump
   mode: 0440
   content: |-
@@ -427,12 +429,16 @@ packages:
   cleanup: true
   sets:
   - packages:
+    - fuse
+    releases:
+    - focal
+    action: install
+
+  - packages:
     - fuse3
     releases:
     - jammy
     - noble
-    - oracular
-    - plucky
     action: install
 
   - packages:
@@ -456,21 +462,19 @@ packages:
     action: install
     architectures:
     - ppc64el
+    releases:
+    - jammy
+    - noble
 
   - packages:
     - cloud-init
-    - python3-debian
     action: install
-    variants:
-    - cloud
 
   - packages:
     - systemd-resolved
     action: install
     releases:
     - noble
-    - oracular
-    - plucky
 
   - packages:
     - grub-efi-amd64-signed
@@ -547,25 +551,6 @@ packages:
     - riscv64
 
 actions:
-- trigger: post-unpack
-  action: |-
-    #!/bin/sh
-    set -eux
-
-    # Make sure systemd doesn't think it's running.
-    [ ! -d /run/systemd ] && exit 0
-    rm -Rf /run/systemd/system
-    chattr +i /run/systemd
-
-- trigger: post-packages
-  action: |-
-    #!/bin/sh
-    set -eux
-
-    # Remove the immutable flag.
-    [ ! -d /run/systemd ] && exit 0
-    chattr -i /run/systemd
-
 - trigger: post-update
   action: |-
     #!/bin/sh
@@ -582,11 +567,21 @@ actions:
     #!/bin/sh
     set -eux
 
-    # Enable systemd-networkd
-    systemctl enable systemd-networkd
-
     # Disable UA attach
     systemctl mask ua-auto-attach
+
+  # Ubuntu Desktop images come with NetworkManager by default,
+  # so we should stop enabling systemd-networkd from Noble onwards.
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    # Enable systemd-networkd
+    systemctl enable systemd-networkd
+  releases:
+  - focal
+  - jammy
 
 - trigger: post-packages
   action: |-
@@ -597,8 +592,6 @@ actions:
     ln -sf ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
   releases:
   - noble
-  - oracular
-  - plucky
 
 - trigger: post-packages
   action: |-
@@ -625,7 +618,6 @@ actions:
     TARGET="x86_64"
     [ "$(uname -m)" = "aarch64" ] && TARGET="arm64"
 
-
     update-grub
 
     # This will create EFI/BOOT
@@ -635,7 +627,7 @@ actions:
     grub-install --uefi-secure-boot --target="${TARGET}-efi" --no-nvram
 
     update-grub
-    sed -i "s#root=[^ ]*#root=${DISTROBUILDER_ROOT_UUID}#g" /boot/grub/grub.cfg
+    sed -i "s#root=[^ ]*#root=${LXD_IMAGEBUILDER_ROOT_UUID}#g" /boot/grub/grub.cfg
   types:
   - vm
 
@@ -645,9 +637,9 @@ actions:
     set -eux
 
     # Automatic disk resize
-    cat << EOF > /etc/systemd/system/incus-growpart.service
+    cat << EOF > /etc/systemd/system/lxd-growpart.service
     [Unit]
-    Description=Incus - grow root partition
+    Description=LXD - grow root partition
 
     [Service]
     Type=oneshot
@@ -657,8 +649,7 @@ actions:
     [Install]
     WantedBy=default.target
     EOF
-
-    systemctl enable incus-growpart
+    systemctl enable lxd-growpart
   types:
   - vm
   variants:
@@ -671,7 +662,7 @@ actions:
     set -eux
 
     # Disable location service
-    systemctl mask geoclue.service
+    systemctl mask geoclue.service || true
 
     # Timezone
     rm -f /etc/localtime
@@ -684,12 +675,11 @@ actions:
     echo LANG=en_US.UTF-8 > /etc/locale.conf
 
     # User
-    USERNAME="ubuntu"
-    useradd ${USERNAME} -s /bin/bash -m -U -G adm,video,users
+    useradd ubuntu -s /bin/bash -m -U -G adm,video,users
 
     cat << EOF > /etc/gdm3/custom.conf
     [daemon]
-    AutomaticLogin=${USERNAME}
+    AutomaticLogin=ubuntu
     AutomaticLoginEnable=true
     EOF
 
@@ -698,8 +688,9 @@ actions:
 
     set -e
 
-    # Disable automatic screensaver lock
+    # Disable lock screen and automatic screensaver lock.
     gsettings set org.gnome.desktop.screensaver lock-enabled false
+    gsettings set org.gnome.desktop.lockdown disable-lock-screen true
 
     # Disable welcome tour.
     gsettings set org.gnome.shell welcome-dialog-last-shown-version '4294967295'

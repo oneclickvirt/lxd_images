@@ -1,6 +1,9 @@
 image:
   distribution: rockylinux
 
+simplestream:
+  distro_name: RockyLinux
+
 source:
   downloader: rockylinux-http
   url: https://download.rockylinux.org/pub/rocky/
@@ -107,7 +110,6 @@ files:
 
 - path: /etc/machine-id
   generator: dump
-  content: uninitialized
 
 - path: /var/lib/dbus/machine-id
   generator: remove
@@ -127,7 +129,7 @@ files:
   types:
   - container
 
-- name: ifcfg-eth0.incus
+- name: ifcfg-eth0.lxd
   path: /etc/sysconfig/network-scripts/ifcfg-eth0
   generator: template
   content: |-
@@ -142,7 +144,7 @@ files:
   types:
   - container
 
-- name: ifcfg-enp5s0.incus
+- name: ifcfg-enp5s0.lxd
   path: /etc/sysconfig/network-scripts/ifcfg-enp5s0
   generator: template
   content: |-
@@ -172,10 +174,10 @@ files:
   types:
   - vm
 
-- path: /etc/dracut.conf.d/incus.conf
+- path: /etc/dracut.conf.d/lxd.conf
   generator: dump
   content: |-
-    add_drivers+=" virtio_scsi virtio_console sd_mod "
+    add_drivers+=" virtio_scsi virtio_console sd_mod virtio_blk "
   types:
   - vm
 
@@ -196,7 +198,7 @@ files:
   content: |-
     NETWORKING=yes
     HOSTNAME=LXC_NAME
-- name: network.incus
+- name: network.lxd
   path: /etc/sysconfig/network
   generator: template
   content: |-
@@ -232,7 +234,7 @@ files:
   variants:
   - cloud
 
-- generator: incus-agent
+- generator: lxd-agent
   types:
   - vm
 
@@ -260,24 +262,15 @@ packages:
     action: install
 
   - packages:
-    - network-scripts
-    action: install
-    types:
-    - container
-    releases:
-    - 8
-
-  - packages:
     - NetworkManager
     action: install
-    types:
-    - vm
     variants:
     - default
+    - cloud
 
   - packages:
     - cloud-init
-    - NetworkManager
+    - openssh-server
     action: install
     variants:
     - cloud
@@ -289,16 +282,6 @@ packages:
     - vm
     variants:
     - cloud
-
-  - packages:
-    - NetworkManager
-    action: install
-    types:
-    - container
-    releases:
-    - 9
-    variants:
-    - default
 
   - packages:
     - shim
@@ -326,16 +309,9 @@ packages:
     types:
     - vm
     architectures:
-    - aaarch64
+    - aarch64
 
 actions:
-- trigger: post-unpack
-  action: |-
-    #!/bin/sh
-    # Make sure we have our template targets
-    touch /etc/hosts
-    touch /etc/hostname
-
 - trigger: post-unpack
   action: |-
     #!/bin/sh
@@ -358,9 +334,6 @@ actions:
     localedef -i en_US -f UTF-8 en_US.UTF-8
     echo 'LANG=en_US.utf8' > /etc/locale.conf
 
-    # Disable first boot wizard
-    systemctl mask systemd-firstboot.service
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -370,7 +343,7 @@ actions:
     dracut --kver "${kver}" -f
     target="$(readlink -f /etc/grub2-efi.cfg)"
     grub2-mkconfig -o "${target}"
-    sed -i "s#root=[^ ]*#root=${DISTROBUILDER_ROOT_UUID}#g" "${target}"
+    sed -i "s#root=[^ ]*#root=${LXD_IMAGEBUILDER_ROOT_UUID}#g" "${target}"
   types:
   - vm
   releases:
@@ -384,10 +357,10 @@ actions:
     target=/boot/efi/EFI/rocky/grub.cfg
     # Create grub.cfg file
     grub2-mkconfig -o "${target}"
-    sed -i "s#root=[^ ]*#root=${DISTROBUILDER_ROOT_UUID}#g" "${target}"
+    sed -i "s#root=[^ ]*#root=${LXD_IMAGEBUILDER_ROOT_UUID}#g" "${target}"
     # Update files in /boot/loader/entries/. `grubby` needs to be run after
     # `grub2-mkconfig` as the latter overwrites files in /boot/loader/entries/.
-    grubby --update-kernel=/boot/vmlinuz-${kver} --args="root=${DISTROBUILDER_ROOT_UUID} ro"
+    grubby --update-kernel=/boot/vmlinuz-${kver} --args="root=${LXD_IMAGEBUILDER_ROOT_UUID} ro"
     # Regenerate initramfs
     dracut --kver "${kver}" -f
   types:
@@ -410,28 +383,15 @@ actions:
   action: |-
     #!/bin/sh
     set -eux
+
     mkdir -p /etc/NetworkManager/conf.d/
     printf "[main]\ndhcp=dhclient" > /etc/NetworkManager/conf.d/dhcp-client.conf
+
     systemctl enable NetworkManager.service
   types:
   - container
   variants:
   - default
-  releases:
-  - 9
-
-- trigger: post-files
-  action: |-
-    #!/bin/sh
-    set -eux
-
-    systemctl enable network
-  types:
-  - container
-  variants:
-  - default
-  releases:
-  - 8
 packages:
     - curl
     - wget

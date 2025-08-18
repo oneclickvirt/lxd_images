@@ -52,45 +52,11 @@ files:
     BOOTPROTO=dhcp
     ONBOOT=yes
     HOSTNAME=LXC_NAME
-    NM_CONTROLLED=no
-    TYPE=Ethernet
-    MTU=
-    DHCP_HOSTNAME=`hostname`
-  releases:
-  - 7
-
-- name: ifcfg-eth0.incus
-  path: /etc/sysconfig/network-scripts/ifcfg-eth0
-  generator: template
-  content: |-
-    DEVICE=eth0
-    BOOTPROTO=dhcp
-    ONBOOT=yes
-    HOSTNAME={{ container.name }}
-    NM_CONTROLLED=no
-    TYPE=Ethernet
-    MTU=
-    DHCP_HOSTNAME=`hostname`
-  releases:
-  - 7
-
-- name: ifcfg-eth0
-  path: /etc/sysconfig/network-scripts/ifcfg-eth0
-  generator: dump
-  templated: true
-  content: |-
-    DEVICE=eth0
-    BOOTPROTO=dhcp
-    ONBOOT=yes
-    HOSTNAME=LXC_NAME
     TYPE=Ethernet
     MTU=
     DHCP_HOSTNAME=`cat /proc/sys/kernel/hostname`
-  releases:
-  - 8
-  - 9
 
-- name: ifcfg-eth0.incus
+- name: ifcfg-eth0.lxd
   path: /etc/sysconfig/network-scripts/ifcfg-eth0
   generator: template
   content: |-
@@ -102,9 +68,6 @@ files:
     MTU=
     DHCP_HOSTNAME=`cat /proc/sys/kernel/hostname`
     IPV6INIT=yes
-  releases:
-  - 8
-  - 9
 
 - name: network
   path: /etc/sysconfig/network
@@ -114,7 +77,7 @@ files:
     NETWORKING=yes
     HOSTNAME=LXC_NAME
 
-- name: network.incus
+- name: network.lxd
   path: /etc/sysconfig/network
   generator: template
   content: |-
@@ -140,9 +103,6 @@ files:
             control: auto{% else %}{{ config_get("user.network-config", "") }}{% endif %}
   variants:
   - cloud
-  releases:
-  - 8
-  - 9
 
 - name: user-data
   generator: cloud-init
@@ -159,7 +119,7 @@ files:
   generator: dump
 
 - name: cloud-init-system_info-distro
-  path: /etc/cloud/cloud.cfg.d/99_incus.cfg
+  path: /etc/cloud/cloud.cfg.d/99_lxd.cfg
   generator: dump
   content: |-
     # Set distro to Fedora as cloud-init doesn't support Oracle Linux.
@@ -168,22 +128,12 @@ files:
         distro: fedora
   variants:
   - cloud
-  releases:
-  - 8
-  - 9
 
 packages:
   manager: yum
   update: true
   cleanup: true
   sets:
-  - packages:
-    - rsyslog
-    - tcp_wrappers-libs
-    action: install
-    releases:
-    - 7
-
   - packages:
     - attr
     - curl
@@ -201,24 +151,14 @@ packages:
   - packages:
     - NetworkManager
     action: install
-    releases:
-    - 8
-    - 9
 
   - packages:
     - cloud-init
     - hostname
-    action: install
-    variants:
-    - cloud
-
-  - packages:
     - openssh-server
     action: install
     variants:
     - cloud
-    releases:
-    - 7
 
   repositories:
   - name: AppStream
@@ -229,20 +169,10 @@ packages:
       enabled=1
       gpgcheck=1
       gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-oracle
-    releases:
-    - 8
-    - 9
     variants:
     - cloud
 
 actions:
-- trigger: post-unpack
-  action: |-
-    #!/bin/sh
-    # Make sure we have our template targets
-    touch /etc/hosts
-    touch /etc/hostname
-
 - trigger: post-packages
   action: |-
     #!/bin/sh
@@ -254,6 +184,14 @@ actions:
 
     # Disable loginuid in PAM stack
     sed -i '/^session.*pam_loginuid.so/s/^session/# session/' /etc/pam.d/*
+
+# Remove security.selinux xattr on container images.
+- trigger: post-unpack
+  action: |-
+    #!/bin/sh
+    find / -xdev -exec setfattr -x security.selinux {} 2>/dev/null \;
+  types:
+  - container
 
 # Strip security.ima from all files that have it set.
 - trigger: post-files

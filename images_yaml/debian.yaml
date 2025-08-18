@@ -1,6 +1,12 @@
 image:
   distribution: "debian"
 
+simplestream:
+  release_aliases:
+    bullseye: 11
+    bookworm: 12
+    trixie: 13
+
 source:
   downloader: debootstrap
   same_as: sid
@@ -993,7 +999,6 @@ files:
 
 - path: /etc/machine-id
   generator: dump
-  content: uninitialized
 
 - path: /var/lib/dbus/machine-id
   generator: remove
@@ -1014,8 +1019,6 @@ files:
     ClientIdentifier=mac
   types:
   - container
-  variants:
-  - default
 
 - path: /etc/systemd/network/enp5s0.network
   generator: dump
@@ -1036,7 +1039,7 @@ files:
   variants:
   - default
 
-- path: /etc/default/grub.d/50-incus.cfg
+- path: /etc/default/grub.d/50-lxd.cfg
   generator: dump
   content: |-
     # Set the recordfail timeout
@@ -1073,8 +1076,8 @@ files:
   variants:
   - cloud
 
-- name: incus-agent
-  generator: incus-agent
+- name: lxd-agent
+  generator: lxd-agent
   types:
   - vm
 
@@ -1087,6 +1090,13 @@ packages:
   update: true
   cleanup: true
   sets:
+  - packages:
+    - debian-ports-archive-keyring
+    action: install
+    early: true
+    architectures:
+    - riscv64
+
   - packages:
     - dialog
     - init
@@ -1115,12 +1125,10 @@ packages:
     - bookworm
     - sid
     - trixie
-    - forky
 
   - packages:
     - cloud-init
     - gpg
-    - python3-debian
     action: install
     variants:
     - cloud
@@ -1141,17 +1149,8 @@ packages:
     - arm64
     releases:
     - bullseye
-
-  - packages:
-    - polkitd
-    action: install
-    architectures:
-    - amd64
-    - arm64
-    releases:
-    - trixie
-    - forky
-    - sid
+    types:
+    - vm
 
   - packages:
     - pkexec
@@ -1162,8 +1161,9 @@ packages:
     releases:
     - bookworm
     - trixie
-    - forky
     - sid
+    types:
+    - vm
 
   - packages:
     - grub-efi
@@ -1191,12 +1191,6 @@ packages:
     - arm64
 
   - packages:
-    - cloud-guest-utils
-    action: install
-    types:
-    - vm
-
-  - packages:
     - shim-signed
     action: install
     types:
@@ -1205,9 +1199,22 @@ packages:
   repositories:
   - name: sources.list
     url: |-
-      deb http://deb.debian.org/debian {{ image.release }} main contrib
-      {% if image.release != "sid" %}deb http://deb.debian.org/debian {{ image.release }}-updates main contrib{% endif %}
-      {% if image.release != "sid" %}deb http://deb.debian.org/debian-security/ {{ image.release }}-security main contrib{% endif %}
+      deb http://deb.debian.org/debian {{ image.release }} main
+      {% if image.release != "sid" %}deb http://deb.debian.org/debian {{ image.release }}-updates main{% endif %}
+      {% if image.release != "sid" %}deb http://deb.debian.org/debian-security/ {{ image.release }}-security main{% endif %}
+    architectures:
+    - amd64
+    - arm64
+    - armel
+    - armhf
+    - i386
+    - ppc64el
+    - s390x
+  - name: sources.list
+    url: |-
+      deb http://deb.debian.org/debian sid main
+    architectures:
+    - riscv64
 
 actions:
 - trigger: post-unpack
@@ -1227,19 +1234,82 @@ actions:
     #!/bin/sh
     set -eux
 
-    # Enable networkd
-    systemctl enable systemd-networkd.service
+    # Disable networkd service; this prevents the container from getting 2 IPv4 addresses on
+    # startup. This only happens on debian/bullseye/cloud images.
+    systemctl disable systemd-networkd.socket
+    systemctl disable systemd-networkd.service
+  types:
+  - container
+  variants:
+  - cloud
+  releases:
+  - bullseye
+
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
+    set -eu
+
     systemctl enable systemd-networkd.socket
+    systemctl enable systemd-networkd.service
+  types:
+  - container
+  variants:
+  - default
+  releases:
+  - bullseye
 
 - trigger: post-packages
   action: |-
     #!/bin/sh
     set -eux
 
-    # Disable networkd service; this prevents the container from getting 2 IPv4 addresses on
-    # startup. This only happens on debian/bullseye/cloud images.
-    systemctl disable systemd-networkd.socket
+    # Enable networkd socket
+    systemctl enable systemd-networkd.socket
+  types:
+  - container
+  releases:
+  - bookworm
+  - sid
+  - trixie
+
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    # Enable networkd
+    systemctl enable systemd-networkd.service
+  types:
+  - vm
+  variants:
+  - default
+
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    # Enable networkd
+    systemctl enable systemd-networkd.service
+  types:
+  - vm
+  variants:
+  - cloud
+  releases:
+  - bookworm
+  - sid
+  - trixie
+
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    # Disable networkd
     systemctl disable systemd-networkd.service
+  types:
+  - vm
   variants:
   - cloud
   releases:
@@ -1256,7 +1326,6 @@ actions:
   - bookworm
   - sid
   - trixie
-  - forky
 
 - trigger: post-packages
   action: |-
@@ -1300,15 +1369,6 @@ actions:
     # Cleanup temporary shadow paths
     rm /etc/*-
 
-- trigger: post-packages
-  action: |-
-    #!/bin/sh
-    mkdir -p /etc/apparmor.d/local
-    touch /etc/apparmor.d/local/sbin.dhclient
-  releases:
-  - trixie
-  - forky
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -1326,30 +1386,7 @@ actions:
     grub-install --uefi-secure-boot --target="${TARGET}-efi" --no-nvram
 
     update-grub
-    sed -i "s#root=[^ ]*#root=${DISTROBUILDER_ROOT_UUID}#g" /boot/grub/grub.cfg
-  types:
-  - vm
-
-- trigger: post-files
-  action: |-
-    #!/bin/sh
-    set -eux
-
-    # Automatic disk resize
-    cat << EOF > /etc/systemd/system/incus-growpart.service
-    [Unit]
-    Description=Incus - grow root partition
-
-    [Service]
-    Type=oneshot
-    ExecStartPre=-/usr/bin/growpart /dev/sda 2
-    ExecStart=/sbin/resize2fs /dev/sda2
-
-    [Install]
-    WantedBy=default.target
-    EOF
-
-    systemctl enable incus-growpart
+    sed -i "s#root=[^ ]*#root=${LXD_IMAGEBUILDER_ROOT_UUID}#g" /boot/grub/grub.cfg
   types:
   - vm
 
@@ -1364,7 +1401,6 @@ actions:
   - bookworm
   - sid
   - trixie
-  - forky
 
 - trigger: post-files
   action: |-

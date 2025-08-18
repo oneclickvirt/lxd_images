@@ -1,6 +1,11 @@
 image:
   distribution: gentoo
 
+simplestream:
+  requirements:
+  - requirements:
+      secureboot: false
+
 source:
   downloader: gentoo-http
   url: https://mirror.csclub.uwaterloo.ca/gentoo-distfiles/
@@ -293,7 +298,7 @@ source:
     -----END PGP PUBLIC KEY BLOCK-----
 
 targets:
-  incus:
+  lxd:
     vm:
       size: 8589934592
       filesystem: ext4
@@ -382,7 +387,6 @@ files:
 
 - path: /etc/machine-id
   generator: dump
-  content: uninitialized
   variants:
   - systemd
 
@@ -409,7 +413,7 @@ files:
   variants:
   - cloud
 
-- generator: incus-agent
+- generator: lxd-agent
   types:
   - vm
 
@@ -525,7 +529,7 @@ actions:
     systemd-machine-id-setup
     bootctl install --no-variables --esp-path=/boot/efi/
 
-    echo "root=${DISTROBUILDER_ROOT_UUID}" >> /etc/kernel/cmdline
+    echo "root=${LXD_IMAGEBUILDER_ROOT_UUID}" >> /etc/kernel/cmdline
 
     mkdir -p /etc/dracut.conf.d/
 
@@ -535,7 +539,7 @@ actions:
     emerge gentoo-kernel-bin
 
     rm -f /etc/machine-id /var/lib/dbus/machine-id
-    echo uninitialized > /etc/machine-id
+    touch /etc/machine-id
   types:
   - vm
   variants:
@@ -596,7 +600,7 @@ actions:
     grub-install --target=${TARGET}-efi --no-nvram --removable
     grub-install --target=${TARGET}-efi --no-nvram
     grub-mkconfig -o /boot/grub/grub.cfg
-    sed -i "s#root=[^ ]*#root=${DISTROBUILDER_ROOT_UUID}#g" /boot/grub/grub.cfg
+    sed -i "s#root=[^ ]*#root=${LXD_IMAGEBUILDER_ROOT_UUID}#g" /boot/grub/grub.cfg
   types:
   - vm
   variants:

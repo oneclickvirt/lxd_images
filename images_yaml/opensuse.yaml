@@ -1,9 +1,11 @@
 image:
   distribution: openSUSE
 
+simplestream:
+  distro_name: openSUSE
+
 source:
   downloader: opensuse-http
-  url: https://mirrorcache-eu.opensuse.org/download
   keys:
   # 0x55A0B34D49501BB7CA474F5AA193FBB572174FC2
   - |-
@@ -66,7 +68,6 @@ files:
 
 - path: /etc/machine-id
   generator: dump
-  content: uninitialized
 
 - path: /var/lib/dbus/machine-id
   generator: remove
@@ -108,7 +109,6 @@ files:
   types:
   - vm
   releases:
-  - 15.5
   - 15.6
 
 - name: ifcfg-enp5s0
@@ -146,14 +146,14 @@ files:
   types:
   - vm
 
-- generator: incus-agent
+- generator: lxd-agent
   types:
   - vm
 
-- path: /etc/dracut.conf.d/incus.conf
+- path: /etc/dracut.conf.d/lxd.conf
   generator: dump
   content: |-
-    add_drivers+=" virtio_scsi virtio_pci sd_mod "
+    add_drivers+=" virtio_scsi virtio_pci sd_mod virtio_blk "
   types:
   - vm
 
@@ -195,23 +195,6 @@ files:
   - vm
   variants:
   - desktop-kde
-  releases:
-  - 15.5
-  - 15.6
-
-- path: /etc/sddm.conf.d/autologin.conf
-  generator: dump
-  content: |-
-    [Autologin]
-    User=opensuse
-    Session=plasmawayland
-    Relogin=true
-  types:
-  - vm
-  variants:
-  - desktop-kde
-  releases:
-  - tumbleweed
 
 - path: /home/opensuse/.config/kscreenlockerrc
   generator: dump
@@ -224,7 +207,7 @@ files:
   variants:
   - desktop-kde
 
-- path: /etc/sudoers.d/90-incus
+- path: /etc/sudoers.d/90-lxd
   generator: dump
   mode: 0440
   content: |-
@@ -261,6 +244,8 @@ packages:
 
   - packages:
     - hardlink
+    - dracut
+    - net-tools
     action: install
     releases:
     - tumbleweed
@@ -278,12 +263,6 @@ packages:
     - aarch64
     - x86_64
     - i686
-
-  - packages:
-    - net-tools
-    releases:
-    - tumbleweed
-    action: install
 
   - packages:
     - cloud-init
@@ -311,7 +290,6 @@ packages:
     - x86_64
 
   - packages:
-    - dracut
     - e2fsprogs
     - growpart
     - kernel-default
@@ -347,10 +325,6 @@ actions:
     set -eux
 
     zypper install -y -t pattern kde
-
-    # Reliable shutdown
-    echo HandlePowerKey=poweroff >> /etc/systemd/logind.conf
-    echo PowerKeyIgnoreInhibited=yes >> /etc/systemd/logind.conf
 
     # Timezone
     rm -f /etc/localtime
@@ -406,9 +380,6 @@ actions:
     rm /etc/resolv.conf
     ln -sf /var/run/netconfig/resolv.conf /etc/resolv.conf
 
-    # Disable first boot wizard
-    systemctl mask systemd-firstboot.service
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -432,7 +403,7 @@ actions:
 
     grub2-mkconfig -o /boot/grub2/grub.cfg
     umount /sys/firmware
-    sed -i "s#root=[^ ]*#root=${DISTROBUILDER_ROOT_UUID}#g" /boot/grub2/grub.cfg
+    sed -i "s#root=[^ ]*#root=${LXD_IMAGEBUILDER_ROOT_UUID}#g" /boot/grub2/grub.cfg
   types:
   - vm
 
@@ -455,9 +426,9 @@ actions:
     set -eux
 
     # Automatic disk resize
-    cat << EOF > /etc/systemd/system/incus-growpart.service
+    cat << EOF > /etc/systemd/system/lxd-growpart.service
     [Unit]
-    Description=Incus - grow root partition
+    Description=LXD - grow root partition
 
     [Service]
     Type=oneshot
@@ -467,7 +438,7 @@ actions:
     [Install]
     WantedBy=default.target
     EOF
-    systemctl enable incus-growpart
+    systemctl enable lxd-growpart
   types:
   - vm
   variants:

@@ -1,10 +1,15 @@
 image:
   distribution: "alpinelinux"
 
+simplestream:
+  requirements:
+  - requirements:
+      secureboot: false
+
 source:
   downloader: alpinelinux-http
-  same_as: 3.12
-  url: https://mirror.csclub.uwaterloo.ca/alpine/
+  same_as: 3.21
+  url: https://dl-cdn.alpinelinux.org/alpine/
   keys:
   # 0482D84022F52DF1C4E7CD43293ACD0907D9495A
   - |-
@@ -187,7 +192,7 @@ targets:
     - type: all
       content: |-
         lxc.arch = {{ image.architecture_personality }}
-  incus:
+  lxd:
     vm:
       filesystem: ext4
 
@@ -202,7 +207,7 @@ files:
   types:
   - vm
 
-- generator: incus-agent
+- generator: lxd-agent
   types:
   - vm
 
@@ -217,7 +222,7 @@ files:
     GRUB_TIMEOUT=0
 
     # Set the default commandline
-    GRUB_CMDLINE_LINUX_DEFAULT="console=tty1 console=ttyS0 modules={{ targets.incus.vm.filesystem }} rootfstype={{ targets.incus.vm.filesystem }}"
+    GRUB_CMDLINE_LINUX_DEFAULT="console=tty1 console=ttyS0 modules=sd-mod,usb-storage,{{ targets.lxd.vm.filesystem }} rootfstype={{ targets.lxd.vm.filesystem }}"
 
     # Set the grub console type
     GRUB_TERMINAL=console
@@ -315,6 +320,7 @@ packages:
   - packages:
     - cloud-init
     - e2fsprogs-extra
+    - openssh
     action: install
     variants:
     - cloud
@@ -326,25 +332,20 @@ packages:
     variants:
     - cloud
     releases:
+    - 3.17
+    - 3.18
     - 3.19
-    - 3.20
-    - 3.21
-    - 3.22
     - edge
 
   - packages:
     - acpi
+    - gcc
     - grub-efi
     - linux-virt
+    - udev
     action: install
     types:
     - vm
-
-  - packages:
-    - tiny-cloud-incus
-    action: install
-    variants:
-    - tinycloud
 
 actions:
 - trigger: post-unpack
@@ -394,14 +395,14 @@ actions:
         ln -fs /etc/init.d/${svc_name} /etc/runlevels/boot/${svc_name}
     done
 
-    for svc_name in devfs dmesg hwdrivers mdev; do
+    for svc_name in devfs dmesg hwdrivers mdev udev udev-settle udev-trigger; do
         ln -fs /etc/init.d/${svc_name} /etc/runlevels/sysinit/${svc_name}
     done
 
     mkdir -p /boot/grub
     target=/boot/grub/grub.cfg
     grub-mkconfig -o "${target}"
-    sed -i "s#root=[^ ]*#root=${DISTROBUILDER_ROOT_UUID}#g" "${target}"
+    sed -i "s#root=[^ ]*#root=${LXD_IMAGEBUILDER_ROOT_UUID}#g" "${target}"
 
     TARGET="x86_64"
     [ "$(uname -m)" = "aarch64" ] && TARGET="arm64"
@@ -418,6 +419,10 @@ actions:
     #!/bin/sh
     set -eux
 
+    for svc_name in sshd; do
+        ln -fs /etc/init.d/${svc_name} /etc/runlevels/default/${svc_name}
+    done
+
     # Tweak to prevent cloud-init from getting stuck.
     echo "datasource_list: ['NoCloud', 'ConfigDrive', 'LXD', 'None']" > /etc/cloud/cloud.cfg.d/99_lxc.cfg
   types:
@@ -433,15 +438,6 @@ actions:
     setup-cloud-init
   variants:
   - cloud
-
-- trigger: post-files
-  action: |-
-    #!/bin/sh
-    set -eux
-
-    tiny-cloud --enable
-  variants:
-  - tinycloud
 
  
 mappings:
