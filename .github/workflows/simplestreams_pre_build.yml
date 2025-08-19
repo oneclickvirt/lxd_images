@@ -44,7 +44,7 @@ jobs:
           fi
           echo "release_id=$processed_id" >> $GITHUB_OUTPUT
 
-      - name: 预处理和删除现有文件
+      - name: 预处理文件列表
         env:
           PROCESSED_RELEASE_ID: ${{ steps.get_processed_release.outputs.release_id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -60,7 +60,7 @@ jobs:
             select(.name | test("^[a-z0-9]+_[0-9a-z.-]+_[a-z0-9]+_[a-z0-9]+_[a-z]+\\.zip$")) |
             @base64
           ' > assets_to_process.txt
-          existing_assets=$(curl -s "https://api.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets")
+          
           while IFS= read -r encoded_asset; do
             if [ -z "$encoded_asset" ]; then
               continue
@@ -77,22 +77,7 @@ jobs:
               variant="${BASH_REMATCH[5]}"
               rootfs_file="${os}-${version}-${arch}-${variant}-rootfs.squashfs"
               lxd_file="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
-              rootfs_asset_id=$(echo "$existing_assets" | jq -r --arg name "$rootfs_file" '.[] | select(.name == $name) | .id // empty')
-              lxd_asset_id=$(echo "$existing_assets" | jq -r --arg name "$lxd_file" '.[] | select(.name == $name) | .id // empty')
-              if [ -n "$rootfs_asset_id" ]; then
-                sleep 3
-                echo "Deleting existing $rootfs_file..."
-                curl -s -X DELETE \
-                  -H "Authorization: token $GITHUB_TOKEN" \
-                  "https://api.github.com/repos/$REPO/releases/assets/$rootfs_asset_id"
-              fi
-              if [ -n "$lxd_asset_id" ]; then
-                echo "Deleting existing $lxd_file..."
-                curl -s -X DELETE \
-                  -H "Authorization: token $GITHUB_TOKEN" \
-                  "https://api.github.com/repos/$REPO/releases/assets/$lxd_asset_id"
-              fi
-              sleep 3
+              
               jq --arg name "$name" \
                  --arg url "$url" \
                  --arg os "$os" \
@@ -115,11 +100,6 @@ jobs:
             fi
           done < assets_to_process.txt
           mv files_to_upload.json /tmp/files_to_upload.json
-
-      - name: 等待API同步
-        run: |
-          echo "Waiting for GitHub API to sync after deletions..."
-          sleep 360
 
       - name: 处理并上传解压文件
         env:
@@ -161,22 +141,20 @@ jobs:
                 lxd_sha256=$(sha256sum "$lxd_file" | cut -d' ' -f1)
                 combined_sha256=$(echo -n "${rootfs_sha256}${lxd_sha256}" | sha256sum | cut -d' ' -f1)
                 
-                echo "Uploading $rootfs_file..."
-                rootfs_response=$(curl -s -X POST \
-                  -H "Authorization: token $GITHUB_TOKEN" \
-                  -H "Content-Type: application/octet-stream" \
-                  --data-binary @"$rootfs_file" \
-                  "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$rootfs_file")
+                # 上传前检查并删除同名文件
+                echo "Checking for existing assets and uploading $rootfs_file..."
+                gh release delete-asset "processed" "$rootfs_file" --yes || true
+                gh release upload "processed" "$rootfs_file" || echo "Failed to upload $rootfs_file"
                 
-                echo "Uploading $lxd_file..."
-                lxd_response=$(curl -s -X POST \
-                  -H "Authorization: token $GITHUB_TOKEN" \
-                  -H "Content-Type: application/octet-stream" \
-                  --data-binary @"$lxd_file" \
-                  "https://uploads.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets?name=$lxd_file")
+                echo "Checking for existing assets and uploading $lxd_file..."
+                gh release delete-asset "processed" "$lxd_file" --yes || true
+                gh release upload "processed" "$lxd_file" || echo "Failed to upload $lxd_file"
                 
-                rootfs_url=$(echo "$rootfs_response" | jq -r '.browser_download_url // empty')
-                lxd_url=$(echo "$lxd_response" | jq -r '.browser_download_url // empty')
+                # 获取上传后的URL
+                sleep 10  # 等待API同步
+                release_info=$(curl -s "https://api.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets")
+                rootfs_url=$(echo "$release_info" | jq -r --arg name "$rootfs_file" '.[] | select(.name == $name) | .browser_download_url // empty')
+                lxd_url=$(echo "$release_info" | jq -r --arg name "$lxd_file" '.[] | select(.name == $name) | .browser_download_url // empty')
                 
                 if [ -n "$rootfs_url" ] && [ -n "$lxd_url" ]; then
                   echo "Successfully uploaded both files for $name"
@@ -206,9 +184,7 @@ jobs:
                      }]' ../processed_assets.json > ../processed_assets_temp.json
                   mv ../processed_assets_temp.json ../processed_assets.json
                 else
-                  echo "Failed to upload files for $name"
-                  echo "Rootfs response: $rootfs_response"
-                  echo "LXD response: $lxd_response"
+                  echo "Failed to get download URLs for $name"
                 fi
               else
                 echo "Missing required files in $name"
