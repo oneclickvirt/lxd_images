@@ -98,7 +98,7 @@ jobs:
                 continue
               fi
               original_name=$(basename "$file")
-              lxd_asset_name="lxd_${original_name}"
+              lxd_asset_name="${original_name}"
               echo "Checking for existing LXD asset: $lxd_asset_name"
               if gh release view kvm_images --json assets --jq ".assets[].name" | grep -q "^$lxd_asset_name$"; then
                 echo "Removing existing LXD asset: $lxd_asset_name"
