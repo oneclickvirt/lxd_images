@@ -1,4 +1,4 @@
-name: simplestreams_pre_build
+name: LXD Simplestreams Pre Build
 
 on:
   schedule:
@@ -52,17 +52,30 @@ jobs:
           PROCESSED_RELEASE_ID: ${{ steps.get_processed_release.outputs.release_id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          BLACKLIST_TAGS: "processed,kvm_images"
         run: |
           mkdir -p work
           cd work
           echo "[]" > files_to_upload.json
-          cat ../releases.json | jq -r '
+          
+          # 构建黑名单条件
+          blacklist_condition=""
+          IFS=',' read -ra TAGS <<< "$BLACKLIST_TAGS"
+          for tag in "${TAGS[@]}"; do
+            if [ -n "$blacklist_condition" ]; then
+              blacklist_condition="$blacklist_condition and "
+            fi
+            blacklist_condition="${blacklist_condition}.tag_name != \"$tag\""
+          done
+          echo "Using blacklist condition: $blacklist_condition"
+          
+          cat ../releases.json | jq -r "
             .[] | 
-            select(.tag_name != "processed") | 
+            select($blacklist_condition) | 
             .assets[] | 
-            select(.name | test("^[a-z0-9]+_[0-9a-z.-]+_[a-z0-9]+_[a-z0-9]+_[a-z]+\\.zip$")) |
+            select(.name | test(\"^[a-z0-9]+_[0-9a-z.-]+_[a-z0-9]+_[a-z0-9]+_[a-z]+\\.zip$\")) |
             @base64
-          ' > assets_to_process.txt
+          " > assets_to_process.txt
           
           while IFS= read -r encoded_asset; do
             if [ -z "$encoded_asset" ]; then
