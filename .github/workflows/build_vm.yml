@@ -1,0 +1,134 @@
+name: Multi-Distro KVM Images Builder
+on:
+  schedule:
+    - cron: "0 16 * * *" 
+  workflow_dispatch:
+jobs:
+  build-lxd-kvm-images:
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        distro:
+          [
+            "debian",
+            "ubuntu",
+            "kali",
+            "fedora",
+            "opensuse",
+            "alpine",
+            "archlinux",
+            "centos",
+            "almalinux",
+            "rockylinux",
+            "oracle",
+            "openwrt",
+            "gentoo",
+            "openeuler",
+          ]
+        arch:
+          - name: amd64
+            runner: ubuntu-latest
+          - name: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.arch.runner }}
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check workspace
+        run: pwd
+
+      - name: Build environment
+        run: |
+          sudo apt update -y
+          sudo apt install -y polkit || sudo apt install -y policykit-1
+          sudo apt install -y jq btrfs-progs dosfstools qemu-kvm
+
+      - name: Configure Git Identity
+        run: |
+          git config --global user.name "lxd-kvm-builder"
+          git config --global user.email "tg@spiritlhl.top"
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt install -y gh
+
+      - name: Build and Upload LXD KVM Images
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          DISTRO="${{ matrix.distro }}"
+          ARCH="${{ matrix.arch.name }}"
+          echo "Processing LXD $DISTRO for $ARCH architecture"
+          echo "---zip_name_list---"
+          output=$(bash build_kvm_images.sh $DISTRO false $ARCH | tail -n 1)
+          zip_name_list=($output)
+          echo "---zip_name_list---"
+          for item in "${zip_name_list[@]}"; do
+            echo "$item"
+          done
+          echo "-------"
+          if ! gh release view kvm_images >/dev/null 2>&1; then
+            echo "Creating new release for kvm_images"
+            gh release create kvm_images --title "KVM Images" --notes "Automated KVM image builds for both LXD"
+          fi
+          echo "Building LXD $DISTRO KVM images and packaging zips for $ARCH"
+          sudo bash build_lxd_kvm_images.sh $DISTRO true $ARCH || true
+          echo "------------"
+          pwd
+          ls
+          echo "------------"
+          MAX_FILE_SIZE=$((2 * 1024 * 1024 * 1024))
+          for file in "${zip_name_list[@]}"; do
+            if [ -f "$file" ]; then
+              file_size=$(stat -c %s "$file")
+              file_size_mb=$((file_size / 1024 / 1024))
+              echo "Processing LXD $file (size: $(numfmt --to=iec-i --suffix=B $file_size))"
+              if [ $file_size -lt 10485760 ]; then
+                echo "Skipping $file - size <10MB"
+                rm -vf "$file"
+                continue
+              fi
+              if [ $file_size -gt $MAX_FILE_SIZE ]; then
+                echo "Warning: $file is too large for GitHub Release ($(numfmt --to=iec-i --suffix=B $file_size))"
+                echo "Consider splitting or compressing the file further"
+                rm -vf "$file"
+                continue
+              fi
+              original_name=$(basename "$file")
+              lxd_asset_name="lxd_${original_name}"
+              echo "Checking for existing LXD asset: $lxd_asset_name"
+              if gh release view kvm_images --json assets --jq ".assets[].name" | grep -q "^$lxd_asset_name$"; then
+                echo "Removing existing LXD asset: $lxd_asset_name"
+                gh release delete-asset kvm_images "$lxd_asset_name" --yes || true
+                sleep 10
+              fi
+              mv "$file" "$lxd_asset_name"
+              echo "Uploading LXD $lxd_asset_name..."
+              if gh release upload kvm_images "$lxd_asset_name" --clobber; then
+                echo "Successfully uploaded LXD $lxd_asset_name"
+              else
+                echo "Failed to upload LXD $lxd_asset_name"
+                echo "Attempting backup upload method for LXD image..."
+                upload_url="https://uploads.github.com/repos/oneclickvirt/lxd_images/releases"
+                release_id=$(gh release view kvm_images --json id --jq .id)
+                if [ -n "$release_id" ] && [ "$release_id" != "null" ]; then
+                  curl_response=$(curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
+                    -H "Content-Type: application/zip" \
+                    --data-binary @"$lxd_asset_name" \
+                    "$upload_url/$release_id/assets?name=$lxd_asset_name" || echo "curl_failed")
+                  if [ "$curl_response" != "curl_failed" ]; then
+                    echo "Backup upload successful for LXD $lxd_asset_name"
+                  else
+                    echo "Both upload methods failed for LXD $lxd_asset_name"
+                  fi
+                fi
+              fi
+              sudo rm -vf "$lxd_asset_name"
+            else
+              echo "File $file does not exist"
+            fi
+          done
+        continue-on-error: true
