@@ -269,7 +269,29 @@ get_versions() {
     local system=$1
     local yaml_file="$SAVE_DIR/$system.yaml"
     if [ -f "$yaml_file" ]; then
-        versions=$(awk '/name: release/{flag=1; next} /^$/{flag=0} flag && /^ *-/{if (!first) {printf "%s", $2; first=1} else {printf " %s", $2}}' "$yaml_file" | sed 's/"//g')
+        versions=$(awk '
+            /^  - packages:/ { in_package_block = 1 }
+            /^    releases:/ && in_package_block { 
+                getline
+                while (/^    - /) {
+                    gsub(/^    - /, "")
+                    gsub(/"/, "")
+                    if (!seen[$0]) {
+                        releases[++count] = $0
+                        seen[$0] = 1
+                    }
+                    getline
+                }
+                in_package_block = 0
+            }
+            /^[a-zA-Z]/ && !/^  / { in_package_block = 0 }
+            END {
+                for (i = 1; i <= count; i++) {
+                    if (i > 1) printf " "
+                    printf "%s", releases[i]
+                }
+            }
+        ' "$yaml_file")
         echo "$versions"
     else
         echo ""
