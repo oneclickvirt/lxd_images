@@ -46,33 +46,27 @@ else
     exit 1
 fi
 
-# 获取版本信息
 get_versions() {
     local system=$1
-    local url="https://images.lxd.canonical.com/images/$system/"
-    local raw
-    raw=$(curl -s "$url" \
-        | grep -oE '>[0-9]+\.[0-9]+/?<' \
-        | sed 's/[><]//g' \
-        | sed 's#/$##' \
-        | grep -v '^\.{1,2}$' \
-        | tr '\n' ' ')
-    echo "${raw,,}"
+    local yaml_file="./images_yaml/$system.yaml"
+    
+    if [ -f "$yaml_file" ]; then
+        versions=$(awk '/name: release/{flag=1; next} /^$/{flag=0} flag && /^ *-/{if (!first) {printf "%s", $2; first=1} else {printf " %s", $2}}' "$yaml_file" | sed 's/"//g')
+        echo "${versions,,}"
+    else
+        echo ""
+    fi
 }
 
-# 获取发行版信息
 get_releases() {
     local system=$1
-    local url="https://images.lxd.canonical.com/images/$system/"
-    local raw
-    raw=$(curl -s "$url" \
-        | grep -oE '>[a-zA-Z0-9.-]+/?<' \
-        | sed 's/[><]//g' \
-        | sed 's#/$##g' \
-        | grep -Ev '^\.\.$|^snapshot$' \
-        | sort -u \
-        | tr '\n' ' ')
-    echo "${raw,,}"
+    local yaml_file="./images_yaml/$system.yaml"
+    if [ -f "$yaml_file" ]; then
+        releases=$(awk '/name: release/{flag=1; next} /^$/{flag=0} flag && /^ *-/{if (!first) {printf "%s", $2; first=1} else {printf " %s", $2}}' "$yaml_file" | sed 's/"//g')
+        echo "${releases,,}"
+    else
+        echo ""
+    fi
 }
 
 # 构建或列出镜像
