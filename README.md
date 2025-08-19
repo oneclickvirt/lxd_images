@@ -1,5 +1,7 @@
 # lxd_images
 
+![Downloads](https://ghdownload.spiritlhl.net/oneclickvirt/lxd_images)
+
 [![Clone Yaml](https://github.com/oneclickvirt/lxd_images/actions/workflows/clone_yaml.yml/badge.svg)](https://github.com/oneclickvirt/lxd_images/actions/workflows/clone_yaml.yml)
 
 [![Multi-Distro Images Build](https://github.com/oneclickvirt/lxd_images/actions/workflows/build.yml/badge.svg)](https://github.com/oneclickvirt/lxd_images/actions/workflows/build.yml)
