@@ -327,7 +327,9 @@ for build_arch in "${arch_list[@]}"; do
     build_or_list_images "current" "current" "cloud systemd openrc"
     run_funct="centos"
     build_or_list_images "7 8-Stream 9-Stream" "7 8 9" "default cloud"
-    for system in almalinux rockylinux alpine openwrt oracle fedora opensuse openeuler; do
+    run_funct="oracle"
+    build_or_list_images "7 8 9" "7 8 9" "default cloud"
+    for system in almalinux rockylinux alpine openwrt fedora opensuse openeuler; do
         versions=$(get_versions "$system")
         build_or_list_images "$versions" "$versions" "default cloud"
     done
