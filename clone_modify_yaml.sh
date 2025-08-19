@@ -1,7 +1,7 @@
 #!/bin/bash
 # from https://github.com/oneclickvirt/lxd_images
 # Thanks https://images.lxd.canonical.com/
-# 2025.08.17
+# 2025.08.19
 
 BASE_URL="https://images.lxd.canonical.com/images"
 CURRENT_DIR=$(pwd)
@@ -156,22 +156,17 @@ modify_yaml_file() {
     local insert_point="$2"
     local packages="$3"
     local use_bash_insert="$4"
-    
     if [ -f "${file_name}.modified" ]; then
         echo "Skipping ${file_name} - already modified"
         return
     fi
-    
     if [ ! -f "$file_name" ]; then
         echo "Warning: $file_name not found"
         return
     fi
-    
     echo "Modifying: $file_name"
     chmod 777 "$file_name"
-    
     sed -i "/${insert_point}/ a\\${packages}" "$file_name"
-    
     if [ "$use_bash_insert" = "true" ]; then
         insert_content_2=$(cat "$CURRENT_DIR/bash_insert_content.text" 2>/dev/null || echo "# bash_insert_content.text not found")
         if grep -q "mappings:" "$file_name"; then
@@ -203,7 +198,12 @@ modify_yaml_file() {
             mv temp.yaml "$file_name"
         fi
     fi
-    
+    # if [[ "$file_name" == "almalinux.yaml" ]]; then
+    #     sed -i 's|https://repo.almalinux.org/almalinux|https://almalinux.savoirfairelinux.net|g' "$file_name"
+    # fi
+    # if [[ "$file_name" == "opensuse.yaml" ]]; then
+    #     sed -i '/downloader: opensuse-http/a\  url: https://mirrorcache-eu.opensuse.org/download' "$file_name"
+    # fi
     touch "${file_name}.modified"
     echo "Modified: $file_name"
 }
@@ -267,9 +267,13 @@ build_or_list_images() {
 
 get_versions() {
     local system=$1
-    local url="https://images.lxd.canonical.com/images/$system/"
-    versions=$(curl -s "$url" | grep -oE '>[0-9]+\.[0-9]+/?<' | sed 's/[><]//g' | sed 's#/$##' | tr '\n' ' ')
-    echo "$versions"
+    local yaml_file="$SAVE_DIR/$system.yaml"
+    if [ -f "$yaml_file" ]; then
+        versions=$(awk '/name: release/{flag=1; next} /^$/{flag=0} flag && /^ *-/{if (!first) {printf "%s", $2; first=1} else {printf " %s", $2}}' "$yaml_file" | sed 's/"//g')
+        echo "$versions"
+    else
+        echo ""
+    fi
 }
 
 remove_duplicate_lines() {
@@ -311,5 +315,4 @@ for build_arch in "${arch_list[@]}"; do
 done
 process_file "x86_64_all_images.txt"
 process_file "arm64_all_images.txt"
-
 echo "All tasks completed successfully."
