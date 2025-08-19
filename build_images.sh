@@ -51,21 +51,18 @@ get_versions() {
     local yaml_file="./images_yaml/$system.yaml"
     if [ -f "$yaml_file" ]; then
         versions=$(awk '
-            /^  - packages:/ { in_package_block = 1 }
-            /^    releases:/ && in_package_block { 
+            /^[[:space:]]*releases:/ {
                 getline
-                while (/^    - /) {
-                    gsub(/^    - /, "")
+                while ($0 ~ /^[[:space:]]*-[[:space:]]*/) {
+                    gsub(/^[[:space:]]*-[[:space:]]*/, "")
                     gsub(/"/, "")
-                    if (!seen[$0]) {
+                    if ($0 != "" && !seen[$0]) {
                         releases[++count] = $0
                         seen[$0] = 1
                     }
                     getline
                 }
-                in_package_block = 0
             }
-            /^[a-zA-Z]/ && !/^  / { in_package_block = 0 }
             END {
                 for (i = 1; i <= count; i++) {
                     if (i > 1) printf " "
