@@ -204,6 +204,9 @@ modify_yaml_file() {
     # if [[ "$file_name" == "opensuse.yaml" ]]; then
     #     sed -i '/downloader: opensuse-http/a\  url: https://mirrorcache-eu.opensuse.org/download' "$file_name"
     # fi
+    if [[ "$file_name" == "fedora.yaml" ]]; then
+        sed -i 's#systemd-machine-id-setup#[ -f /etc/machine-id ] || uuidgen > /etc/machine-id#g' "$file_name"
+    fi
     touch "${file_name}.modified"
     echo "Modified: $file_name"
 }
