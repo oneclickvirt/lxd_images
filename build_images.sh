@@ -268,7 +268,10 @@ gentoo)
 centos)
     build_or_list_images "7 8 9-stream" "7 8 9-stream" "openrc systemd"
     ;;
-almalinux | rockylinux | alpine | openwrt | oracle | fedora | opensuse | openeuler)
+oracle)
+    build_or_list_images "7 8 9" "7 8 9" "cloud default"
+    ;;
+almalinux | rockylinux | alpine | openwrt | fedora | opensuse | openeuler)
     versions=$(get_versions "$run_funct")
     releases=$(get_versions "$run_funct")
     if [[ -z "$versions" && -n "$releases" ]]; then
