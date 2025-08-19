@@ -27,8 +27,6 @@ jobs:
             "oracle",
             "openeuler",
             "ubuntu",
-            "openwrt",
-            "centos",
           ]
         # distro: ["openwrt", "centos"]
         arch:
@@ -68,12 +66,9 @@ jobs:
         run: |
           set +e  # 禁止错误退出
           # set -eo pipefail
-          # 获取构建参数
           DISTRO="${{ matrix.distro }}"
           ARCH="${{ matrix.arch.name }}"
           echo "Processing $DISTRO for $ARCH architecture"
-          # 首次运行获取文件名列表
-          echo "---zip_name_list---"
           output=$(bash build_images.sh $DISTRO false $ARCH | tail -n 1)
           zip_name_list=($output)  # 让shell自动按空格分割
           echo "---zip_name_list---"
@@ -104,28 +99,16 @@ jobs:
           for file in "${zip_name_list[@]}"; do
             if [ -f "$file" ] && [ $(stat -c %s "$file") -gt 10485760 ]; then
               echo "Processing $file (size: $(numfmt --to=iec-i --suffix=B $(stat -c %s "$file")))"
-              # 检查现有资产
+              # 检查并删除现有资产
               asset_name=$(basename "$file")
-              existing_asset=$(curl -sS -H "Accept: application/vnd.github.v3+json" \
-                "https://api.github.com/repos/oneclickvirt/lxd_images/releases/$release_id/assets" \
-                | jq -r --arg name "$asset_name" '.[] | select(.name == $name)')
-              # 删除已存在的资产
-              if [ -n "$existing_asset" ]; then
-                asset_id=$(jq -r '.id' <<< "$existing_asset")
-                echo "Removing existing asset ID $asset_id"
-                curl -sS -X DELETE -H "Authorization: Bearer $GITHUB_TOKEN" \
-                  "https://api.github.com/repos/oneclickvirt/lxd_images/releases/assets/$asset_id" || true
-              fi
+              gh release delete-asset "$DISTRO" "$asset_name" --yes || true
               # 上传新资产
               echo "Uploading $asset_name..."
-              curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
-                -H "Content-Type: application/zip" \
-                --data-binary @"$file" \
-                "https://uploads.github.com/repos/oneclickvirt/lxd_images/releases/$release_id/assets?name=$asset_name" || true
+              gh release upload "$DISTRO" "$file" || true
               sudo rm -vf "$file"
             else
               echo "Skipping $file - does not exist or size <10MB"
               [ -f "$file" ] && rm -vf "$file"
             fi
           done
-        # continue-on-error: true
+        continue-on-error: true
