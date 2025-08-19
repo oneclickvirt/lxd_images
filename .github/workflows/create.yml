@@ -27,8 +27,10 @@ jobs:
             "oracle",
             "openeuler",
             "ubuntu",
+            "openwrt",
+            "centos",
           ]
-        # distro: [ "oracle", "fedora", "alpine", "openwrt", "centos"]
+        # distro: ["openwrt", "centos"]
         arch:
           - name: amd64
             runner: ubuntu-latest
