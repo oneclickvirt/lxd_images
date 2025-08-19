@@ -48,11 +48,10 @@ fi
 
 get_versions() {
     local system=$1
-    local yaml_file="./images_yaml/$system.yaml"
-    
+    local yaml_file="${opath}/images_yaml/$system.yaml"
     if [ -f "$yaml_file" ]; then
         versions=$(awk '/name: release/{flag=1; next} /^$/{flag=0} flag && /^ *-/{if (!first) {printf "%s", $2; first=1} else {printf " %s", $2}}' "$yaml_file" | sed 's/"//g')
-        echo "${versions,,}"
+        echo "$versions"
     else
         echo ""
     fi
@@ -60,10 +59,10 @@ get_versions() {
 
 get_releases() {
     local system=$1
-    local yaml_file="./images_yaml/$system.yaml"
+    local yaml_file="${opath}/images_yaml/$system.yaml"
     if [ -f "$yaml_file" ]; then
         releases=$(awk '/name: release/{flag=1; next} /^$/{flag=0} flag && /^ *-/{if (!first) {printf "%s", $2; first=1} else {printf " %s", $2}}' "$yaml_file" | sed 's/"//g')
-        echo "${releases,,}"
+        echo "$releases"
     else
         echo ""
     fi
