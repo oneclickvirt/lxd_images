@@ -38,6 +38,7 @@
     echo "Related repo https://github.com/oneclickvirt/lxc_amd64_images\n--by https://t.me/spiritlhl" >> /etc/banner || true
 
   types:
+  - vm
   - container
   variants:
   - cloud
