@@ -75,7 +75,7 @@ jobs:
             gh release create kvm_images --title "KVM Images" --notes "Automated KVM image builds for both LXD"
           fi
           echo "Building LXD $DISTRO KVM images and packaging zips for $ARCH"
-          sudo bash build_lxd_kvm_images.sh $DISTRO true $ARCH || true
+          sudo bash build_kvm_images.sh $DISTRO true $ARCH || true
           echo "------------"
           pwd
           ls
