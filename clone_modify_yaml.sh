@@ -331,7 +331,9 @@ for build_arch in "${arch_list[@]}"; do
     build_or_list_images "7 8 9" "7 8 9" "default cloud"
     run_funct="openeuler"
     build_or_list_images "24.03" "24.03" "cloud default"
-    for system in almalinux rockylinux alpine openwrt fedora opensuse; do
+    run_funct="openwrt"
+    build_or_list_images "23.05 24.10 snapshot" "23.05 24.10 snapshot" "cloud default"
+    for system in almalinux rockylinux alpine fedora opensuse; do
         versions=$(get_versions "$system")
         build_or_list_images "$versions" "$versions" "default cloud"
     done
