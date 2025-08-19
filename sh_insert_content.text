@@ -28,6 +28,7 @@
     
   types:
   - container
+  - vm
   variants:
   - cloud
   - default
