@@ -18,3 +18,8 @@ archlinux_current_current_amd64_default.zip
 archlinux_current_current_amd64_cloud.zip
 gentoo_current_current_amd64_systemd.zip
 gentoo_current_current_amd64_openrc.zip
+oracle_7_7_amd64_default.zip
+oracle_8_8_amd64_cloud.zip
+oracle_9_9_amd64_cloud.zip
+openeuler_24.03_24.03_amd64_cloud.zip
+openeuler_24.03_24.03_amd64_default.zip
