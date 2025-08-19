@@ -346,7 +346,7 @@ actions:
   action: |-
     #!/bin/sh
     # Generate machine-id in order for the kernel stuff to be configured properly
-    systemd-machine-id-setup
+    [ -f /etc/machine-id ] || uuidgen > /etc/machine-id
   types:
   - vm
 
