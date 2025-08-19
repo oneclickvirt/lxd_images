@@ -271,7 +271,10 @@ centos)
 oracle)
     build_or_list_images "7 8 9" "7 8 9" "cloud default"
     ;;
-almalinux | rockylinux | alpine | openwrt | fedora | opensuse | openeuler)
+openeuler)
+    build_or_list_images "24.03" "24.03" "cloud default"
+    ;;
+almalinux | rockylinux | alpine | openwrt | fedora | opensuse)
     versions=$(get_versions "$run_funct")
     releases=$(get_versions "$run_funct")
     if [[ -z "$versions" && -n "$releases" ]]; then
