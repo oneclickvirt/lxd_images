@@ -57,8 +57,6 @@ jobs:
           mkdir -p work
           cd work
           echo "[]" > files_to_upload.json
-          
-          # 构建黑名单条件
           blacklist_condition=""
           IFS=',' read -ra TAGS <<< "$BLACKLIST_TAGS"
           for tag in "${TAGS[@]}"; do
@@ -68,8 +66,6 @@ jobs:
             blacklist_condition="${blacklist_condition}.tag_name != \"$tag\""
           done
           echo "Using blacklist condition: $blacklist_condition"
-          
-          # 使用单引号包围正则表达式，避免 bash 转义问题
           cat ../releases.json | jq -r "
             .[] | 
             select($blacklist_condition) | 
@@ -127,7 +123,6 @@ jobs:
           mkdir -p work
           cd work
           echo "[]" > processed_assets.json
-
           jq -r '.[] | @base64' /tmp/files_to_upload.json | while IFS= read -r encoded_file; do
             if [ -z "$encoded_file" ]; then
               continue
@@ -141,68 +136,25 @@ jobs:
             variant=$(echo "$file_info" | jq -r '.variant')
             rootfs_file=$(echo "$file_info" | jq -r '.rootfs_file')
             lxd_file=$(echo "$file_info" | jq -r '.lxd_file')
-            
             temp_dir="temp_${os}_${version}_${arch}_${variant}_$$"
             mkdir -p "$temp_dir"
             cd "$temp_dir"
-            
             echo "Downloading $name..."
             if curl -L -o image.zip "$url" && unzip -q image.zip; then
               if [ -f rootfs.squashfs ] && [ -f lxd.tar.xz ]; then
                 mv rootfs.squashfs "$rootfs_file"
                 mv lxd.tar.xz "$lxd_file"
-                
                 rootfs_size=$(stat -c%s "$rootfs_file")
                 lxd_size=$(stat -c%s "$lxd_file")
                 rootfs_sha256=$(sha256sum "$rootfs_file" | cut -d' ' -f1)
                 lxd_sha256=$(sha256sum "$lxd_file" | cut -d' ' -f1)
                 combined_sha256=$(echo -n "${rootfs_sha256}${lxd_sha256}" | sha256sum | cut -d' ' -f1)
-                
-                # 上传前检查并删除同名文件
                 echo "Checking for existing assets and uploading $rootfs_file..."
                 gh release delete-asset "processed" "$rootfs_file" --yes || true
                 gh release upload "processed" "$rootfs_file" || echo "Failed to upload $rootfs_file"
-                
                 echo "Checking for existing assets and uploading $lxd_file..."
                 gh release delete-asset "processed" "$lxd_file" --yes || true
                 gh release upload "processed" "$lxd_file" || echo "Failed to upload $lxd_file"
-                
-                # 获取上传后的URL
-                sleep 10  # 等待API同步
-                release_info=$(curl -s "https://api.github.com/repos/$REPO/releases/$PROCESSED_RELEASE_ID/assets")
-                rootfs_url=$(echo "$release_info" | jq -r --arg name "$rootfs_file" '.[] | select(.name == $name) | .browser_download_url // empty')
-                lxd_url=$(echo "$release_info" | jq -r --arg name "$lxd_file" '.[] | select(.name == $name) | .browser_download_url // empty')
-                
-                if [ -n "$rootfs_url" ] && [ -n "$lxd_url" ]; then
-                  echo "Successfully uploaded both files for $name"
-                  jq --arg os "$os" \
-                     --arg version "$version" \
-                     --arg arch "$arch" \
-                     --arg variant "$variant" \
-                     --arg rootfs_url "$rootfs_url" \
-                     --arg lxd_url "$lxd_url" \
-                     --arg rootfs_size "$rootfs_size" \
-                     --arg lxd_size "$lxd_size" \
-                     --arg rootfs_sha256 "$rootfs_sha256" \
-                     --arg lxd_sha256 "$lxd_sha256" \
-                     --arg combined_sha256 "$combined_sha256" \
-                     '. += [{
-                       os: $os,
-                       version: $version,
-                       arch: $arch,
-                       variant: $variant,
-                       rootfs_url: $rootfs_url,
-                       lxd_url: $lxd_url,
-                       rootfs_size: ($rootfs_size | tonumber),
-                       lxd_size: ($lxd_size | tonumber),
-                       rootfs_sha256: $rootfs_sha256,
-                       lxd_sha256: $lxd_sha256,
-                       combined_sha256: $combined_sha256
-                     }]' ../processed_assets.json > ../processed_assets_temp.json
-                  mv ../processed_assets_temp.json ../processed_assets.json
-                else
-                  echo "Failed to get download URLs for $name"
-                fi
               else
                 echo "Missing required files in $name"
               fi
