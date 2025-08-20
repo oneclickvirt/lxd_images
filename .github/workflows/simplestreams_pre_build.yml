@@ -69,11 +69,12 @@ jobs:
           done
           echo "Using blacklist condition: $blacklist_condition"
           
+          # 使用单引号包围正则表达式，避免 bash 转义问题
           cat ../releases.json | jq -r "
             .[] | 
             select($blacklist_condition) | 
             .assets[] | 
-            select(.name | test(\"^[a-z0-9]+_[0-9a-z.-]+_[a-z0-9]+_[a-z0-9]+_[a-z]+\\.zip$\")) |
+            select(.name | test(\"^[a-z0-9]+_[0-9a-z.-]+_[a-z0-9]+_[a-z0-9]+_[a-z]+\\\\.zip$\")) |
             @base64
           " > assets_to_process.txt
           
