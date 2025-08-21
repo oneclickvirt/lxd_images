@@ -1,7 +1,7 @@
 name: Multi-Distro KVM Images Builder
 on:
   schedule:
-    - cron: "0 16 * * *" 
+    - cron: "0 20 * * *" 
   workflow_dispatch:
 jobs:
   build-lxd-kvm-images:
