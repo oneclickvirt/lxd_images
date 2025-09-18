@@ -1014,6 +1014,7 @@ files:
 
     [DHCPv4]
     UseDomains=true
+    UseMTU=true
 
     [DHCP]
     ClientIdentifier=mac
@@ -1031,6 +1032,7 @@ files:
 
     [DHCPv4]
     UseDomains=true
+    UseMTU=true
 
     [DHCP]
     ClientIdentifier=mac
@@ -1134,6 +1136,7 @@ packages:
     - bookworm
     - sid
     - trixie
+    - forky
 
   - packages:
     - cloud-init
@@ -1158,8 +1161,17 @@ packages:
     - arm64
     releases:
     - bullseye
-    types:
-    - vm
+
+  - packages:
+    - polkitd
+    action: install
+    architectures:
+    - amd64
+    - arm64
+    releases:
+    - trixie
+    - forky
+    - sid
 
   - packages:
     - pkexec
@@ -1170,9 +1182,8 @@ packages:
     releases:
     - bookworm
     - trixie
+    - forky
     - sid
-    types:
-    - vm
 
   - packages:
     - grub-efi
@@ -1198,6 +1209,12 @@ packages:
     - vm
     architectures:
     - arm64
+
+  - packages:
+    - cloud-guest-utils
+    action: install
+    types:
+    - vm
 
   - packages:
     - shim-signed
@@ -1238,6 +1255,16 @@ actions:
   variants:
   - cloud
 
+
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
+    set -eu
+
+    # Enable systemd-networkd
+    systemctl enable systemd-networkd.socket
+    systemctl enable systemd-networkd.service
+
 - trigger: post-packages
   action: |-
     #!/bin/sh
@@ -1247,94 +1274,10 @@ actions:
     # startup. This only happens on debian/bullseye/cloud images.
     systemctl disable systemd-networkd.socket
     systemctl disable systemd-networkd.service
-  types:
-  - container
   variants:
   - cloud
   releases:
   - bullseye
-
-- trigger: post-packages
-  action: |-
-    #!/bin/sh
-    set -eu
-
-    systemctl enable systemd-networkd.socket
-    systemctl enable systemd-networkd.service
-  types:
-  - container
-  variants:
-  - default
-  releases:
-  - bullseye
-
-- trigger: post-packages
-  action: |-
-    #!/bin/sh
-    set -eux
-
-    # Enable networkd socket
-    systemctl enable systemd-networkd.socket
-  types:
-  - container
-  releases:
-  - bookworm
-  - sid
-  - trixie
-
-- trigger: post-packages
-  action: |-
-    #!/bin/sh
-    set -eux
-
-    # Enable networkd
-    systemctl enable systemd-networkd.service
-  types:
-  - vm
-  variants:
-  - default
-
-- trigger: post-packages
-  action: |-
-    #!/bin/sh
-    set -eux
-
-    # Enable networkd
-    systemctl enable systemd-networkd.service
-  types:
-  - vm
-  variants:
-  - cloud
-  releases:
-  - bookworm
-  - sid
-  - trixie
-
-- trigger: post-packages
-  action: |-
-    #!/bin/sh
-    set -eux
-
-    # Disable networkd
-    systemctl disable systemd-networkd.service
-  types:
-  - vm
-  variants:
-  - cloud
-  releases:
-  - bullseye
-
-- trigger: post-packages
-  action: |-
-    #!/bin/sh
-    set -eux
-
-    # Enable systemd-resolved
-    systemctl enable systemd-resolved.service
-  releases:
-  - bookworm
-  - sid
-  - trixie
 
 - trigger: post-packages
   action: |-
@@ -1404,12 +1347,36 @@ actions:
     #!/bin/sh
     set -eux
 
+    # Automatic disk resize
+    cat << EOF > /etc/systemd/system/lxd-growpart.service
+    [Unit]
+    Description=LXD - grow root partition
+
+    [Service]
+    Type=oneshot
+    ExecStartPre=-/usr/bin/growpart /dev/sda 2
+    ExecStart=/sbin/resize2fs /dev/sda2
+
+    [Install]
+    WantedBy=default.target
+    EOF
+
+    systemctl enable lxd-growpart
+  types:
+  - vm
+
+- trigger: post-files
+  action: |-
+    #!/bin/sh
+    set -eux
+
     umount -l /etc/resolv.conf || true
     ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
   releases:
   - bookworm
   - sid
   - trixie
+  - forky
 
 - trigger: post-files
   action: |-
