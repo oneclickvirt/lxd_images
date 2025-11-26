@@ -336,18 +336,6 @@ packages:
     - cloud
 
   - packages:
-    - py3-pyserial
-    - py3-netifaces
-    action: install
-    variants:
-    - cloud
-    releases:
-    - 3.17
-    - 3.18
-    - 3.19
-    - edge
-
-  - packages:
     - acpi
     - gcc
     - grub-efi
