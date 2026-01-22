@@ -1041,6 +1041,15 @@ files:
   variants:
   - default
 
+- path: /etc/dracut.conf.d/lxd.conf
+  generator: dump
+  content: |-
+    add_drivers+=" ext4 "
+  types:
+  - vm
+  releases:
+  - sid
+
 - path: /etc/default/grub.d/50-lxd.cfg
   generator: dump
   content: |-
@@ -1325,6 +1334,10 @@ actions:
   action: |-
     #!/bin/sh
     set -eux
+
+    if [ -e /etc/dracut.conf.d/lxd.conf ]; then
+      dracut --force --regenerate-all
+    fi
 
     TARGET="x86_64"
     [ "$(uname -m)" = "aarch64" ] && TARGET="arm64"
