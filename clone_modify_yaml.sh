@@ -327,7 +327,7 @@ for build_arch in "${arch_list[@]}"; do
     run_funct="archlinux"
     build_or_list_images "current" "current" "default cloud"
     run_funct="gentoo"
-    build_or_list_images "current" "current" "cloud systemd openrc"
+    build_or_list_images "current" "current" "openrc systemd"
     run_funct="centos"
     build_or_list_images "7 8-Stream 9-Stream" "7 8 9" "default cloud"
     run_funct="oracle"

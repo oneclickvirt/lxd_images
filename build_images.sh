@@ -177,6 +177,7 @@ build_or_list_images() {
                         BUILDER_CMD=( sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" \
                             -o image.architecture="${arch}" \
                             -o image.variant="${variant}" \
+                            -o packages.manager="${manager}" \
                             ${EXTRA_ARGS} )
                         case "$run_funct" in
                             gentoo)
@@ -266,7 +267,7 @@ gentoo)
     build_or_list_images "current" "current" "openrc systemd"
     ;;
 centos)
-    build_or_list_images "7 8 9-stream" "7 8 9-stream" "openrc systemd"
+    build_or_list_images "7 8-Stream 9-Stream" "7 8 9" "cloud default"
     ;;
 oracle)
     build_or_list_images "7 8 9" "7 8 9" "cloud default"

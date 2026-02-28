@@ -50,6 +50,9 @@ jobs:
                   echo "$image" >> arm64_fixed_images.txt
                 fi
               fi
+              success=""
+              image=""
+              arch=""
             fi
           done < "$log_file"
 
@@ -71,8 +74,8 @@ jobs:
           # 添加文件
           git add x86_64_fixed_images.txt arm64_fixed_images.txt
           # 提交更改（如果有更改才会提交）
-          git commit -m "Update fixed images list"
+          git commit -m "Update fixed images list" || true
           # 推送到仓库
-          git push origin main
+          git push origin main || true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

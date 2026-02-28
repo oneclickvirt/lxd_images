@@ -41,14 +41,15 @@ cleanup() {
     if [[ -f "$test_status_file" ]]; then
         if [[ "$(cat "$test_status_file")" != "success" ]]; then
             echo "测试失败，从列表中移除镜像"
-            sed -i "/$image_name/d" "$fixed_images_file"
+            escaped_name=$(echo "$image_name" | sed 's/[.]/\\./g')
+            sed -i "/^${escaped_name}$/d" "$fixed_images_file"
         fi
     else
         echo "警告：test_status_file 丢失，跳过失败处理" | tee -a log
     fi
 
     rm -f "$test_status_file"
-    rm -f lxc.tar.xz rootfs.squashfs "$image_name"
+    rm -f lxd.tar.xz rootfs.squashfs "$image_name"
     echo "------------------------------------------" >> log
 
     # 检查 systemd-resolved 是否被影响，并尝试恢复
