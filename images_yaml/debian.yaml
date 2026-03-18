@@ -6,6 +6,7 @@ simplestream:
     bullseye: 11
     bookworm: 12
     trixie: 13
+    forky: 14
 
 source:
   downloader: debootstrap
@@ -1049,6 +1050,7 @@ files:
   - vm
   releases:
   - sid
+  - forky
 
 - path: /etc/default/grub.d/50-lxd.cfg
   generator: dump
@@ -1113,13 +1115,13 @@ packages:
     - init
     - iproute2
     - iputils-ping
-    - isc-dhcp-client
     - locales
     - netbase
     - net-tools
     - openssh-client
     - procps
     - sudo
+    - udev
     - vim
     - curl
     - wget
@@ -1133,8 +1135,12 @@ packages:
     action: install
 
   - packages:
-    - udev
+    - isc-dhcp-client
     action: install
+    releases:
+    - bullseye
+    - bookworm
+    - trixie
 
   - packages:
     - dbus
