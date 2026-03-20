@@ -6,12 +6,14 @@ simplestream:
     jammy: 22.04
     noble: 24.04
     questing: 25.10
+    resolute: 26.04
   requirements:
   - requirements:
       cgroup: v2
     releases:
     - noble
     - questing
+    - resolute
 
 source:
   downloader: debootstrap
@@ -456,6 +458,7 @@ packages:
     releases:
     - noble
     - questing
+    - resolute
 
   - packages:
     - grub-efi-amd64-signed
@@ -566,6 +569,7 @@ actions:
   releases:
   - noble
   - questing
+  - resolute
 
 - trigger: post-packages
   action: |-
