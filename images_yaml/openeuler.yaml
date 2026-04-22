@@ -11,7 +11,7 @@ simplestream:
 
 source:
   downloader: openeuler-http
-  url: https://repo.openeuler.org
+  url: https://mirrors.ocf.berkeley.edu/openeuler
 
 targets:
   lxc:
@@ -310,6 +310,7 @@ actions:
     # Rebuild rpm database as the failing builds suggest it's broken.
     rpmdb --rebuilddb
     sed -i '/metalink=/d' /etc/yum.repos.d/openEuler.repo
+    sed -i 's|baseurl=https://repo.openeuler.org/|baseurl=https://mirrors.ocf.berkeley.edu/openeuler/|g' /etc/yum.repos.d/openEuler.repo
 
 - trigger: post-unpack
   action: |-
@@ -360,6 +361,13 @@ actions:
     systemctl mask mdmonitor
   types:
   - vm
+
+# Restore the official baseurl now that all packages have been installed
+- trigger: post-files
+  action: |-
+    #!/bin/sh
+    set -eux
+    sed -i 's|baseurl=https://mirrors.ocf.berkeley.edu/openeuler/|baseurl=https://repo.openeuler.org/|g' /etc/yum.repos.d/openEuler.repo
 
 # Strip security.ima from all files that have it set.
 - trigger: post-files
