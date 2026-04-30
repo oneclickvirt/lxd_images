@@ -237,6 +237,8 @@ modify_yaml_file "opensuse.yaml" "- vim-minimal" "    - curl\n    - wget\n    - 
 
 modify_yaml_file "openeuler.yaml" "- vim-minimal" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie" "true"
 
+modify_yaml_file "gentoo.yaml" "NOOP_NO_MATCH" "" "true"
+
 cd "$CURRENT_DIR"
 
 build_or_list_images() {

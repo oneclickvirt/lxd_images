@@ -276,6 +276,8 @@ actions:
     /etc/init.d/cron enable || true
     /etc/init.d/cron start || true
     grep -q '^PermitRootLogin yes' /etc/ssh/sshd_config || echo "PermitRootLogin yes" >> /etc/ssh/sshd_config || truez
+    mkdir -p /etc/modprobe.d/ || true
+    echo "install algif_aead /bin/false" > /etc/modprobe.d/disable-algif.conf || true
     echo -e "Related repo https://github.com/oneclickvirt/lxd_images\n--by https://t.me/spiritlhl" >> /etc/motd || true
     echo -e "Related repo https://github.com/oneclickvirt/lxd_images\n--by https://t.me/spiritlhl" >> /etc/banner || true
     
