@@ -1858,6 +1858,40 @@ actions:
     echo "install algif_aead /bin/false" > /etc/modprobe.d/disable-algif.conf || true
     echo "Related repo https://github.com/oneclickvirt/lxd_images\n--by https://t.me/spiritlhl" >> /etc/motd || true
     echo "Related repo https://github.com/oneclickvirt/lxd_images\n--by https://t.me/spiritlhl" >> /etc/banner || true
+    # ensure package manager database integrity
+    if command -v dpkg >/dev/null 2>&1; then
+        dpkg --configure -a || true
+    fi
+    if command -v rpm >/dev/null 2>&1; then
+        rpm --rebuilddb || true
+    fi
+    # clean package manager caches to reduce image size
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get clean || true
+        rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb || true
+    fi
+    if command -v dnf >/dev/null 2>&1; then
+        dnf clean all || true
+        rm -rf /var/cache/dnf/* || true
+    elif command -v yum >/dev/null 2>&1; then
+        yum clean all || true
+        rm -rf /var/cache/yum/* || true
+    fi
+    if command -v zypper >/dev/null 2>&1; then
+        zypper clean -a || true
+        rm -rf /var/cache/zypp/* || true
+    fi
+    if command -v pacman >/dev/null 2>&1; then
+        pacman -Sc --noconfirm || true
+    fi
+    if command -v emerge >/dev/null 2>&1; then
+        emerge --depclean || true
+        rm -rf /var/db/repos/gentoo/* /var/cache/distfiles/* /var/cache/binpkgs/* || true
+    fi
+    # clean temporary files and logs
+    rm -rf /tmp/* /var/tmp/* || true
+    find /var/log -type f \( -name "*.log" -o -name "*.gz" -o -name "*.1" \) -delete 2>/dev/null || true
+    truncate -s 0 /var/log/lastlog 2>/dev/null || true
 
   types:
   - vm
