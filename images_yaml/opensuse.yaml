@@ -99,6 +99,9 @@ files:
     BOOTPROTO='dhcp'
   types:
   - container
+  releases:
+  - 15.6
+  - tumbleweed
 
 - name: ifcfg-eth0
   path: /etc/sysconfig/network/ifcfg-eth0
@@ -121,6 +124,49 @@ files:
   - vm
   releases:
   - tumbleweed
+
+- name: eth0.network
+  path: /etc/systemd/network/eth0.network
+  generator: dump
+  content: |-
+    [Match]
+    Name=eth0
+
+    [Network]
+    DHCP=ipv4
+
+    [DHCPv4]
+    UseDomains=true
+    UseMTU=true
+
+    [DHCP]
+    ClientIdentifier=mac
+  types:
+  - container
+  releases:
+  - 16.0
+  variants:
+  - default
+  - desktop
+
+- name: enp5s0.network
+  path: /etc/systemd/network/enp5s0.network
+  generator: dump
+  content: |-
+    [Match]
+    Name=enp5s0
+
+    [Network]
+    DHCP=ipv4
+
+    [DHCPv4]
+    UseDomains=true
+    UseMTU=true
+
+    [DHCP]
+    ClientIdentifier=mac
+  types:
+  - vm
 
 - name: meta-data
   generator: cloud-init
@@ -195,6 +241,23 @@ files:
   - vm
   variants:
   - desktop-kde
+  releases:
+  - 15.6
+
+- path: /etc/sddm.conf.d/autologin.conf
+  generator: dump
+  content: |-
+    [Autologin]
+    User=opensuse
+    Session=plasmawayland
+    Relogin=true
+  types:
+  - vm
+  variants:
+  - desktop-kde
+  releases:
+  - tumbleweed
+  - 16.0
 
 - path: /home/opensuse/.config/kscreenlockerrc
   generator: dump
@@ -202,6 +265,32 @@ files:
     [Daemon]
     Autolock=false
     LockOnResume=false
+  types:
+  - vm
+  variants:
+  - desktop-kde
+
+- path: /etc/xdg/kdeglobals
+  generator: dump
+  content: |-
+    [KDE]
+    DefaultConfirmLogout=false
+  types:
+  - vm
+  variants:
+  - desktop-kde
+
+- path: /etc/xdg/powermanagementprofilesrc
+  generator: dump
+  content: |-
+    [AC][HandleButtonEvents]
+    powerButtonAction=8
+
+    [Battery][HandleButtonEvents]
+    powerButtonAction=8
+
+    [LowBattery][HandleButtonEvents]
+    powerButtonAction=8
   types:
   - vm
   variants:
@@ -237,7 +326,7 @@ packages:
     - pigz
     - rsync
     - sudo
-    - systemd-sysvinit
+    - terminfo
     - tar
     - which
     action: install
@@ -249,6 +338,7 @@ packages:
     action: install
     releases:
     - tumbleweed
+    - 16.0
 
   - packages:
     - libdevmapper1_03
@@ -263,6 +353,13 @@ packages:
     - aarch64
     - x86_64
     - i686
+
+  - packages:
+    - net-tools
+    releases:
+    - tumbleweed
+    - 16.0
+    action: install
 
   - packages:
     - cloud-init
@@ -290,6 +387,7 @@ packages:
     - x86_64
 
   - packages:
+    - dracut
     - e2fsprogs
     - growpart
     - kernel-default
@@ -341,11 +439,6 @@ actions:
     sed -ri "s#(DISPLAYMANAGER_AUTOLOGIN)=.*#\1=${USERNAME}#" /etc/sysconfig/displaymanager
 
     systemctl enable sddm || true
-
-    # When calling `lxc stop` KDE will show a dialog for 30 seconds which defaults to logging out.
-    # This decreases the timeout to 10 seconds, and performs a shutdown per default.
-    config_file=/usr/share/plasma/look-and-feel/org.kde.breeze.desktop/contents/logout/Logout.qml
-    sed -i 's/return root.haltRequested/return root.tempHaltRequested/g;s/return root.logoutRequest/return root.haltRequest/g;s/return root.tempHaltRequested/return root.logoutRequested/g;s/Logging out/TEMP/g;s/Shutting down/Logging out/g;s/TEMP/Shutting down/g;s/case ShutdownType.ShutdownTypeHalt/case ShutdownType.ShutdownTypeLogout/g;s/timeout: 30/timeout: 10/g' "${config_file}"
   types:
   - vm
   variants:
@@ -379,15 +472,29 @@ actions:
     umount -l /etc/resolv.conf || true
     rm /etc/resolv.conf
     ln -sf /var/run/netconfig/resolv.conf /etc/resolv.conf
+  releases:
+  - 15.6
+  - tumbleweed
+
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
+    umount -l /etc/resolv.conf || true
+    rm /etc/resolv.conf
+    ln -sf ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+  releases:
+  - 16.0
+
+- trigger: post-packages
+  action: |-
+    #!/bin/sh
+    # Disable first boot wizard
+    systemctl mask systemd-firstboot.service
 
 - trigger: post-files
   action: |-
     #!/bin/sh
     set -eux
-    umount -l /etc/resolv.conf || true
-    rm /etc/resolv.conf
-    ln -sf /var/run/netconfig/resolv.conf /etc/resolv.conf
-
     dracut --regenerate-all --force
     mount -t tmpfs tmpfs /sys/firmware
     mkdir /sys/firmware/efi
