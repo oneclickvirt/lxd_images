@@ -228,7 +228,7 @@ build_or_list_images() {
                             ;;
                         esac
                         zip_file="${run_funct}_${ver_num}_${version}_${arch_label}_${variant}.zip"
-                        zip "${zip_file}" lxd.tar.xz rootfs.squashfs
+                        zip -9 "${zip_file}" lxd.tar.xz rootfs.squashfs
                         rm -f lxd.tar.xz rootfs.squashfs
                         if [[ -f "$zip_file" ]]; then
                             file_size_bytes=$(stat -c%s "$zip_file")

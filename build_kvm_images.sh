@@ -250,7 +250,10 @@ build_or_list_kvm_images() {
                     
                     if [ -f lxd.tar.xz ] && [ -f disk.qcow2 ]; then
                         zip_file="${run_funct}_${ver_num}_${version}_${arch_label}_${variant}_kvm.zip"
-                        zip "${zip_file}" lxd.tar.xz disk.qcow2
+                        if command -v qemu-img >/dev/null 2>&1; then
+                            qemu-img convert -O qcow2 -c disk.qcow2 disk_compressed.qcow2 && mv disk_compressed.qcow2 disk.qcow2 || true
+                        fi
+                        zip -9 "${zip_file}" lxd.tar.xz disk.qcow2
                         rm -f lxd.tar.xz disk.qcow2
                         
                         if [[ -f "$zip_file" ]]; then
