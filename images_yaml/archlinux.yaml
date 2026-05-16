@@ -453,6 +453,11 @@ targets:
       content: |-
         lxc.arch = {{ image.architecture_kernel }}
 
+  lxd:
+    vm:
+      size: 5368709120
+      filesystem: ext4
+
 files:
 - name: hostname
   path: /etc/hostname
