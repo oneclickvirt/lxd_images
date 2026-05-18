@@ -155,8 +155,6 @@ files:
     add_drivers+=" virtio_scsi virtio_console sd_mod virtio_blk "
   types:
   - vm
-  releases:
-  - 9-Stream
 
 - generator: fstab
   types:
@@ -167,8 +165,6 @@ files:
   generator: dump
   content: |-
     ENV{ID_NET_DRIVER}=="veth", ENV{NM_UNMANAGED}="0"
-  releases:
-  - 9-Stream
 
 - name: network
   path: /etc/sysconfig/network
@@ -194,8 +190,6 @@ files:
   generator: cloud-init
   variants:
   - cloud
-  releases:
-  - 9-Stream
 
 - name: user-data
   generator: cloud-init
@@ -245,8 +239,6 @@ packages:
     - cronie-anacron
     - NetworkManager
     action: install
-    releases:
-    - 9-Stream
 
   - packages:
     - glibc-locale-source
@@ -287,24 +279,18 @@ packages:
     action: install
     types:
     - vm
-    releases:
-    - 9-Stream
 
   - packages:
     - kernel
     action: install
     types:
     - vm
-    releases:
-    - 9-Stream
 
   - packages:
     - grub2-efi-x64
     action: install
     types:
     - vm
-    releases:
-    - 9-Stream
     architectures:
     - x86_64
 
@@ -374,8 +360,6 @@ actions:
     countme=1
     enabled=1
     EOF
-  releases:
-  - 9-Stream
 
 - trigger: post-unpack
   action: |-
@@ -384,8 +368,6 @@ actions:
     systemd-machine-id-setup
   types:
   - vm
-  releases:
-  - 9-Stream
 
 - trigger: post-unpack
   action: |-
@@ -394,8 +376,6 @@ actions:
     find / -xdev -exec setfattr -x security.selinux {} 2>/dev/null \;
   types:
   - container
-  releases:
-  - 9-Stream
 
 - trigger: post-packages
   action: |-
@@ -442,8 +422,6 @@ actions:
     dracut --kver "${kver}" -f
   types:
   - vm
-  releases:
-  - 9-Stream
 
 - trigger: post-files
   action: |-
@@ -465,8 +443,6 @@ actions:
     printf "[main]\ndhcp=dhclient" > /etc/NetworkManager/conf.d/dhcp-client.conf
 
     systemctl enable NetworkManager.service
-  releases:
-  - 9-Stream
 
 - trigger: post-files
   action: |-

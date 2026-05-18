@@ -455,7 +455,7 @@ targets:
 
   lxd:
     vm:
-      size: 5368709120
+      size: 5GiB
       filesystem: ext4
 
 files:
