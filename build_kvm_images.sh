@@ -7,10 +7,17 @@ build_arch="${3:-amd64}"
 zip_name_list=()
 opath=$(pwd)
 rm -rf *.tar.xz *.qcow2
-ls
+if [ "$is_build_image" == true ]; then
+    ls
+fi
+
+if [[ "$run_funct" == "kali" || "$run_funct" == "oracle" ]]; then
+    echo "${run_funct}.yaml lacks complete VM boot support." >&2
+    exit 0
+fi
 
 # 检查并安装依赖工具
-if command -v apt-get >/dev/null 2>&1; then
+if [ "$is_build_image" == true ] && command -v apt-get >/dev/null 2>&1; then
     if ! command -v sudo >/dev/null 2>&1; then
         apt-get install sudo -y
     fi
@@ -75,6 +82,128 @@ get_versions() {
     else
         echo ""
     fi
+}
+
+requires_secureboot_disabled() {
+    case "$run_funct" in
+        alpine|archlinux|centos|fedora|gentoo|opensuse|openeuler|openwrt|rockylinux)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+patch_lxd_metadata_for_kvm() {
+    local zip_file="$1"
+    local image_name="${zip_file%.zip}"
+    local temp_dir
+    temp_dir=$(mktemp -d) || return 1
+
+    # Extract LXD metadata tarball
+    if ! tar -xf lxd.tar.xz -C "$temp_dir" 2>/dev/null; then
+        rm -rf "$temp_dir"
+        echo "Failed to extract lxd.tar.xz for ${image_name}" >&2
+        return 1
+    fi
+
+    # Ensure secureboot is disabled if the distro requires it
+    if requires_secureboot_disabled; then
+        if [ -f "$temp_dir/metadata.yaml" ]; then
+            if ! grep -q 'requirements.secureboot:' "$temp_dir/metadata.yaml" 2>/dev/null; then
+                echo "requirements:" >> "$temp_dir/metadata.yaml"
+                echo "  secureboot: false" >> "$temp_dir/metadata.yaml"
+            elif ! grep -q 'requirements.secureboot:[[:space:]]*"false"\|requirements.secureboot:[[:space:]]*false' "$temp_dir/metadata.yaml" 2>/dev/null; then
+                sed -i 's/requirements.secureboot:.*/requirements.secureboot: false/' "$temp_dir/metadata.yaml"
+            fi
+        fi
+    fi
+
+    # Repack the tarball
+    if [ -f "$temp_dir/rootfs.squashfs" ] || [ -d "$temp_dir/rootfs" ]; then
+        if ! tar -C "$temp_dir" -cJf new_lxd.tar.xz metadata.yaml templates/ 2>/dev/null; then
+            # Fallback: just metadata.yaml
+            if ! tar -C "$temp_dir" -cJf new_lxd.tar.xz metadata.yaml 2>/dev/null; then
+                rm -rf "$temp_dir"
+                echo "Failed to repack lxd.tar.xz for ${image_name}" >&2
+                return 1
+            fi
+        fi
+        # Replace original
+        mv new_lxd.tar.xz lxd.tar.xz
+    elif ! tar -C "$temp_dir" -cJf new_lxd.tar.xz metadata.yaml 2>/dev/null; then
+        rm -rf "$temp_dir"
+        echo "Failed to repack lxd.tar.xz for ${image_name}" >&2
+        return 1
+    else
+        mv new_lxd.tar.xz lxd.tar.xz
+    fi
+
+    rm -rf "$temp_dir"
+    return 0
+}
+
+validate_vm_artifacts() {
+    local zip_file="$1"
+    local image_name="${zip_file%.zip}"
+
+    # Verify lxd.tar.xz exists and contains metadata.yaml
+    if [ ! -f lxd.tar.xz ]; then
+        echo "lxd.tar.xz for ${image_name} is missing" >&2
+        return 1
+    fi
+
+    if ! tar -tf lxd.tar.xz metadata.yaml >/dev/null 2>&1; then
+        echo "lxd.tar.xz for ${image_name} does not contain metadata.yaml" >&2
+        return 1
+    fi
+
+    if ! tar -xOf lxd.tar.xz metadata.yaml 2>/dev/null | grep -q '^architecture:'; then
+        echo "metadata.yaml for ${image_name} is missing architecture" >&2
+        return 1
+    fi
+
+    if requires_secureboot_disabled; then
+        if ! tar -xOf lxd.tar.xz metadata.yaml 2>/dev/null | grep -q '^[[:space:]]*requirements\.secureboot:[[:space:]]*["'"'"']*false["'"'"']*[[:space:]]*$'; then
+            echo "metadata.yaml for ${image_name} must declare requirements.secureboot=false" >&2
+            return 1
+        fi
+    fi
+
+    # Verify disk.qcow2
+    if [ ! -f disk.qcow2 ]; then
+        echo "disk.qcow2 for ${image_name} is missing" >&2
+        return 1
+    fi
+
+    if command -v qemu-img >/dev/null 2>&1; then
+        if ! qemu-img info disk.qcow2 >/dev/null 2>&1; then
+            echo "qemu-img cannot read disk.qcow2 for ${image_name}" >&2
+            return 1
+        fi
+
+        if command -v jq >/dev/null 2>&1; then
+            local disk_info
+            disk_info=$(qemu-img info --output=json disk.qcow2 2>/dev/null || true)
+            local disk_format
+            disk_format=$(printf '%s' "$disk_info" | jq -r '.format // empty' 2>/dev/null || true)
+            local virtual_size
+            virtual_size=$(printf '%s' "$disk_info" | jq -r '."virtual-size" // 0' 2>/dev/null || true)
+
+            if [ "$disk_format" != "qcow2" ] && [ -n "$disk_format" ]; then
+                echo "disk.qcow2 for ${image_name} has unexpected format: ${disk_format}" >&2
+                return 1
+            fi
+
+            if [ "$virtual_size" -le 0 ] 2>/dev/null && [ -n "$virtual_size" ]; then
+                echo "disk.qcow2 for ${image_name} has invalid virtual size" >&2
+                return 1
+            fi
+        fi
+    fi
+
+    return 0
 }
 
 build_or_list_kvm_images() {
@@ -154,7 +283,7 @@ build_or_list_kvm_images() {
                         [ "${arch}" = "amd64" ] && arch="x86_64"
                         [ "${arch}" = "arm64" ] && arch="aarch64"
                         if [ "${version}" = "edge" ]; then
-                            EXTRA_ARGS="-o source.same_as=3.19"
+                            EXTRA_ARGS="-o source.same_as=3.21"
                         fi
                         ;;
                     "fedora"|"openeuler"|"opensuse")
@@ -225,7 +354,8 @@ build_or_list_kvm_images() {
                         done
                         
                         if ! $success; then
-                            echo "All build attempts failed, skipping this distro."
+                            echo "Build failed for ${run_funct} ${version} ${arch} ${variant}; removing partial VM artifacts"
+                            rm -f lxd.tar.xz disk.qcow2 disk_compressed.qcow2
                             continue
                         fi
                     else
@@ -248,21 +378,34 @@ build_or_list_kvm_images() {
                         ;;
                     esac
                     
+                    zip_file="${run_funct}_${ver_num}_${version}_${arch_label}_${variant}_kvm.zip"
+                    
                     if [ -f lxd.tar.xz ] && [ -f disk.qcow2 ]; then
-                        zip_file="${run_funct}_${ver_num}_${version}_${arch_label}_${variant}_kvm.zip"
+                        if ! patch_lxd_metadata_for_kvm "$zip_file"; then
+                            echo "Failed to patch metadata for ${zip_file}; skipping package"
+                            rm -f lxd.tar.xz disk.qcow2 disk_compressed.qcow2
+                            continue
+                        fi
+
                         if command -v qemu-img >/dev/null 2>&1; then
                             qemu-img convert -O qcow2 -c disk.qcow2 disk_compressed.qcow2 && mv disk_compressed.qcow2 disk.qcow2 || true
                         fi
-                        zip -9 "${zip_file}" lxd.tar.xz disk.qcow2
-                        rm -f lxd.tar.xz disk.qcow2
-                        
-                        if [[ -f "$zip_file" ]]; then
-                            file_size_bytes=$(stat -c%s "$zip_file")
-                            file_size_mb=$(awk "BEGIN {printf \"%.2f\", $file_size_bytes/1024/1024}")
-                            echo "zipfile: $zip_file size: ${file_size_mb} MB"
+
+                        if validate_vm_artifacts "$zip_file"; then
+                            zip -9 "${zip_file}" lxd.tar.xz disk.qcow2
+                        else
+                            echo "VM artifacts failed validation for ${zip_file}; skipping package"
                         fi
                     else
                         echo "Expected artifacts (lxd.tar.xz and disk.qcow2) not found, nothing to zip."
+                    fi
+
+                    rm -f lxd.tar.xz disk.qcow2 disk_compressed.qcow2
+
+                    if [[ -f "$zip_file" ]]; then
+                        file_size_bytes=$(stat -c%s "$zip_file")
+                        file_size_mb=$(awk "BEGIN {printf \"%.2f\", $file_size_bytes/1024/1024}")
+                        echo "zipfile: $zip_file size: ${file_size_mb} MB"
                     fi
                 else
                     # 架构标签转换用于列表输出

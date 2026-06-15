@@ -11,6 +11,17 @@ if [[ $# -ne 1 ]]; then
 fi
 
 image_name="$1"
+is_kvm_image=false
+if [[ "$image_name" == *_kvm.zip ]]; then
+    is_kvm_image=true
+fi
+
+# Determine the release tag for download URL
+if $is_kvm_image; then
+    release_tag="kvm_images"
+else
+    release_tag="${image_name%%_*}"
+fi
 
 if [[ "$image_name" == *"x86_64"* || "$image_name" == *"amd64"* ]]; then
     fixed_images_file="x86_64_fixed_images.txt"
@@ -49,7 +60,7 @@ cleanup() {
     fi
 
     rm -f "$test_status_file"
-    rm -f lxd.tar.xz rootfs.squashfs "$image_name"
+    rm -f lxd.tar.xz rootfs.squashfs disk.qcow2 "$image_name"
     echo "------------------------------------------" >> log
 
     # 检查 systemd-resolved 是否被影响，并尝试恢复
@@ -64,9 +75,9 @@ cleanup() {
 trap cleanup EXIT
 
 echo "开始下载镜像..."
-if ! curl -m 1800 -LO "https://github.com/oneclickvirt/lxd_images/releases/download/${image_name%%_*}/$image_name"; then
+if ! curl -m 1800 -LO "https://github.com/oneclickvirt/lxd_images/releases/download/${release_tag}/$image_name"; then
     echo "主下载失败，尝试备用下载源..."
-    if ! curl -m 1800 -LO "https://cdn.spiritlhl.net/https://github.com/oneclickvirt/lxd_images/releases/download/${image_name%%_*}/$image_name"; then
+    if ! curl -m 1800 -LO "https://cdn.spiritlhl.net/https://github.com/oneclickvirt/lxd_images/releases/download/${release_tag}/$image_name"; then
         echo "错误：所有下载源均失败" | tee -a log
         echo "fail" > "$test_status_file"
         exit 1
@@ -89,20 +100,41 @@ fi
 
 echo "$image_name" >> "$fixed_images_file"
 
-if ! lxc image import lxd.tar.xz rootfs.squashfs --alias myc; then
-    echo "错误：镜像导入失败" | tee -a log
-    echo "fail" > "$test_status_file"
-    exit 1
+if $is_kvm_image; then
+    # KVM image import: uses disk.qcow2 instead of rootfs.squashfs
+    if ! lxc image import lxd.tar.xz disk.qcow2 --alias myc; then
+        echo "错误：KVM镜像导入失败" | tee -a log
+        echo "fail" > "$test_status_file"
+        exit 1
+    fi
+
+    # Verify secureboot is disabled for KVM images
+    if ! tar -xOf lxd.tar.xz metadata.yaml 2>/dev/null | grep -q 'requirements.secureboot:[[:space:]]*"false"\|requirements.secureboot:[[:space:]]*false'; then
+        echo "错误：KVM 镜像缺少 requirements.secureboot=false" | tee -a log
+        echo "fail" > "$test_status_file"
+        exit 1
+    fi
+else
+    if ! lxc image import lxd.tar.xz rootfs.squashfs --alias myc; then
+        echo "错误：镜像导入失败" | tee -a log
+        echo "fail" > "$test_status_file"
+        exit 1
+    fi
 fi
 
-if ! lxc init myc test; then
-    echo "错误：容器初始化失败" | tee -a log
+init_args=(myc test)
+if $is_kvm_image; then
+    init_args+=(--vm)
+fi
+
+if ! lxc init "${init_args[@]}"; then
+    echo "错误：实例初始化失败" | tee -a log
     echo "fail" > "$test_status_file"
     exit 1
 fi
 
 if ! lxc start test; then
-    echo "错误：容器启动失败" | tee -a log
+    echo "错误：实例启动失败" | tee -a log
     echo "fail" > "$test_status_file"
     exit 1
 fi
@@ -153,12 +185,12 @@ if ! network_test; then
 fi
 echo "执行重启测试..." | tee -a log
 if ! lxc stop test; then
-    echo "错误：容器停止失败" | tee -a log
+    echo "错误：实例停止失败" | tee -a log
     echo "fail" > "$test_status_file"
     exit 1
 fi
 if ! lxc start test; then
-    echo "错误：容器重启失败" | tee -a log
+    echo "错误：实例重启失败" | tee -a log
     echo "fail" > "$test_status_file"
     exit 1
 fi

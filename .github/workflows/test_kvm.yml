@@ -1,0 +1,63 @@
+name: Run LXD KVM Tests
+
+on:
+  schedule:
+    - cron: "30 5 * * 1"
+  workflow_dispatch:
+
+jobs:
+  prepare-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: set-matrix
+        run: |
+          # Build KVM test matrix from all supported distros
+          distros=(debian ubuntu fedora opensuse alpine archlinux centos almalinux rockylinux openwrt gentoo openeuler)
+          matrix_json='{"include":['
+
+          for arch in amd64 arm64; do
+            runner="ubuntu-latest"
+            [ "$arch" = "arm64" ] && runner="ubuntu-24.04-arm"
+
+            for distro in "${distros[@]}"; do
+              output=$(bash build_kvm_images.sh "$distro" false "$arch" | tail -n 1)
+              for image in $output; do
+                [ -n "$image" ] || continue
+                matrix_json+="{\"image\":\"$image\",\"arch\":\"$arch\",\"runner\":\"$runner\"},"
+              done
+            done
+          done
+
+          matrix_json=${matrix_json%,}
+          matrix_json+=']}'
+          echo "matrix=$matrix_json" >> "$GITHUB_OUTPUT"
+
+  test-single-kvm-image:
+    needs: prepare-matrix
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Fresh Environment
+        run: |
+          echo "设置新环境..."
+          sudo apt-get update -y
+          sudo apt-get install -y qemu-kvm
+          sudo sh -c 'export noninteractive=true; curl -L https://raw.githubusercontent.com/oneclickvirt/lxd/main/scripts/lxdinstall.sh -o lxdinstall.sh && chmod +x lxdinstall.sh && bash lxdinstall.sh >/dev/null 2>&1'
+      - name: Test KVM Image
+        run: |
+          echo "测试 KVM 镜像: ${{ matrix.image }}"
+          if sudo bash test.sh "${{ matrix.image }}"; then
+            echo "KVM 测试通过: ${{ matrix.image }}"
+            echo "TEST_KVM_RESULT success=true image=${{ matrix.image }} arch=${{ matrix.arch }}"
+          else
+            echo "KVM 测试失败: ${{ matrix.image }}"
+            echo "TEST_KVM_RESULT success=false image=${{ matrix.image }} arch=${{ matrix.arch }}"
+          fi

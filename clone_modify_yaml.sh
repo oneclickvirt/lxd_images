@@ -151,6 +151,33 @@ for SYS in "${!LATEST_YAML[@]}"; do
     fi
 done
 
+patch_alpine_vm_boot() {
+    local file_name="$1"
+    if [ ! -f "$file_name" ]; then
+        echo "Warning: $file_name not found for VM boot patching"
+        return
+    fi
+    echo "Patching Alpine VM boot in $file_name"
+    # Fix GRUB cmdline to include sd-mod and usb-storage modules for VM boot
+    sed -i 's#GRUB_CMDLINE_LINUX_DEFAULT="console=tty1 console=ttyS0 modules={{ targets.lxd.vm.filesystem }} rootfstype={{ targets.lxd.vm.filesystem }}"#GRUB_CMDLINE_LINUX_DEFAULT="console=tty1 console=ttyS0 modules=sd-mod,usb-storage,{{ targets.lxd.vm.filesystem }} rootfstype={{ targets.lxd.vm.filesystem }}"#' "$file_name"
+    # Add udev package for VM boot
+    if ! grep -q '^    - udev$' "$file_name"; then
+        sed -i '/    - linux-virt/a\    - udev' "$file_name"
+    fi
+    # Fix openrc services to include udev-related services
+    sed -i 's#for svc_name in devfs dmesg hwdrivers mdev; do#for svc_name in devfs dmesg hwdrivers mdev udev udev-settle udev-trigger; do#' "$file_name"
+    # Fix grub-install to use correct efi directory
+    sed -i 's#grub-install --target=${TARGET}-efi --no-nvram --removable#grub-install --target=${TARGET}-efi --efi-directory=/boot/efi --no-nvram --removable#' "$file_name"
+    sed -i 's#grub-install --target=${TARGET}-efi --no-nvram$#grub-install --target=${TARGET}-efi --efi-directory=/boot/efi --no-nvram#' "$file_name"
+    # Add BOOT_EFI check after grub-install
+    if ! grep -q 'BOOT_EFI="/boot/efi/EFI/BOOT/BOOTX64.EFI"' "$file_name"; then
+        sed -i '/grub-install --target=${TARGET}-efi --efi-directory=\/boot\/efi --no-nvram$/a\    BOOT_EFI="/boot/efi/EFI/BOOT/BOOTX64.EFI"\n    [ "${TARGET}" = "arm64" ] \&\& BOOT_EFI="/boot/efi/EFI/BOOT/BOOTAA64.EFI"\n    test -s "${BOOT_EFI}"' "$file_name"
+    fi
+    # Fix rm to rm -f for safety
+    sed -i 's#rm /etc/update-grub.conf#rm -f /etc/update-grub.conf#' "$file_name"
+    echo "Alpine VM boot patched: $file_name"
+}
+
 modify_yaml_file() {
     local file_name="$1"
     local insert_point="$2"
@@ -230,6 +257,7 @@ modify_yaml_file "archlinux.yaml" "- which" "    - curl\n    - wget\n    - bash\
 modify_yaml_file "fedora.yaml" "- xz" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - iptables\n    - dos2unix\n    - cronie" "true"
 
 modify_yaml_file "alpine.yaml" "- doas" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - openssh-keygen\n    - cronie\n    - iptables\n    - dos2unix" "false"
+patch_alpine_vm_boot alpine.yaml
 
 modify_yaml_file "openwrt.yaml" "- sudo" "    - curl\n    - wget\n    - bash\n    - lsof\n    - sshpass\n    - openssh-server\n    - openssh-keygen\n    - iptables" "false"
 

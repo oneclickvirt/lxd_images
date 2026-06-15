@@ -118,7 +118,7 @@ build_or_list_images() {
                         [ "${arch}" = "amd64" ] && arch="x86_64"
                         [ "${arch}" = "arm64" ] && arch="aarch64"
                         if [ "${version}" = "edge" ]; then
-                            EXTRA_ARGS="-o source.same_as=3.19"
+                            EXTRA_ARGS="-o source.same_as=3.21"
                         fi
                     elif [[ "$run_funct" == "centos" ]]; then
                         [ "${arch}" = "amd64" ] && arch="x86_64"
