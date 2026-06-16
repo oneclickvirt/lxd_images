@@ -406,7 +406,6 @@ actions:
     [ "$(uname -m)" = "aarch64" ] && TARGET="arm64"
     grub-install --target=${TARGET}-efi --efi-directory=/boot/efi --no-nvram --removable
     grub-install --target=${TARGET}-efi --efi-directory=/boot/efi --no-nvram
-
     BOOT_EFI="/boot/efi/EFI/BOOT/BOOTX64.EFI"
     [ "${TARGET}" = "arm64" ] && BOOT_EFI="/boot/efi/EFI/BOOT/BOOTAA64.EFI"
     test -s "${BOOT_EFI}"
