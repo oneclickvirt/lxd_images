@@ -120,25 +120,19 @@ patch_lxd_metadata_for_kvm() {
         fi
     fi
 
-    # Repack the tarball
-    if [ -f "$temp_dir/rootfs.squashfs" ] || [ -d "$temp_dir/rootfs" ]; then
-        if ! tar -C "$temp_dir" -cJf new_lxd.tar.xz metadata.yaml templates/ 2>/dev/null; then
-            # Fallback: just metadata.yaml
-            if ! tar -C "$temp_dir" -cJf new_lxd.tar.xz metadata.yaml 2>/dev/null; then
-                rm -rf "$temp_dir"
-                echo "Failed to repack lxd.tar.xz for ${image_name}" >&2
-                return 1
-            fi
-        fi
-        # Replace original
-        mv new_lxd.tar.xz lxd.tar.xz
-    elif ! tar -C "$temp_dir" -cJf new_lxd.tar.xz metadata.yaml 2>/dev/null; then
+    # Repack the metadata tarball without dropping cloud-init templates.
+    # VM images commonly have metadata.yaml entries such as "template: hosts.tpl";
+    # if templates/ is omitted here, LXD creates the VM but fails on start.
+    local repack_entries=(metadata.yaml)
+    if [ -d "$temp_dir/templates" ]; then
+        repack_entries+=(templates)
+    fi
+    if ! tar -C "$temp_dir" -cJf new_lxd.tar.xz "${repack_entries[@]}" 2>/dev/null; then
         rm -rf "$temp_dir"
         echo "Failed to repack lxd.tar.xz for ${image_name}" >&2
         return 1
-    else
-        mv new_lxd.tar.xz lxd.tar.xz
     fi
+    mv new_lxd.tar.xz lxd.tar.xz
 
     rm -rf "$temp_dir"
     return 0
@@ -162,6 +156,19 @@ validate_vm_artifacts() {
     if ! tar -xOf lxd.tar.xz metadata.yaml 2>/dev/null | grep -q '^architecture:'; then
         echo "metadata.yaml for ${image_name} is missing architecture" >&2
         return 1
+    fi
+
+    local template_files
+    template_files=$(tar -xOf lxd.tar.xz metadata.yaml 2>/dev/null | sed -n 's/^[[:space:]]*template:[[:space:]]*//p' | tr -d "\"'" | awk '{print $1}' | sort -u)
+    if [ -n "$template_files" ]; then
+        local tpl
+        while IFS= read -r tpl; do
+            [ -n "$tpl" ] || continue
+            if ! tar -tf lxd.tar.xz "templates/${tpl}" >/dev/null 2>&1; then
+                echo "metadata.yaml for ${image_name} references missing template: templates/${tpl}" >&2
+                return 1
+            fi
+        done <<< "$template_files"
     fi
 
     if requires_secureboot_disabled; then
