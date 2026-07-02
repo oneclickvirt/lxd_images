@@ -33,7 +33,7 @@ jobs:
     runs-on: ${{ matrix.arch.runner }}
     timeout-minutes: 360
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check workspace
         run: pwd
 
