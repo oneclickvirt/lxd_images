@@ -118,7 +118,7 @@ jobs:
           find build -type f | head -30
 
       - name: Deploy to Netlify
-        uses: nwtgck/actions-netlify@v3.0
+        uses: nwtgck/actions-netlify@v4.0
         with:
           publish-dir: "./build"
           production-branch: main
