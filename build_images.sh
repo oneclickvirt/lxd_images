@@ -1,4 +1,5 @@
 #!/bin/bash
+set -eo pipefail
 # 从 https://github.com/oneclickvirt/lxd_images 获取
 
 run_funct="${1:-debian}"
@@ -6,11 +7,15 @@ is_build_image="${2:-false}"
 build_arch="${3:-amd64}"
 zip_name_list=()
 opath=$(pwd)
-rm -rf *.tar.xz
-ls
+selected_images=0
+[[ "$is_build_image" == true || "$is_build_image" == false ]] || { echo "Invalid build mode" >&2; exit 1; }
+[[ "$build_arch" =~ ^(amd64|x86_64|arm64|aarch64)$ ]] || { echo "Invalid image architecture" >&2; exit 1; }
+[[ "${CI_IMAGE_RELEASES:-}" =~ ^[A-Za-z0-9._\ -]*$ ]] || { echo "Invalid release selector" >&2; exit 1; }
+if [[ "$is_build_image" == true ]]; then rm -f -- incus.tar.xz lxd.tar.xz rootfs.squashfs rootfs.tar.xz; fi
+if [[ "$is_build_image" == true ]]; then ls; fi
 
 # 检查并安装依赖工具
-if command -v apt-get >/dev/null 2>&1; then
+if [ "$is_build_image" == true ] && command -v apt-get >/dev/null 2>&1; then
     # ubuntu debian kali
     if ! command -v sudo >/dev/null 2>&1; then
         apt-get install sudo -y
@@ -89,12 +94,18 @@ build_or_list_images() {
     read -ra variants <<<"$3"
     local architectures=("$build_arch")
     local len=${#versions[@]}
+    if (( len == 0 )); then echo "No image releases were obtained from the configured source" >&2; return 1; fi
     for ((i = 0; i < len; i++)); do
         version=${versions[i]}
         ver_num=${ver_nums[i]}
+        if [[ -n "${CI_IMAGE_RELEASES:-}" && " ${CI_IMAGE_RELEASES} " != *" ${version} "* && " ${CI_IMAGE_RELEASES} " != *" ${ver_num} "* ]]; then
+            continue
+        fi
         for arch in "${architectures[@]}"; do
             for variant in "${variants[@]}"; do
+                selected_images=$((selected_images + 1))
                 if [ "$is_build_image" == true ]; then
+                    rm -f -- incus.tar.xz lxd.tar.xz rootfs.squashfs rootfs.tar.xz disk.qcow2 disk_compressed.qcow2
                     if [[ "$run_funct" == "kali" || "$run_funct" == "ubuntu" || "$run_funct" == "debian" ]]; then
                         manager="apt"
                     elif [[ "$run_funct" == "centos" || "$run_funct" == "fedora" || "$run_funct" == "openeuler" ]]; then
@@ -179,40 +190,18 @@ build_or_list_images() {
                             -o image.variant="${variant}" \
                             -o packages.manager="${manager}" \
                             ${EXTRA_ARGS} )
-                        case "$run_funct" in
-                            gentoo)
-                                RELEASE_OPTS=( "" )
-                                ;;
-                            kali|ubuntu|debian|alpine)
-                                RELEASE_OPTS=( "" "-o image.release=${version}" )
-                                ;;
-                            *)
-                                RELEASE_OPTS=( "" "-o image.release=${ver_num}" "-o image.release=${version}" )
-                                ;;
-                        esac
-                        success=false
-                        for rel in "${RELEASE_OPTS[@]}"; do
-                            echo "Running: ${BUILDER_CMD[*]} $rel"
-                            if "${BUILDER_CMD[@]}" $rel; then
-                                echo "Command succeeded"
-                                success=true
-                                break
-                            fi
-                            if [ -f lxd.tar.xz ] && [ -f rootfs.squashfs ]; then
-                                total_size=$(($(stat -c%s lxd.tar.xz) + $(stat -c%s rootfs.squashfs)))
-                                if [ "$total_size" -gt $((10 * 1024 * 1024)) ]; then
-                                    echo "Build artifacts detected (lxd.tar.xz + rootfs.squashfs), total size > 10MB, assuming success"
-                                    success=true
-                                    break
-                                else
-                                    echo "Artifacts found but total size <= 10MB, ignoring..."
-                                fi
-                            fi
-                        done
-                        if ! $success; then
-                            echo "All build attempts failed, skipping this distro."
-                            continue
+                        if [[ "$run_funct" != gentoo && "$run_funct" != archlinux ]]; then
+                            BUILDER_CMD+=( -o "image.release=${version}" )
                         fi
+                        echo "Running: ${BUILDER_CMD[*]}"
+                        if ! "${BUILDER_CMD[@]}"; then
+                            echo "Image builder failed; preserving the previous release" >&2
+                            rm -f lxd.tar.xz rootfs.squashfs disk.qcow2 disk_compressed.qcow2
+                            return 1
+                        fi
+                    else
+                        echo "lxd-imagebuilder not found" >&2
+                        return 1
                     fi
                     du -sh *
                     if [ -f lxd.tar.xz ] && [ -f rootfs.squashfs ]; then
@@ -228,6 +217,7 @@ build_or_list_images() {
                             ;;
                         esac
                         zip_file="${run_funct}_${ver_num}_${version}_${arch_label}_${variant}.zip"
+                        rm -f -- "$zip_file"
                         zip -9 "${zip_file}" lxd.tar.xz rootfs.squashfs
                         rm -f lxd.tar.xz rootfs.squashfs
                         if [[ -f "$zip_file" ]]; then
@@ -236,7 +226,8 @@ build_or_list_images() {
                             echo "zipfile: $zip_file size: ${file_size_mb} MB"
                         fi
                     else
-                        echo "Expected artifacts not found, nothing to zip."
+                        echo "Expected artifacts not found" >&2
+                        return 1
                     fi
                 else
                     zip_name_list+=("${run_funct}_${ver_num}_${version}_${arch}_${variant}.zip")
@@ -289,6 +280,9 @@ almalinux | rockylinux | alpine | fedora | opensuse)
     build_or_list_images "$versions" "$releases" "cloud default"
     ;;
 *)
-    echo "Invalid distribution specified."
+    echo "Invalid distribution specified." >&2
+    exit 1
     ;;
 esac
+
+(( selected_images > 0 )) || { echo "No images match the requested release" >&2; exit 1; }

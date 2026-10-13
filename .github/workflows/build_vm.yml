@@ -5,27 +5,11 @@ jobs:
       fail-fast: false
       max-parallel: 6
       matrix:
-        distro:
-        - debian
-        - ubuntu
-        - fedora
-        - opensuse
-        - alpine
-        - archlinux
-        - centos
-        - almalinux
-        - rockylinux
-        - oracle
-        - openwrt
-        - gentoo
-        - openeuler
-        arch:
-        - name: amd64
-          runner: ubuntu-latest
-        - name: arm64
-          runner: ubuntu-24.04-arm
+        distro: ${{ fromJSON(format('["{0}"]', inputs.distro)) }}
+        arch: ${{ fromJSON(inputs.arch == 'arm64' && '[{"name":"arm64","runner":"ubuntu-24.04-arm"}]' || '[{"name":"amd64","runner":"ubuntu-latest"}]')
+          }}
     runs-on: ${{ matrix.arch.runner }}
-    timeout-minutes: 360
+    timeout-minutes: 180
     steps:
     - name: Load trusted network recovery helpers
       shell: bash
@@ -52,6 +36,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GH_TOKEN: ${{ github.token }}
+        CI_IMAGE_RELEASES: ${{ inputs.release }}
       run: |
         source "$RUNNER_TEMP/ci-network.sh"
         set -euo pipefail
@@ -62,22 +47,46 @@ jobs:
           output=$(bash build_kvm_images.sh "$distro" false "$ARCH" | tail -n 1)
           read -r -a assets <<< "$output"
           [[ ${#assets[@]} -gt 0 ]] || { echo "No configured image outputs." >&2; exit 1; }
-          sudo bash -c 'source "$1"; export -f ci_retry gh git ci_clone_attempt curl wget; bash "$2" "$3" true "$4"' -- "$RUNNER_TEMP/ci-network.sh" "build_kvm_images.sh" "$distro" "$ARCH"
-          for file in "${assets[@]}"; do
-            [[ "$file" =~ ^[A-Za-z0-9_.-]+\.zip$ ]] || { echo "Invalid output filename." >&2; exit 1; }
-            [[ -f "$file" ]] || { echo "Expected image was not built: $file" >&2; exit 1; }
-            size=$(stat -c %s "$file")
-            (( size > 10485760 && size <= 2147483648 )) || { echo "Image size is outside release limits: $file" >&2; exit 1; }
-            python3 -m zipfile -t "$file"
-          done
+          sudo --preserve-env=CI_IMAGE_RELEASES bash -c 'source "$1"; export -f ci_retry gh git ci_clone_attempt curl wget; bash "$2" "$3" true "$4"' -- "$RUNNER_TEMP/ci-network.sh" "build_kvm_images.sh" "$distro" "$ARCH"
+          python3 .github/scripts/verify_image_outputs.py "${assets[@]}"
           python3 "$RUNNER_TEMP/ci-release-assets.py" kvm_images "${assets[@]}"
           sudo rm -f "${assets[@]}"
         done
       shell: bash
 'on':
-  schedule:
-  - cron: 0 20 * * *
-  workflow_dispatch: null
+  workflow_dispatch:
+    inputs:
+      distro:
+        description: Distribution to rebuild
+        type: choice
+        required: true
+        default: debian
+        options:
+        - debian
+        - ubuntu
+        - fedora
+        - opensuse
+        - alpine
+        - archlinux
+        - centos
+        - almalinux
+        - rockylinux
+        - openwrt
+        - gentoo
+        - openeuler
+      release:
+        description: Exact configured release or code name
+        type: string
+        required: true
+        default: trixie
+      arch:
+        description: Runner architecture
+        type: choice
+        required: true
+        default: amd64
+        options:
+        - amd64
+        - arm64
 permissions:
   contents: write
 concurrency:
