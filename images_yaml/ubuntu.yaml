@@ -1,6 +1,5 @@
 image:
-  distribution: "ubuntu"
-
+  distribution: ubuntu
 simplestream:
   release_aliases:
     jammy: 22.04
@@ -12,13 +11,11 @@ simplestream:
     releases:
     - noble
     - resolute
-
 source:
   downloader: debootstrap
   same_as: gutsy
   url: http://archive.ubuntu.com/ubuntu/
   keys:
-  # 0x790BC7277767219C42C86F933B4FE6ACC0B21F32
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -245,8 +242,6 @@ source:
     9D075ubd/JquyeE97TWuWxHGoGIrUk7D+DgaelfyIsYRfVU=
     =384X
     -----END PGP PUBLIC KEY BLOCK-----
-
-  # 0xf6ecb3762474eda9d21b7022871920d1991bc93c
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -289,7 +284,6 @@ source:
     DaOLQ1w=
     =VTg2
     -----END PGP PUBLIC KEY BLOCK-----
-
 targets:
   lxc:
     create_message: |-
@@ -300,50 +294,34 @@ targets:
     config:
     - type: all
       before: 5
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/ubuntu.common.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/ubuntu.common.conf
     - type: user
       before: 5
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/ubuntu.userns.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/ubuntu.userns.conf
     - type: all
       after: 4
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/common.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/common.conf
     - type: user
       after: 4
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
     - type: all
-      content: |-
-        lxc.arch = {{ image.architecture_personality }}
-
+      content: lxc.arch = {{ image.architecture_personality }}
 files:
 - path: /etc/hostname
   generator: hostname
-
 - path: /etc/hosts
   generator: hosts
-
 - path: /etc/resolvconf/resolv.conf.d/original
   generator: remove
-
 - path: /etc/resolvconf/resolv.conf.d/tail
   generator: remove
-
 - path: /etc/machine-id
   generator: dump
-
 - path: /var/lib/dbus/machine-id
   generator: remove
-
 - path: /etc/netplan/10-lxc.yaml
   generator: dump
-  mode: 0600
+  mode: 384
   content: |-
     network:
       version: 2
@@ -355,10 +333,9 @@ files:
   - container
   variants:
   - default
-
 - path: /etc/netplan/10-lxc.yaml
   generator: dump
-  mode: 0600
+  mode: 384
   content: |-
     network:
       version: 2
@@ -371,29 +348,22 @@ files:
   variants:
   - default
   - desktop
-
 - name: meta-data
   generator: cloud-init
-
 - name: network-config
   generator: cloud-init
-
 - name: user-data
   generator: cloud-init
-
 - name: vendor-data
   generator: cloud-init
-
 - name: ext4
   generator: fstab
   types:
   - vm
-
 - name: lxd-agent
   generator: lxd-agent
   types:
   - vm
-
 - path: /etc/default/grub.d/50-lxd.cfg
   generator: dump
   content: |-
@@ -403,19 +373,17 @@ files:
     GRUB_TERMINAL=console
   types:
   - vm
-
 - path: /etc/sudoers.d/90-lxd
   generator: dump
-  mode: 0440
+  mode: 288
   content: |-
     # User rules for ubuntu
     ubuntu ALL=(ALL) NOPASSWD:ALL
   variants:
-    - default
-
+  - default
 - path: /etc/sudoers.d/90-lxd
   generator: dump
-  mode: 0440
+  mode: 288
   content: |-
     # User rules for ubuntu
     ubuntu ALL=(ALL) NOPASSWD:ALL
@@ -423,7 +391,6 @@ files:
   - desktop
   types:
   - vm
-
 packages:
   manager: apt
   update: true
@@ -445,18 +412,15 @@ packages:
     - dos2unix
     - cron
     action: install
-
   - packages:
     - cloud-init
     action: install
-
   - packages:
     - systemd-resolved
     action: install
     releases:
     - noble
     - resolute
-
   - packages:
     - grub-efi-amd64-signed
     - shim-signed
@@ -465,7 +429,6 @@ packages:
     - amd64
     types:
     - vm
-
   - packages:
     - grub-efi-arm64-signed
     - shim-signed
@@ -474,25 +437,21 @@ packages:
     - arm64
     types:
     - vm
-
   - packages:
     - linux-image-virtual
     action: install
     types:
     - vm
-
   - packages:
     - os-prober
     action: remove
     types:
     - vm
-
   - packages:
     - cloud-guest-utils
     action: install
     types:
     - vm
-
   - packages:
     - ubuntu-desktop-minimal
     action: install
@@ -500,7 +459,6 @@ packages:
     - desktop
     types:
     - vm
-
   repositories:
   - name: sources.list
     url: |-
@@ -510,7 +468,6 @@ packages:
     architectures:
     - amd64
     - i386
-
   - name: sources.list
     url: |-
       deb http://ports.ubuntu.com/ubuntu-ports {{ image.release }} main restricted universe multiverse
@@ -523,7 +480,6 @@ packages:
     - powerpc64
     - ppc64el
     - riscv64
-
 actions:
 - trigger: post-update
   action: |-
@@ -535,7 +491,6 @@ actions:
     useradd --create-home -s /bin/bash -G sudo -U ubuntu
   variants:
   - default
-
 - trigger: post-packages
   action: |-
     #!/bin/sh
@@ -543,9 +498,6 @@ actions:
 
     # Disable UA attach
     systemctl mask ua-auto-attach
-
-  # Ubuntu Desktop images come with NetworkManager by default,
-  # so we should stop enabling systemd-networkd from Noble onwards.
 - trigger: post-packages
   action: |-
     #!/bin/sh
@@ -555,7 +507,6 @@ actions:
     systemctl enable systemd-networkd
   releases:
   - jammy
-
 - trigger: post-packages
   action: |-
     #!/bin/sh
@@ -566,7 +517,6 @@ actions:
   releases:
   - noble
   - resolute
-
 - trigger: post-packages
   action: |-
     #!/bin/sh
@@ -583,7 +533,6 @@ actions:
 
     # Cleanup temporary shadow paths
     rm /etc/*-
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -604,7 +553,6 @@ actions:
     sed -i "s#root=[^ ]*#root=${LXD_IMAGEBUILDER_ROOT_UUID}#g" /boot/grub/grub.cfg
   types:
   - vm
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -626,7 +574,6 @@ actions:
     systemctl enable lxd-growpart
   types:
   - vm
-
 - trigger: post-packages
   action: |-
     #!/bin/sh
@@ -696,7 +643,6 @@ actions:
   - desktop
   types:
   - vm
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -771,13 +717,11 @@ actions:
     rm -rf /tmp/* /var/tmp/* || true
     find /var/log -type f \( -name "*.log" -o -name "*.gz" -o -name "*.1" \) -delete 2>/dev/null || true
     truncate -s 0 /var/log/lastlog 2>/dev/null || true
-
   types:
   - vm
   - container
   variants:
   - cloud
   - default
- 
 mappings:
   architecture_map: debian

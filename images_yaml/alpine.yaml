@@ -1,17 +1,14 @@
 image:
-  distribution: "alpinelinux"
-
+  distribution: alpinelinux
 simplestream:
   requirements:
   - requirements:
       secureboot: false
-
 source:
   downloader: alpinelinux-http
   same_as: 3.21
   url: https://dl-cdn.alpinelinux.org/alpine/
   keys:
-  # 0482D84022F52DF1C4E7CD43293ACD0907D9495A
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -166,51 +163,39 @@ source:
     bcgRRcklNr8mTzJH
     =ckew
     -----END PGP PUBLIC KEY BLOCK-----
-
 targets:
   lxc:
     create_message: |
       You just created an {{ image.description }} container.
-
     config:
     - type: all
       before: 5
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/alpine.common.conf
+      content: lxc.include = LXC_TEMPLATE_CONFIG/alpine.common.conf
     - type: user
       before: 5
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/alpine.userns.conf
+      content: lxc.include = LXC_TEMPLATE_CONFIG/alpine.userns.conf
     - type: all
       after: 4
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/common.conf
+      content: lxc.include = LXC_TEMPLATE_CONFIG/common.conf
     - type: user
       after: 4
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
+      content: lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
     - type: all
-      content: |-
-        lxc.arch = {{ image.architecture_personality }}
+      content: lxc.arch = {{ image.architecture_personality }}
   lxd:
     vm:
       filesystem: ext4
-
 files:
 - path: /etc/hostname
   generator: hostname
-
 - path: /etc/hosts
   generator: hosts
-
 - generator: fstab
   types:
   - vm
-
 - generator: lxd-agent
   types:
   - vm
-
 - path: /etc/default/grub
   generator: dump
   pongo: true
@@ -231,14 +216,12 @@ files:
     GRUB_DISABLE_OS_PROBER=true
   types:
   - vm
-
 - path: /etc/network/interfaces
   generator: dump
   content: |-
     auto eth0
     iface eth0 inet dhcp
     hostname $(hostname)
-
 - path: /etc/inittab
   generator: dump
   content: |-
@@ -259,7 +242,6 @@ files:
 
     # Stuff to do before rebooting
     ::shutdown:/sbin/openrc shutdown
-
 - path: /etc/inittab
   generator: template
   name: inittab
@@ -277,12 +259,10 @@ files:
 
     # Stuff to do before rebooting
     ::shutdown:/sbin/openrc shutdown
-
 - name: meta-data
   generator: cloud-init
   variants:
   - cloud
-
 - name: network-config
   generator: cloud-init
   content: |-
@@ -295,17 +275,14 @@ files:
         control: auto
   variants:
   - cloud
-
 - name: user-data
   generator: cloud-init
   variants:
   - cloud
-
 - name: vendor-data
   generator: cloud-init
   variants:
   - cloud
-
 packages:
   manager: apk
   update: true
@@ -326,7 +303,6 @@ packages:
     - iptables
     - dos2unix
     action: install
-
   - packages:
     - cloud-init
     - e2fsprogs-extra
@@ -334,7 +310,6 @@ packages:
     action: install
     variants:
     - cloud
-
   - packages:
     - acpi
     - gcc
@@ -344,7 +319,6 @@ packages:
     action: install
     types:
     - vm
-
 actions:
 - trigger: post-unpack
   action: |-
@@ -354,14 +328,12 @@ actions:
     printf "disable_trigger=1\n" > /etc/update-grub.conf
   types:
   - vm
-
 - trigger: post-packages
   action: |-
     #!/bin/sh
     set -eux
 
     rm -f /var/cache/apk/*
-
 - trigger: post-packages
   action: |-
     #!/bin/sh
@@ -383,7 +355,6 @@ actions:
     done
   types:
   - container
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -414,7 +385,6 @@ actions:
     rm -f /etc/update-grub.conf
   types:
   - vm
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -430,7 +400,6 @@ actions:
   - vm
   variants:
   - cloud
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -439,7 +408,6 @@ actions:
     setup-cloud-init
   variants:
   - cloud
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -479,13 +447,11 @@ actions:
     # clean temporary files and logs
     rm -rf /tmp/* /var/tmp/* || true
     find /var/log -type f \( -name "*.log" -o -name "*.gz" \) -delete 2>/dev/null || true
-    
   types:
   - container
   - vm
   variants:
   - cloud
   - default
- 
 mappings:
   architecture_map: alpinelinux

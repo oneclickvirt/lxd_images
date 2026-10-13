@@ -1,14 +1,11 @@
 image:
   distribution: rockylinux
-
 simplestream:
   distro_name: RockyLinux
-
 source:
   downloader: rockylinux-http
   url: https://download.rockylinux.org/pub/rocky/
   keys:
-  # RPM-GPG-KEY-rockylinux-8
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
     mQINBGAofzYBEAC6yS1azw6f3wmaVd//3aSy6O2c9+jeetulRQvg2LvhRRS1eNqp
@@ -38,8 +35,6 @@ source:
     JmeWf4VZyebm+gc50szsg6Ut2yT8hw==
     =AiP8
     -----END PGP PUBLIC KEY BLOCK-----
-
-  # RPM-GPG-KEY-rockylinux-9
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
     Version: resf.keykeeper.v1
@@ -72,9 +67,7 @@ source:
     i+YIbPKH1TAOMwiyxC106mIL705p+ORf5zATZMyB8Y0OvRIz5aKkBDFZM2QN6A==
     =PzIf
     -----END PGP PUBLIC KEY BLOCK-----
-
   variant: minimal
-
 targets:
   lxc:
     create_message: |
@@ -82,38 +75,29 @@ targets:
     config:
     - type: all
       before: 5
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/rocky.common.conf
+      content: lxc.include = LXC_TEMPLATE_CONFIG/rocky.common.conf
     - type: user
       before: 5
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/rocky.userns.conf
+      content: lxc.include = LXC_TEMPLATE_CONFIG/rocky.userns.conf
     - type: all
       after: 4
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/common.conf
+      content: lxc.include = LXC_TEMPLATE_CONFIG/common.conf
     - type: user
       after: 4
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
+      content: lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
     - type: all
-      content: |-
-        lxc.arch = {{ image.architecture_kernel }}
+      content: lxc.arch = {{ image.architecture_kernel }}
 files:
 - name: hostname
   path: /etc/hostname
   generator: hostname
-
 - name: hosts
   path: /etc/hosts
   generator: hosts
-
 - path: /etc/machine-id
   generator: dump
-
 - path: /var/lib/dbus/machine-id
   generator: remove
-
 - name: ifcfg-eth0
   path: /etc/sysconfig/network-scripts/ifcfg-eth0
   generator: dump
@@ -128,7 +112,6 @@ files:
     DHCP_HOSTNAME=LXC_NAME
   types:
   - container
-
 - name: ifcfg-eth0.lxd
   path: /etc/sysconfig/network-scripts/ifcfg-eth0
   generator: template
@@ -143,7 +126,6 @@ files:
     IPV6INIT=yes
   types:
   - container
-
 - name: ifcfg-enp5s0.lxd
   path: /etc/sysconfig/network-scripts/ifcfg-enp5s0
   generator: template
@@ -157,7 +139,6 @@ files:
     DHCP_HOSTNAME={{ container.name }}
   types:
   - vm
-
 - path: /etc/default/grub
   generator: dump
   content: |-
@@ -173,24 +154,18 @@ files:
     GRUB_DISABLE_OS_PROBER=true
   types:
   - vm
-
 - path: /etc/dracut.conf.d/lxd.conf
   generator: dump
-  content: |-
-    add_drivers+=" virtio_scsi virtio_console sd_mod virtio_blk "
+  content: add_drivers+=" virtio_scsi virtio_console sd_mod virtio_blk "
   types:
   - vm
-
 - generator: fstab
   types:
   - vm
-
 - name: 86-nm-unmanaged.rules
   path: /etc/udev/rules.d/86-nm-unmanaged.rules
   generator: dump
-  content: |-
-    ENV{ID_NET_DRIVER}=="veth", ENV{NM_UNMANAGED}="0"
-
+  content: ENV{ID_NET_DRIVER}=="veth", ENV{NM_UNMANAGED}="0"
 - name: network
   path: /etc/sysconfig/network
   generator: dump
@@ -208,7 +183,6 @@ files:
   generator: cloud-init
   variants:
   - cloud
-
 - name: network-config
   generator: cloud-init
   content: |-
@@ -223,21 +197,17 @@ files:
             control: auto{% else %}{{ config_get("user.network-config", "") }}{% endif %}
   variants:
   - cloud
-
 - name: user-data
   generator: cloud-init
   variants:
   - cloud
-
 - name: vendor-data
   generator: cloud-init
   variants:
   - cloud
-
 - generator: lxd-agent
   types:
   - vm
-
 packages:
   manager: yum
   update: true
@@ -269,21 +239,18 @@ packages:
     - dos2unix
     - cronie
     action: install
-
   - packages:
     - NetworkManager
     action: install
     variants:
     - default
     - cloud
-
   - packages:
     - cloud-init
     - openssh-server
     action: install
     variants:
     - cloud
-
   - packages:
     - cloud-utils-growpart
     action: install
@@ -291,19 +258,16 @@ packages:
     - vm
     variants:
     - cloud
-
   - packages:
     - shim
     action: install
     types:
     - vm
-
   - packages:
     - kernel
     action: install
     types:
     - vm
-
   - packages:
     - grub2-efi-x64
     action: install
@@ -311,7 +275,6 @@ packages:
     - vm
     architectures:
     - x86_64
-
   - packages:
     - grub2-efi-aarch64
     action: install
@@ -319,7 +282,6 @@ packages:
     - vm
     architectures:
     - aarch64
-
 actions:
 - trigger: post-unpack
   action: |-
@@ -328,7 +290,6 @@ actions:
     systemd-machine-id-setup
   types:
   - vm
-
 - trigger: post-packages
   action: |-
     #!/bin/sh
@@ -342,7 +303,6 @@ actions:
     # Set default locale
     localedef -i en_US -f UTF-8 en_US.UTF-8
     echo 'LANG=en_US.utf8' > /etc/locale.conf
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -357,7 +317,6 @@ actions:
   - vm
   releases:
   - 8
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -376,7 +335,6 @@ actions:
   - vm
   releases:
   - 9
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -387,7 +345,6 @@ actions:
   - vm
   variants:
   - default
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -401,7 +358,6 @@ actions:
   - container
   variants:
   - default
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -476,7 +432,6 @@ actions:
     rm -rf /tmp/* /var/tmp/* || true
     find /var/log -type f \( -name "*.log" -o -name "*.gz" -o -name "*.1" \) -delete 2>/dev/null || true
     truncate -s 0 /var/log/lastlog 2>/dev/null || true
-
   types:
   - vm
   - container

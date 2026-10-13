@@ -1,14 +1,11 @@
 image:
   distribution: OpenWrt
-
 simplestream:
   distro_name: OpenWrt
-
 source:
   downloader: openwrt-http
   url: https://downloads.openwrt.org
   keys:
-  # 0x54CC74307A2C6DC9CE618269CD84BCED626471F1 (PGP key for unattended snapshot builds and 23.05, pub key)
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -85,8 +82,6 @@ source:
     U7NziyphAaEuP2IxF+Y3
     =kEox
     -----END PGP PUBLIC KEY BLOCK-----
-
-  # 0x6D9278A33A9AB3146262DCECF93525A88B699029 (PGP key for unattended snapshot builds and 23.05, sub key)
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -163,31 +158,22 @@ source:
     U7NziyphAaEuP2IxF+Y3
     =kEox
     -----END PGP PUBLIC KEY BLOCK-----
-
 targets:
   lxc:
     create_message: |
       You just created an {{ image.distribution }} container.
     config:
     - type: all
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/common.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/common.conf
     - type: user
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
     - type: all
-      content: |-
-        lxc.arch = {{ image.architecture_kernel }}
-
+      content: lxc.arch = {{ image.architecture_kernel }}
 files:
 - path: /etc/hostname
   generator: hostname
-
 - path: /etc/hosts
   generator: hosts
-
 - path: /etc/config/network
   generator: dump
   content: |-
@@ -207,9 +193,7 @@ files:
 
     config globals 'globals'
         option ula_prefix 'auto'
-
 packages:
-  # Note: Older releases of OpenWrt use "opkg" package manager.
   manager: apk
   update: false
   cleanup: true
@@ -225,14 +209,12 @@ packages:
     - openssh-keygen
     - iptables
     action: install
-
 actions:
 - trigger: post-unpack
   action: |
     #!/bin/sh
     mkdir -p /var/lock
     echo "console::askfirst:/usr/libexec/login.sh" >> /etc/inittab
-
 - trigger: post-unpack
   action: |
     #!/bin/sh
@@ -241,7 +223,6 @@ actions:
     mkdir -p /var/log
   releases:
   - snapshot
-
 - trigger: post-files
   action: |
     #!/bin/sh
@@ -250,7 +231,6 @@ actions:
     sed -i 's/procd_add_jail/: \0/g' /etc/init.d/dnsmasq
     # Disable conflicting sysntpd service to avoid crash loop
     rm -f /etc/rc.d/*sysntpd
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -290,7 +270,6 @@ actions:
     # clean temporary files and logs
     rm -rf /tmp/* /var/tmp/* || true
     find /var/log -type f \( -name "*.log" -o -name "*.gz" \) -delete 2>/dev/null || true
-    
   types:
   - container
   - vm

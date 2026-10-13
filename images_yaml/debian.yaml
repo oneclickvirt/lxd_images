@@ -1,18 +1,15 @@
 image:
-  distribution: "debian"
-
+  distribution: debian
 simplestream:
   release_aliases:
     bookworm: 12
     trixie: 13
     forky: 14
-
 source:
   downloader: debootstrap
   same_as: sid
   url: https://deb.debian.org/debian/
   keys:
-  # 0x126C0D24BD8A2942CC7DF8AC7638D0442B90D010
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -204,8 +201,6 @@ source:
     tizqJW3oSFiqIcpiyfN+0rLetGa0WslDnSIhyclfxOPMH14=
     =k46C
     -----END PGP PUBLIC KEY BLOCK-----
-
-  # 0xA1BD8E9D78F7FE5C3E65D8AF8B48AD6246925553
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -554,8 +549,6 @@ source:
     qCTHsZBLcjOQhV5Ubg==
     =L+5x
     -----END PGP PUBLIC KEY BLOCK-----
-
-  # 0x6D33866EDD8FFA41C0143AEDDCC9EFBF77E11517
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -610,8 +603,6 @@ source:
     idjr8CGNeffTyeMJbSniGisGOkhiX9TLbz8ufw==
     =a2kx
     -----END PGP PUBLIC KEY BLOCK-----
-
-  # 0x80D15823B7FD1561F9F7BCDDDC30D7C23CBBABEE
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -787,8 +778,6 @@ source:
     qn8+ouVQUr65+xcIST13Ffg80zc=
     =lfn1
     -----END PGP PUBLIC KEY BLOCK-----
-
-  # 0xE852514F5DF312F6
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -820,8 +809,6 @@ source:
     oPh9t/VGRvdQHA==
     =KM28
     -----END PGP PUBLIC KEY BLOCK-----
-
-  # 0xB7C5D7D6350947F8
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -949,9 +936,7 @@ source:
     22lSkijKki64QmcUnp84EDZQdk+myhnGBqi+yw==
     =swbo
     -----END PGP PUBLIC KEY BLOCK-----
-
   variant: minbase
-
 targets:
   lxc:
     create_message: |-
@@ -959,50 +944,34 @@ targets:
 
       To enable SSH, run: apt install openssh-server
       No default root or user password are set by LXC.
-
     config:
     - type: all
       before: 5
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/debian.common.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/debian.common.conf
     - type: user
       before: 5
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/debian.userns.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/debian.userns.conf
     - type: all
       after: 4
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/common.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/common.conf
     - type: user
       after: 4
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
+      content: lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
     - type: all
-      content: |-
-        lxc.arch = {{ image.architecture_personality }}
-
+      content: lxc.arch = {{ image.architecture_personality }}
 files:
 - path: /etc/hostname
   generator: hostname
-
 - path: /etc/hosts
   generator: hosts
-
 - path: /etc/resolvconf/resolv.conf.d/original
   generator: remove
-
 - path: /etc/resolvconf/resolv.conf.d/tail
   generator: remove
-
 - path: /etc/machine-id
   generator: dump
-
 - path: /var/lib/dbus/machine-id
   generator: remove
-
 - path: /etc/systemd/network/eth0.network
   generator: dump
   content: |-
@@ -1020,7 +989,6 @@ files:
     ClientIdentifier=mac
   types:
   - container
-
 - path: /etc/systemd/network/enp5s0.network
   generator: dump
   content: |-
@@ -1040,17 +1008,14 @@ files:
   - vm
   variants:
   - default
-
 - path: /etc/dracut.conf.d/lxd.conf
   generator: dump
-  content: |-
-    add_drivers+=" ext4 "
+  content: add_drivers+=" ext4 "
   types:
   - vm
   releases:
   - sid
   - forky
-
 - path: /etc/default/grub.d/50-lxd.cfg
   generator: dump
   content: |-
@@ -1067,36 +1032,29 @@ files:
     GRUB_TERMINAL=console
   types:
   - vm
-
 - name: meta-data
   generator: cloud-init
   variants:
   - cloud
-
 - name: network-config
   generator: cloud-init
   variants:
   - cloud
-
 - name: user-data
   generator: cloud-init
   variants:
   - cloud
-
 - name: vendor-data
   generator: cloud-init
   variants:
   - cloud
-
 - name: lxd-agent
   generator: lxd-agent
   types:
   - vm
-
 - generator: fstab
   types:
   - vm
-
 packages:
   manager: apt
   update: true
@@ -1108,7 +1066,6 @@ packages:
     early: true
     architectures:
     - riscv64
-
   - packages:
     - dialog
     - init
@@ -1132,27 +1089,23 @@ packages:
     - dos2unix
     - cron
     action: install
-
   - packages:
     - isc-dhcp-client
     action: install
     releases:
     - bookworm
     - trixie
-
   - packages:
     - dbus
     - systemd-resolved
     action: install
     early: true
-
   - packages:
     - cloud-init
     - gpg
     action: install
     variants:
     - cloud
-
   - packages:
     - polkitd
     action: install
@@ -1163,14 +1116,12 @@ packages:
     - trixie
     - forky
     - sid
-
   - packages:
     - pkexec
     action: install
     architectures:
     - amd64
     - arm64
-
   - packages:
     - grub-efi
     action: install
@@ -1178,7 +1129,6 @@ packages:
     - vm
     architectures:
     - amd64
-
   - packages:
     - linux-image-amd64
     action: install
@@ -1186,7 +1136,6 @@ packages:
     - vm
     architectures:
     - amd64
-
   - packages:
     - grub-efi-arm64
     - linux-image-arm64
@@ -1195,19 +1144,16 @@ packages:
     - vm
     architectures:
     - arm64
-
   - packages:
     - cloud-guest-utils
     action: install
     types:
     - vm
-
   - packages:
     - shim-signed
     action: install
     types:
     - vm
-
   repositories:
   - name: sources.list
     url: |-
@@ -1223,11 +1169,9 @@ packages:
     - ppc64el
     - s390x
   - name: sources.list
-    url: |-
-      deb http://deb.debian.org/debian sid main
+    url: deb http://deb.debian.org/debian sid main
     architectures:
     - riscv64
-
 actions:
 - trigger: post-unpack
   action: |-
@@ -1237,11 +1181,8 @@ actions:
     cat /etc/resolv.conf > /tmp/resolv.conf
     umount -l /etc/resolv.conf || true
     mv /tmp/resolv.conf /etc/
-
   variants:
   - cloud
-
-
 - trigger: post-packages
   action: |-
     #!/bin/sh
@@ -1250,7 +1191,6 @@ actions:
     # Enable systemd-networkd
     systemctl enable systemd-networkd.socket
     systemctl enable systemd-networkd.service
-
 - trigger: post-packages
   action: |-
     #!/bin/sh
@@ -1268,7 +1208,6 @@ actions:
 
     # Cleanup temporary shadow paths
     rm /etc/*-
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -1293,7 +1232,6 @@ actions:
     sed -i "s#root=[^ ]*#root=${LXD_IMAGEBUILDER_ROOT_UUID}#g" /boot/grub/grub.cfg
   types:
   - vm
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -1316,7 +1254,6 @@ actions:
     systemctl enable lxd-growpart
   types:
   - vm
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -1324,7 +1261,6 @@ actions:
 
     umount -l /etc/resolv.conf || true
     ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -1399,13 +1335,11 @@ actions:
     rm -rf /tmp/* /var/tmp/* || true
     find /var/log -type f \( -name "*.log" -o -name "*.gz" -o -name "*.1" \) -delete 2>/dev/null || true
     truncate -s 0 /var/log/lastlog 2>/dev/null || true
-
   types:
   - vm
   - container
   variants:
   - cloud
   - default
- 
 mappings:
   architecture_map: debian

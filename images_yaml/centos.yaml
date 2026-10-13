@@ -1,14 +1,11 @@
 image:
   distribution: centos
-
 simplestream:
   distro_name: CentOS
-
 source:
   downloader: centos-http
   url: https://mirror.math.princeton.edu/pub/centos/
   keys:
-  # RPM-GPG-KEY-CentOS-SIG-AltArch-Arm32
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -29,8 +26,6 @@ source:
     q5eFcyxxA1r2IdmItGVwz73gSz8WkJoh8QeN
     =72OZ
     -----END PGP PUBLIC KEY BLOCK-----
-
-  # RPM-GPG-KEY-CentOS-SIG-AltArch-7-ppc64
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -51,8 +46,6 @@ source:
     /6cxo9vG1NH6sQ3BJiEyJNaWj3q2c5U=
     =E+yp
     -----END PGP PUBLIC KEY BLOCK-----
-
-  # RPM-GPG-KEY-CentOS-Official
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
     Version: GnuPG v2.0.22 (GNU/Linux)
@@ -84,9 +77,7 @@ source:
     mTfAxz4h
     =agO/
     -----END PGP PUBLIC KEY BLOCK-----
-
   variant: minimal
-
 targets:
   lxc:
     create_message: |
@@ -94,46 +85,31 @@ targets:
     config:
     - type: all
       before: 5
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/centos.common.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/centos.common.conf
     - type: user
       before: 5
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/centos.userns.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/centos.userns.conf
     - type: all
       after: 4
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/common.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/common.conf
     - type: user
       after: 4
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
     - type: all
-      content: |-
-        lxc.arch = {{ image.architecture_kernel }}
-
+      content: lxc.arch = {{ image.architecture_kernel }}
 files:
 - name: hostname
   path: /etc/hostname
   generator: hostname
-
 - name: hosts
   path: /etc/hosts
   generator: hosts
-
 - path: /etc/machine-id
   generator: dump
-
 - path: /etc/fstab
   generator: dump
-
 - path: /var/lib/dbus/machine-id
   generator: remove
-
 - path: /etc/default/grub
   generator: dump
   content: |-
@@ -149,24 +125,18 @@ files:
     GRUB_DISABLE_OS_PROBER=true
   types:
   - vm
-
 - path: /etc/dracut.conf.d/lxd.conf
   generator: dump
-  content: |-
-    add_drivers+=" virtio_scsi virtio_console sd_mod virtio_blk "
+  content: add_drivers+=" virtio_scsi virtio_console sd_mod virtio_blk "
   types:
   - vm
-
 - generator: fstab
   types:
   - vm
-
 - name: 86-nm-unmanaged.rules
   path: /etc/udev/rules.d/86-nm-unmanaged.rules
   generator: dump
-  content: |-
-    ENV{ID_NET_DRIVER}=="veth", ENV{NM_UNMANAGED}="0"
-
+  content: ENV{ID_NET_DRIVER}=="veth", ENV{NM_UNMANAGED}="0"
 - name: network
   path: /etc/sysconfig/network
   generator: dump
@@ -174,38 +144,31 @@ files:
   content: |-
     NETWORKING=yes
     HOSTNAME=LXC_NAME
-
 - name: network.lxd
   path: /etc/sysconfig/network
   generator: template
   content: |-
     NETWORKING=yes
     HOSTNAME={{ container.name }}
-
 - name: meta-data
   generator: cloud-init
   variants:
   - cloud
-
 - name: network-config
   generator: cloud-init
   variants:
   - cloud
-
 - name: user-data
   generator: cloud-init
   variants:
   - cloud
-
 - name: vendor-data
   generator: cloud-init
   variants:
   - cloud
-
 - generator: lxd-agent
   types:
   - vm
-
 packages:
   manager: dnf
   update: true
@@ -234,24 +197,20 @@ packages:
     - dos2unix
     - cronie
     action: install
-
   - packages:
     - dhclient
     action: install
     releases:
     - 9-Stream
-
   - packages:
     - cronie-anacron
     - NetworkManager
     action: install
-
   - packages:
     - systemd-udev
     action: install
     releases:
     - 10-Stream
-
   - packages:
     - glibc-locale-source
     architectures:
@@ -260,7 +219,6 @@ packages:
     - ppc64le
     - x86_64
     action: install
-
   - packages:
     - NetworkManager
     action: install
@@ -268,7 +226,6 @@ packages:
     - vm
     variants:
     - default
-
   - packages:
     - cloud-init
     - openssh-server
@@ -276,7 +233,6 @@ packages:
     action: install
     variants:
     - cloud
-
   - packages:
     - cloud-utils-growpart
     action: install
@@ -284,7 +240,6 @@ packages:
     - vm
     variants:
     - cloud
-
   - packages:
     - gdisk
     action: install
@@ -295,19 +250,16 @@ packages:
     - 9-Stream
     variants:
     - cloud
-
   - packages:
     - shim
     action: install
     types:
     - vm
-
   - packages:
     - kernel
     action: install
     types:
     - vm
-
   - packages:
     - grub2-efi-x64
     - grubby
@@ -316,7 +268,6 @@ packages:
     - vm
     architectures:
     - x86_64
-
   - packages:
     - grub2-efi-aarch64
     - grubby
@@ -325,7 +276,6 @@ packages:
     - vm
     architectures:
     - aarch64
-
 actions:
 - trigger: post-unpack
   action: |-
@@ -338,7 +288,6 @@ actions:
     if [ -f /etc/yum/pluginconf.d/fastestmirror.conf ]; then
       sed -ri 's/enabled=1/enabled=0/g' /etc/yum/pluginconf.d/fastestmirror.conf
     fi
-
 - trigger: post-unpack
   action: |-
     #!/bin/sh
@@ -384,7 +333,6 @@ actions:
     countme=1
     enabled=1
     EOF
-
 - trigger: post-unpack
   action: |-
     #!/bin/sh
@@ -392,7 +340,6 @@ actions:
     systemd-machine-id-setup
   types:
   - vm
-
 - trigger: post-unpack
   action: |-
     #!/bin/sh
@@ -400,7 +347,6 @@ actions:
     find / -xdev -exec setfattr -x security.selinux {} 2>/dev/null \;
   types:
   - container
-
 - trigger: post-packages
   action: |-
     #!/bin/sh
@@ -412,7 +358,6 @@ actions:
 
     # Disable loginuid in PAM stack
     sed -i '/^session.*pam_loginuid.so/s/^session/# session/' /etc/pam.d/*
-
 - trigger: post-packages
   architectures:
   - aarch64
@@ -426,7 +371,6 @@ actions:
     # Set default locale
     localedef -i en_US -f UTF-8 en_US.UTF-8
     echo 'LANG=en_US.utf8' > /etc/locale.conf
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -446,7 +390,6 @@ actions:
     dracut --kver "${kver}" -f
   types:
   - vm
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -457,7 +400,6 @@ actions:
   - vm
   variants:
   - default
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -469,7 +411,6 @@ actions:
     systemctl enable NetworkManager.service
   releases:
   - 9-Stream
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -481,7 +422,6 @@ actions:
     systemctl enable NetworkManager.service
   releases:
   - 10-Stream
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -496,7 +436,6 @@ actions:
     if [ -f /etc/yum/pluginconf.d/fastestmirror.conf ]; then
       sed -ri 's/enabled=0/enabled=1/g' /etc/yum/pluginconf.d/fastestmirror.conf
     fi
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -571,7 +510,6 @@ actions:
     rm -rf /tmp/* /var/tmp/* || true
     find /var/log -type f \( -name "*.log" -o -name "*.gz" -o -name "*.1" \) -delete 2>/dev/null || true
     truncate -s 0 /var/log/lastlog 2>/dev/null || true
-
   types:
   - vm
   - container

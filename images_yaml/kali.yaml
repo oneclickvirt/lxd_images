@@ -1,13 +1,11 @@
 image:
-  distribution: "kali"
+  distribution: kali
   release: kali-rolling
-
 source:
   downloader: debootstrap
   url: https://kali.download/kali/
   same_as: sid
   keys:
-  # 0x827C8569F2518CC677FECA1AED65462EC8D5E4C5
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -38,7 +36,6 @@ source:
     0ltMBMym2KZk/IFOTloSfW7hMmGlqaLfQEH1ryHefIIpkgKJa6WgVxA=
     =f+tz
     -----END PGP PUBLIC KEY BLOCK-----
-  # 0x44C6513A8E4FB3D30875F758ED444FF07D8D0BF6
   - |-
     -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -1661,7 +1658,6 @@ source:
     =f8md
     -----END PGP PUBLIC KEY BLOCK-----
   variant: minbase
-
 targets:
   lxc:
     create_message: |-
@@ -1669,46 +1665,31 @@ targets:
 
       To enable SSH, run: apt install openssh-server
       No default root or user password are set by LXC.
-
     config:
     - type: all
       before: 5
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/debian.common.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/debian.common.conf
     - type: all
       after: 4
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/common.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/common.conf
     - type: user
       after: 4
-      content: |-
-        lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
-
+      content: lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
     - type: all
-      content: |-
-        lxc.arch = {{ image.architecture_personality }}
-
+      content: lxc.arch = {{ image.architecture_personality }}
 files:
 - path: /etc/hostname
   generator: hostname
-
 - path: /etc/hosts
   generator: hosts
-
 - path: /etc/resolvconf/resolv.conf.d/original
   generator: remove
-
 - path: /etc/resolvconf/resolv.conf.d/tail
   generator: remove
-
 - path: /etc/machine-id
   generator: dump
-
 - path: /var/lib/dbus/machine-id
   generator: remove
-
 - path: /etc/network/interfaces
   generator: dump
   content: |-
@@ -1723,27 +1704,22 @@ files:
     iface eth0 inet dhcp
 
     source /etc/network/interfaces.d/*.cfg
-
 - name: meta-data
   generator: cloud-init
   variants:
   - cloud
-
 - name: network-config
   generator: cloud-init
   variants:
   - cloud
-
 - name: user-data
   generator: cloud-init
   variants:
   - cloud
-
 - name: vendor-data
   generator: cloud-init
   variants:
   - cloud
-
 packages:
   manager: apt
   update: true
@@ -1753,7 +1729,6 @@ packages:
     - kali-archive-keyring
     action: install
     early: true
-
   - packages:
     - dialog
     - ifupdown
@@ -1777,18 +1752,14 @@ packages:
     - dos2unix
     - cron
     action: install
-
   - packages:
     - cloud-init
     action: install
     variants:
     - cloud
-
   repositories:
   - name: sources.list
-    url: |-
-      deb http://kali.download/kali {{ image.release }} main non-free contrib
-
+    url: deb http://kali.download/kali {{ image.release }} main non-free contrib
 actions:
 - trigger: post-packages
   action: |-
@@ -1807,7 +1778,6 @@ actions:
 
     # Cleanup temporary shadow paths
     rm /etc/*-
-
 - trigger: post-packages
   action: |-
     #!/bin/sh
@@ -1817,7 +1787,6 @@ actions:
     systemctl enable cloud-init-main
   variants:
   - cloud
-
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -1892,13 +1861,11 @@ actions:
     rm -rf /tmp/* /var/tmp/* || true
     find /var/log -type f \( -name "*.log" -o -name "*.gz" -o -name "*.1" \) -delete 2>/dev/null || true
     truncate -s 0 /var/log/lastlog 2>/dev/null || true
-
   types:
   - vm
   - container
   variants:
   - cloud
   - default
- 
 mappings:
   architecture_map: debian
