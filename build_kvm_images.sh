@@ -228,7 +228,7 @@ build_or_list_kvm_images() {
     local architectures=("$build_arch")
     local len=${#versions[@]}
     if (( len == 0 )); then echo "No image releases were obtained from the configured source" >&2; return 1; fi
-    
+
     for ((i = 0; i < len; i++)); do
         version=${versions[i]}
         ver_num=${ver_nums[i]}
@@ -259,9 +259,9 @@ build_or_list_kvm_images() {
                     echo "Unsupported distribution: $run_funct"
                     exit 1
                 fi
-                
+
                 EXTRA_ARGS=""
-                
+
                 # 架构转换和特殊参数设置
                 case "$run_funct" in
                     "centos")
@@ -328,7 +328,7 @@ build_or_list_kvm_images() {
                         fi
                         ;;
                 esac
-                
+
                 if [ "$is_build_image" == true ]; then
                     rm -f -- incus.tar.xz lxd.tar.xz rootfs.squashfs rootfs.tar.xz disk.qcow2 disk_compressed.qcow2
                     if command -v lxd-imagebuilder >/dev/null 2>&1; then
@@ -337,7 +337,7 @@ build_or_list_kvm_images() {
                             -o image.variant="${variant}" \
                             -o packages.manager="${manager}" \
                             ${EXTRA_ARGS} )
-                        
+
                         if [[ "$run_funct" != gentoo && "$run_funct" != archlinux ]]; then
                             BUILDER_CMD+=( -o "image.release=${version}" )
                         fi
@@ -351,9 +351,9 @@ build_or_list_kvm_images() {
                         echo "lxd-imagebuilder not found" >&2
                         return 1
                     fi
-                    
+
                     du -sh *
-                    
+
                     # 架构标签转换用于文件命名
                     case "$arch" in
                       x86_64)
@@ -366,9 +366,9 @@ build_or_list_kvm_images() {
                         arch_label="$arch"
                         ;;
                     esac
-                    
+
                     zip_file="${run_funct}_${ver_num}_${version}_${arch_label}_${variant}_kvm.zip"
-                    
+
                     if [ -f lxd.tar.xz ] && [ -f disk.qcow2 ]; then
                         if ! patch_lxd_metadata_for_kvm "$zip_file"; then
                             echo "Failed to patch metadata for ${zip_file}; skipping package"
@@ -417,7 +417,7 @@ build_or_list_kvm_images() {
             done
         done
     done
-    
+
     if [ "$is_build_image" == false ]; then
         echo "${zip_name_list[@]}"
     fi
