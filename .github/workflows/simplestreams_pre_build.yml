@@ -1,167 +1,28 @@
 name: LXD Simplestreams Pre Build
-
-on:
-  schedule:
-    - cron: "0 18 * * *"
-  workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        
-      - name: 安装依赖
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq unzip curl
-
-      - name: 获取所有 Releases 信息
-        id: get_releases
-        run: |
-          curl -s "https://api.github.com/repos/${{ github.repository }}/releases" > releases.json
-          echo "data=$(cat releases.json | jq -c .)" >> $GITHUB_OUTPUT
-
-      - name: 创建或获取 processed Release ID
-        id: get_processed_release
-        run: |
-          existing_release=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[] | select(.tag_name=="processed") | .id // empty')
-          if [ -z "$existing_release" ]; then
-            echo "Creating new release 'processed'..."
-            release_response=$(curl -s -X POST \
-              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Content-Type: application/json" \
-              -d '{"tag_name":"processed","name":"Processed Assets","draft":false,"prerelease":false}' \
-              "https://api.github.com/repos/${{ github.repository }}/releases")
-            processed_id=$(echo "$release_response" | jq -r '.id')
-            if [ "$processed_id" = "null" ] || [ -z "$processed_id" ]; then
-              echo "Failed to create release"
-              echo "$release_response"
-              exit 1
-            fi
-          else
-            echo "Found existing release 'processed': $existing_release"
-            processed_id=$existing_release
-          fi
-          echo "release_id=$processed_id" >> $GITHUB_OUTPUT
-
-      - name: 预处理文件列表
-        env:
-          PROCESSED_RELEASE_ID: ${{ steps.get_processed_release.outputs.release_id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          BLACKLIST_TAGS: "processed,kvm_images"
-        run: |
-          mkdir -p work
-          cd work
-          echo "[]" > files_to_upload.json
-          blacklist_condition=""
-          IFS=',' read -ra TAGS <<< "$BLACKLIST_TAGS"
-          for tag in "${TAGS[@]}"; do
-            if [ -n "$blacklist_condition" ]; then
-              blacklist_condition="$blacklist_condition and "
-            fi
-            blacklist_condition="${blacklist_condition}.tag_name != \"$tag\""
-          done
-          echo "Using blacklist condition: $blacklist_condition"
-          cat ../releases.json | jq -r "
-            .[] | 
-            select($blacklist_condition) | 
-            .assets[] | 
-            select(.name | test(\"^[a-z0-9]+_[0-9a-z.-]+_[a-z0-9]+_[a-z0-9]+_[a-z]+\\\\.zip$\")) |
-            @base64
-          " > assets_to_process.txt
-          
-          while IFS= read -r encoded_asset; do
-            if [ -z "$encoded_asset" ]; then
-              continue
-            fi
-            asset=$(echo "$encoded_asset" | base64 -d)
-            name=$(echo "$asset" | jq -r '.name')
-            url=$(echo "$asset" | jq -r '.browser_download_url')
-            echo "Processing $name"
-            if [[ "$name" =~ ^([a-z0-9]+)_([0-9a-z\.\-]+)_([a-z0-9]+)_([a-z0-9]+)_([a-z]+)\.zip$ ]]; then
-              os="${BASH_REMATCH[1]}"
-              version="${BASH_REMATCH[2]}"
-              codename="${BASH_REMATCH[3]}"
-              arch="${BASH_REMATCH[4]}"
-              variant="${BASH_REMATCH[5]}"
-              rootfs_file="${os}-${version}-${arch}-${variant}-rootfs.squashfs"
-              lxd_file="${os}-${version}-${arch}-${variant}-lxd.tar.xz"
-              
-              jq --arg name "$name" \
-                 --arg url "$url" \
-                 --arg os "$os" \
-                 --arg version "$version" \
-                 --arg arch "$arch" \
-                 --arg variant "$variant" \
-                 --arg rootfs_file "$rootfs_file" \
-                 --arg lxd_file "$lxd_file" \
-                 '. += [{
-                   name: $name,
-                   url: $url,
-                   os: $os,
-                   version: $version,
-                   arch: $arch,
-                   variant: $variant,
-                   rootfs_file: $rootfs_file,
-                   lxd_file: $lxd_file
-                 }]' files_to_upload.json > files_to_upload_temp.json
-              mv files_to_upload_temp.json files_to_upload.json
-            fi
-          done < assets_to_process.txt
-          mv files_to_upload.json /tmp/files_to_upload.json
-
-      - name: 处理并上传解压文件
-        env:
-          PROCESSED_RELEASE_ID: ${{ steps.get_processed_release.outputs.release_id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: |
-          mkdir -p work
-          cd work
-          echo "[]" > processed_assets.json
-          jq -r '.[] | @base64' /tmp/files_to_upload.json | while IFS= read -r encoded_file; do
-            if [ -z "$encoded_file" ]; then
-              continue
-            fi
-            file_info=$(echo "$encoded_file" | base64 -d)
-            name=$(echo "$file_info" | jq -r '.name')
-            url=$(echo "$file_info" | jq -r '.url')
-            os=$(echo "$file_info" | jq -r '.os')
-            version=$(echo "$file_info" | jq -r '.version')
-            arch=$(echo "$file_info" | jq -r '.arch')
-            variant=$(echo "$file_info" | jq -r '.variant')
-            rootfs_file=$(echo "$file_info" | jq -r '.rootfs_file')
-            lxd_file=$(echo "$file_info" | jq -r '.lxd_file')
-            temp_dir="temp_${os}_${version}_${arch}_${variant}_$$"
-            mkdir -p "$temp_dir"
-            cd "$temp_dir"
-            echo "Downloading $name..."
-            if curl -L -o image.zip "$url" && unzip -q image.zip; then
-              if [ -f rootfs.squashfs ] && [ -f lxd.tar.xz ]; then
-                mv rootfs.squashfs "$rootfs_file"
-                mv lxd.tar.xz "$lxd_file"
-                rootfs_size=$(stat -c%s "$rootfs_file")
-                lxd_size=$(stat -c%s "$lxd_file")
-                rootfs_sha256=$(sha256sum "$rootfs_file" | cut -d' ' -f1)
-                lxd_sha256=$(sha256sum "$lxd_file" | cut -d' ' -f1)
-                combined_sha256=$(echo -n "${rootfs_sha256}${lxd_sha256}" | sha256sum | cut -d' ' -f1)
-                echo "Checking for existing assets and uploading $rootfs_file..."
-                gh release delete-asset "processed" "$rootfs_file" --yes || true
-                gh release upload "processed" "$rootfs_file" || echo "Failed to upload $rootfs_file"
-                echo "Checking for existing assets and uploading $lxd_file..."
-                gh release delete-asset "processed" "$lxd_file" --yes || true
-                gh release upload "processed" "$lxd_file" || echo "Failed to upload $lxd_file"
-              else
-                echo "Missing required files in $name"
-              fi
-            else
-              echo "Failed to download or extract $name"
-            fi
-            cd ..
-            rm -rf "$temp_dir"
-          done
-          mv processed_assets.json /tmp/processed_assets.json
+    - name: Load trusted network recovery helpers
+      shell: bash
+      run: |
+        set -euo pipefail
+        curl --fail --silent --show-error --location --connect-timeout 15 --max-time 90 --retry 3 --retry-max-time 180 --retry-connrefused "https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/.github/scripts/ci_network.sh" -o "$RUNNER_TEMP/ci-network.sh"
+        curl --fail --silent --show-error --location --connect-timeout 15 --max-time 90 --retry 3 --retry-max-time 180 --retry-connrefused "https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/.github/scripts/release_assets.py" -o "$RUNNER_TEMP/ci-release-assets.py"
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Validate and replace complete image pairs
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 .github/scripts/process_images.py --metadata lxd
+    timeout-minutes: 360
+'on':
+  schedule:
+  - cron: 0 18 * * *
+  workflow_dispatch: null
+permissions:
+  contents: write
+concurrency:
+  group: processed-image-refresh
+  cancel-in-progress: false
