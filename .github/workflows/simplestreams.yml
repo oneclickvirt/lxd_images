@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install dependencies
         run: |
@@ -118,7 +118,7 @@ jobs:
           find build -type f | head -30
 
       - name: Deploy to Netlify
-        uses: nwtgck/actions-netlify@v4.0
+        uses: nwtgck/actions-netlify@d22a32a27c918fe470bbc562e984f80ec48c2668 # v4.0.0
         with:
           publish-dir: "./build"
           production-branch: main
