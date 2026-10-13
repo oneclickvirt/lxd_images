@@ -14,20 +14,20 @@ mkdir -p "$SAVE_DIR"
 check_remote_file_updated() {
     local remote_url="$1"
     local local_file="$2"
-    
+
     if [ ! -f "$local_file" ]; then
         echo "true"
         return
     fi
-    
+
     local remote_etag=$(curl -sI "$remote_url" | grep -i etag | cut -d' ' -f2- | tr -d '\r')
     local remote_lastmod=$(curl -sI "$remote_url" | grep -i last-modified | cut -d' ' -f2- | tr -d '\r')
-    
+
     local meta_file="${local_file}.meta"
     if [ -f "$meta_file" ]; then
         local cached_etag=$(grep "^etag:" "$meta_file" 2>/dev/null | cut -d' ' -f2-)
         local cached_lastmod=$(grep "^last-modified:" "$meta_file" 2>/dev/null | cut -d' ' -f2-)
-        
+
         if [ -n "$remote_etag" ] && [ -n "$cached_etag" ]; then
             if [ "$remote_etag" = "$cached_etag" ]; then
                 echo "false"
@@ -40,7 +40,7 @@ check_remote_file_updated() {
             fi
         fi
     fi
-    
+
     echo "true"
 }
 
@@ -48,7 +48,7 @@ save_remote_metadata() {
     local remote_url="$1"
     local local_file="$2"
     local meta_file="${local_file}.meta"
-    
+
     local headers=$(curl -sI "$remote_url")
     echo "$headers" | grep -i etag | sed 's/^[Ee][Tt][Aa][Gg]: */etag: /' > "$meta_file"
     echo "$headers" | grep -i last-modified | sed 's/^[Ll][Aa][Ss][Tt]-[Mm][Oo][Dd][Ii][Ff][Ii][Ee][Dd]: */last-modified: /' >> "$meta_file"
@@ -72,19 +72,19 @@ for SYSTEM in $SYSTEMS; do
     LATEST_VERSION=""
     LATEST_TIMESTAMP=""
     LATEST_PROFILE=""
-    
+
     PRODUCT_KEYS=$(echo "$IMAGES_JSON" | grep -o "\"$SYSTEM:[^\"]*:amd64:[^\"]*\"" | sed 's/"//g')
-    
+
     for PRODUCT_KEY in $PRODUCT_KEYS; do
         IFS=':' read -ra KEY_PARTS <<< "$PRODUCT_KEY"
         if [ ${#KEY_PARTS[@]} -eq 4 ]; then
             VERSION="${KEY_PARTS[1]}"
             VARIANT="${KEY_PARTS[3]}"
-            
+
             VERSIONS_DATA=$(echo "$IMAGES_JSON" | jq -r ".products.\"$PRODUCT_KEY\".versions // {}" 2>/dev/null)
             if [ "$VERSIONS_DATA" != "{}" ] && [ "$VERSIONS_DATA" != "null" ]; then
                 TIMESTAMPS=$(echo "$VERSIONS_DATA" | jq -r 'keys[]' 2>/dev/null | grep -E '^[0-9]{8}_[0-9]{4}$')
-                
+
                 for TIMESTAMP in $TIMESTAMPS; do
                     if [ -n "$TIMESTAMP" ]; then
                         if [ -z "$LATEST_TIMESTAMP" ] || [[ "$TIMESTAMP" > "$LATEST_TIMESTAMP" ]]; then
@@ -97,7 +97,7 @@ for SYSTEM in $SYSTEMS; do
             fi
         fi
     done
-    
+
     if [ -n "$LATEST_VERSION" ] && [ -n "$LATEST_TIMESTAMP" ]; then
         YAML_URL="$BASE_URL/$SYSTEM/$LATEST_VERSION/amd64/$LATEST_PROFILE/$LATEST_TIMESTAMP/image.yaml"
         LATEST_YAML[$SYSTEM]="$YAML_URL"
@@ -118,9 +118,9 @@ echo "Checking for updates..."
 for SYS in "${!LATEST_YAML[@]}"; do
     YAML_FILE="$SYS.yaml"
     YAML_URL="${LATEST_YAML[$SYS]}"
-    
+
     needs_update=$(check_remote_file_updated "$YAML_URL" "$YAML_FILE")
-    
+
     if [ "$needs_update" = "true" ]; then
         echo "[$SYS] Remote file updated, will re-download and re-modify"
         FILES_TO_MODIFY[$SYS]="$YAML_URL"
@@ -134,7 +134,7 @@ echo "Downloading YAML files..."
 for SYS in "${!LATEST_YAML[@]}"; do
     YAML_FILE="$SYS.yaml"
     YAML_URL="${LATEST_YAML[$SYS]}"
-    
+
     if [[ -v FILES_TO_MODIFY[$SYS] ]]; then
         echo "Downloading from: $YAML_URL"
         if curl -s -o "$YAML_FILE" "$YAML_URL"; then
