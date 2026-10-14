@@ -209,6 +209,9 @@ packages:
     - openssh-keygen
     - iptables
     action: install
+  - packages:
+    - ca-bundle
+    action: install
 actions:
 - trigger: post-unpack
   action: |

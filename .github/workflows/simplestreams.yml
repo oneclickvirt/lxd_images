@@ -91,6 +91,9 @@ jobs:
       run: |-
         echo 'Netlify deployment failed; the previous published site remains available' >&2
         exit 1
+    - name: Verify the published Simplestreams source with an Incus client
+      shell: bash
+      run: bash .github/scripts/verify_image_remote.sh lxd
     timeout-minutes: 90
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
 'on':
