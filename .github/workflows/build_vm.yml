@@ -40,7 +40,7 @@ jobs:
     uses: ./.github/workflows/hosted-build.yml
     with:
       distro: ${{ inputs.distro }}
-      arch: all
+      arch: ${{ inputs.arch }}
       kind: vm
       scope: current
       release: ${{ inputs.release || '' }}

@@ -533,7 +533,7 @@ files:
   - x86_64
 - path: /etc/sudoers.d/90-lxd
   generator: dump
-  mode: 288
+  mode: '0440'
   content: |-
     # User rules for archlinux
     archlinux ALL=(ALL) NOPASSWD: ALL
