@@ -113,16 +113,29 @@ patch_lxd_metadata_for_kvm() {
         return 1
     fi
 
-    # Ensure secureboot is disabled if the distro requires it
     if requires_secureboot_disabled; then
-        if [ -f "$temp_dir/metadata.yaml" ]; then
-            if ! grep -q 'requirements.secureboot:' "$temp_dir/metadata.yaml" 2>/dev/null; then
-                echo "requirements:" >> "$temp_dir/metadata.yaml"
-                echo "  secureboot: false" >> "$temp_dir/metadata.yaml"
-            elif ! grep -q 'requirements.secureboot:[[:space:]]*"false"\|requirements.secureboot:[[:space:]]*false' "$temp_dir/metadata.yaml" 2>/dev/null; then
-                sed -i 's/requirements.secureboot:.*/requirements.secureboot: false/' "$temp_dir/metadata.yaml"
-            fi
+        # Runtime requirements are string-valued properties in Incus/LXD
+        # metadata, not a separate top-level requirements mapping.
+        if grep -q '^[[:space:]]*requirements\.secureboot:' "$temp_dir/metadata.yaml"; then
+            sed 's/^[[:space:]]*requirements\.secureboot:.*/  requirements.secureboot: "false"/' "$temp_dir/metadata.yaml" > "$temp_dir/metadata.yaml.new"
+        else
+            awk '
+                /^properties:[[:space:]]*(\{\})?[[:space:]]*$/ {
+                    print "properties:"
+                    print "  requirements.secureboot: \"false\""
+                    done = 1
+                    next
+                }
+                { print }
+                END {
+                    if (!done) {
+                        print "properties:"
+                        print "  requirements.secureboot: \"false\""
+                    }
+                }
+            ' "$temp_dir/metadata.yaml" > "$temp_dir/metadata.yaml.new"
         fi
+        mv "$temp_dir/metadata.yaml.new" "$temp_dir/metadata.yaml"
     fi
 
     # Repack the metadata tarball without dropping cloud-init templates.
