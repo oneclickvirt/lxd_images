@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import tarfile
 from release_assets import Publisher
 
 
@@ -46,6 +47,22 @@ def main():
             if asset.get('digest') and asset['digest']!='sha256:'+Publisher.digest(temporary):
                 raise RuntimeError('processed download checksum mismatch')
             temporary.rename(path)
+        # Deploy time is not image build time. Read the authenticated image metadata.
+        with tarfile.open(folder/(args.metadata+'.tar.xz'), 'r:xz') as archive:
+            member=next((entry for entry in archive if entry.name.removeprefix('./')=='metadata.yaml'),None)
+            if member is None or not 0<member.size<262144:
+                raise RuntimeError('image creation metadata is missing')
+            payload=archive.extractfile(member).read().decode()
+        match=re.search(r'^creation_date:\s*["\']?([0-9]{9,12})["\']?\s*$',payload,re.MULTILINE)
+        if not match:
+            raise RuntimeError('actual image creation timestamp is missing')
+        created=datetime.datetime.fromtimestamp(int(match[1]),datetime.timezone.utc)
+        if created.year<2000 or created>datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(days=1):
+            raise RuntimeError('actual image creation timestamp is invalid')
+        timestamp=created.strftime('%Y%m%d_%H%M')
+        target=folder.parent/timestamp
+        if target!=folder:
+            folder.rename(target);folder=target
         (folder/'meta.yaml').write_text(f'architecture: {arch}\nos: {os_name}\nrelease: {release_name}\nvariant: {variant}\ntype: {args.metadata}\ncreated_at: {timestamp}\n')
     print('Verified complete image pairs:',len(pairs))
 

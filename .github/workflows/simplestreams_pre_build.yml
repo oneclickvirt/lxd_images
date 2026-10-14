@@ -17,10 +17,18 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: python3 .github/scripts/process_images.py --metadata lxd
     timeout-minutes: 360
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
 'on':
   schedule:
   - cron: 0 18 * * *
   workflow_dispatch: null
+  workflow_run:
+    workflows:
+    - Hosted image build and boot validation
+    types:
+    - completed
+    branches:
+    - main
 permissions:
   contents: write
 concurrency:

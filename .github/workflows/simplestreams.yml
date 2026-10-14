@@ -1,7 +1,7 @@
 name: Build LXD Simplestreams
 jobs:
   build-simplestreams:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
     - name: Load trusted network recovery helpers
       shell: bash
@@ -22,17 +22,12 @@ jobs:
           sleep 15
         done
         lxd-imagebuilder --version
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: 1.26.5
+        cache: false
     - name: Install simplestream-maintainer
-      run: |
-        source "$RUNNER_TEMP/ci-network.sh"
-        sudo apt-get update
-        sudo apt-get install -y golang git
-        git clone https://github.com/oneclickvirt/lxd-imagebuilder.git
-        cd lxd-imagebuilder/simplestream-maintainer
-        go build -o simplestream-maintainer .
-        sudo mv simplestream-maintainer /usr/local/bin/
-        simplestream-maintainer --version
-        simplestream-maintainer build -h
+      run: bash .github/scripts/install_stream_maintainer.sh lxd
       shell: bash
     - name: Download assets from GitHub Release
       run: python3 .github/scripts/download_processed.py --metadata lxd
@@ -58,12 +53,8 @@ jobs:
       run: |
         ls
         simplestream-maintainer build build --build-webpage -d spiritlhl
-    - name: Patch index.html for spiritlhl (content-only)
-      run: |
-        find build -name "index.html" | while read -r f; do
-          sed -i 's/images:/spiritlhl:/g' "$f"
-          echo "Patched $f"
-        done
+    - name: Validate image index and apply maintained portal layout
+      run: python3 .github/scripts/style_image_portal.py --root build --flavour lxd
     - name: List build contents
       run: |
         source "$RUNNER_TEMP/ci-network.sh"
@@ -72,17 +63,61 @@ jobs:
         echo "Build directory contents:"
         find build -type f | sed -n '1,30p'
       shell: bash
-    - name: Deploy to Netlify
-      uses: nwtgck/actions-netlify@d22a32a27c918fe470bbc562e984f80ec48c2668 # v4.0.0
-      with:
-        publish-dir: ./build
-        production-branch: main
-        github-token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Require Netlify publication credentials
       env:
         NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
         NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-    timeout-minutes: 45
+      run: test -n "$NETLIFY_AUTH_TOKEN" && test -n "$NETLIFY_SITE_ID"
+    - name: Deploy to Netlify
+      uses: nwtgck/actions-netlify@d22a32a27c918fe470bbc562e984f80ec48c2668 # v4.0.0
+      with: &id001
+        publish-dir: ./build
+        production-branch: main
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        production-deploy: true
+        fails-without-credentials: true
+        enable-pull-request-comment: false
+        enable-commit-comment: false
+        enable-github-deployment: false
+      env: &id002
+        NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      id: deploy
+      continue-on-error: true
+    - name: Retry atomic Netlify publication
+      uses: nwtgck/actions-netlify@d22a32a27c918fe470bbc562e984f80ec48c2668 # v4.0.0
+      with: *id001
+      env: *id002
+      id: deploy-retry
+      continue-on-error: true
+      if: steps.deploy.outcome == 'failure'
+    - name: Require successful atomic deployment
+      if: steps.deploy.outcome == 'failure' && steps.deploy-retry.outcome == 'failure'
+      run: |-
+        echo 'Netlify deployment failed; the previous published site remains available' >&2
+        exit 1
+    timeout-minutes: 90
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
 'on':
   workflow_dispatch: null
   schedule:
   - cron: 0 5 * * *
+  push:
+    branches:
+    - main
+    paths:
+    - .github/scripts/style_image_portal.py
+    - .github/scripts/install_stream_maintainer.sh
+    - .github/workflows/simplestreams.yml
+  workflow_run:
+    workflows:
+    - LXD Simplestreams Pre Build
+    types:
+    - completed
+    branches:
+    - main
+permissions:
+  contents: read
+concurrency:
+  group: image-portal-deploy
+  cancel-in-progress: false
