@@ -138,6 +138,36 @@ class ImageSourceRefreshTests(unittest.TestCase):
         self.assertEqual(centos_action.count('https://mirror.stream.centos.org/'),3)
         self.assertIn('gpgcheck=1',centos_action)
 
+    def test_almalinux_bls_normalization_preserves_efi_wrapper_and_is_idempotent(self):
+        path = self.root / 'images_yaml/almalinux.yaml'
+        source = '''image:
+  distribution: almalinux
+source:
+  downloader: fixture
+actions:
+- trigger: post-files
+  types: [vm]
+  releases: [9]
+  action: |
+    #!/bin/sh
+    set -eu
+    target=/boot/efi/EFI/almalinux/grub.cfg
+    grub2-mkconfig -o "${target}"
+    grubby --update-kernel=/boot/vmlinuz-${kver} --args="root=${DISTROBUILDER_ROOT_UUID} ro"
+mappings:
+  architecture_map: {}
+'''
+        path.write_text(source)
+        hooks.normalize_el_boot(path)
+        normalized_action = verify(path.read_text())['actions'][0]['action']
+        self.assertIn('target=/boot/grub2/grub.cfg', normalized_action)
+        self.assertNotIn('target=/boot/efi/EFI/almalinux/grub.cfg', normalized_action)
+        self.assertIn('hosted-compatible-bls', normalized_action)
+        self.assertIn('kernel="/boot/vmlinuz-${kver}"', normalized_action)
+        normalized = path.read_bytes()
+        hooks.normalize_el_boot(path)
+        self.assertEqual(path.read_bytes(), normalized)
+
     def test_failed_partial_source_refresh_preserves_every_original(self):
         before = self.snapshot()
 

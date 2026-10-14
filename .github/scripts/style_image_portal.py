@@ -10,6 +10,71 @@ from pathlib import Path,PurePosixPath
 import re
 
 
+PORTAL_STYLE = """
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:#1f2a24;background:#f6f8f6;font-synthesis:none;--ink:#1f2a24;--muted:#5d6b63;--line:#d7e0da;--soft:#eef3ef;--accent:#176b55;--link:#245e8a;--fresh:#28734f;--warning:#8a5b1c}
+*{box-sizing:border-box;letter-spacing:0}
+h1,.stat strong,.eyebrow{letter-spacing:0}
+body{margin:0}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+button,input,select{font:inherit}
+button,a,input,select,summary{outline-offset:3px}
+button{cursor:pointer}
+main,header,footer{max-width:1360px;margin:auto;padding:0 24px}
+header{display:flex;justify-content:space-between;align-items:center;gap:20px;padding-top:14px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--ink)}
+.mark{display:grid;place-items:center;width:34px;height:34px;background:var(--accent);border-radius:8px;color:#fff;font-size:13px}
+nav{display:flex;gap:20px;font-size:13px}
+.hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(360px,.9fr);align-items:center;gap:32px;padding:22px 0 16px}
+.eyebrow{color:#527263;font-size:11px;font-weight:650}
+h1{font-size:30px;line-height:1.25;margin:8px 0 10px;color:var(--ink)}
+h1 span{color:#65746c}
+p{color:var(--muted);line-height:1.65;font-size:14px;max-width:560px;margin:0}
+.quick{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 16px}
+.quick h2{font-size:13px;margin:0 0 8px;color:#465a50}
+.command{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid #e8eeea}
+.command code{font-size:11px;line-height:1.55;overflow-wrap:anywhere;flex:1}
+.copy{background:var(--soft);color:#315747;border:1px solid #d9e5dc;border-radius:6px;padding:5px 9px;font-size:11px;flex-shrink:0}
+.copy:hover{background:#e1ece4}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;margin:4px 0 18px;border-block:1px solid var(--line)}
+.stat{padding:12px 18px;border:0;border-right:1px solid var(--line);border-radius:0;background:transparent}
+.stat:last-child{border-right:0}
+.stat strong{display:block;font-size:22px;line-height:1.2;margin-bottom:4px;color:var(--ink)}
+.stat span{color:var(--muted);font-size:12px}
+.catalog{border:0;border-top:1px solid var(--line);border-radius:0;background:transparent;overflow:hidden}
+.catalog-head{display:flex;justify-content:space-between;align-items:center;padding:16px 0 12px;gap:12px}
+.catalog-head h2{font-size:17px;margin:0;color:var(--ink)}
+.count{color:var(--muted);font-size:12px}
+.filters{display:grid;grid-template-columns:minmax(220px,1fr) 160px 140px 150px;gap:8px;padding:0 0 12px}
+input,select{width:100%;border:1px solid var(--line);border-radius:6px;padding:8px 10px;background:#fff;color:#31483b;font-size:12px}
+input::placeholder{color:#7d8b82}
+.table-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:12px;min-width:850px}
+thead{background:#eef2ef;color:#52645a;font-size:11px}
+th,td{padding:11px 14px;text-align:left;border-top:1px solid #e5ebe6;vertical-align:top}
+td:first-child{min-width:190px}
+td:last-child{min-width:165px}
+td strong{display:block;font-size:13px;font-weight:600;color:var(--ink)}
+small{display:block;color:#738178;font-size:10px;margin-top:5px}
+.arch{background:#e8f0f4;color:#315d77;border-radius:4px;padding:3px 6px;font-size:11px}
+.badge{display:block;width:max-content;margin-top:5px;font-size:10px;border-radius:4px;padding:2px 6px}
+.fresh{background:#e8f3eb;color:var(--fresh)}
+.old{background:#f7f0e5;color:var(--warning)}
+summary{cursor:pointer;color:var(--link);white-space:nowrap}
+details[open]{min-width:300px}
+.files{padding:0;margin:8px 0;list-style:none}
+.files li{display:grid;grid-template-columns:minmax(0,1fr) max-content;gap:2px 10px;margin:10px 0}
+.files span{color:#738178;font-size:10px}
+.files code,.fingerprint{grid-column:1/-1;display:block;font:10px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;color:#68776e;max-width:100%;overflow-wrap:anywhere;margin-top:2px}
+.empty{padding:28px;text-align:center;color:#66766c}
+.notes{padding:12px 0;border-top:1px solid #e5ebe6;color:#738178;font-size:11px;line-height:1.7}
+footer{display:flex;justify-content:space-between;gap:16px;font-size:11px;color:#738178;padding-top:18px;padding-bottom:24px}
+tr[hidden]{display:none}
+@media(max-width:860px){.hero{grid-template-columns:1fr;gap:14px;padding-top:18px}.filters{grid-template-columns:1fr 1fr}.filters input{grid-column:1/-1}.stats{grid-template-columns:1fr 1fr}.stat:nth-child(2){border-right:0}.stat:nth-child(-n+2){border-bottom:1px solid var(--line)}}
+@media(max-width:520px){main,header,footer{padding-left:16px;padding-right:16px}header{gap:10px}nav{gap:12px;font-size:12px}.brand{font-size:13px}.mark{width:32px;height:32px}.hero{padding-top:16px}h1{font-size:26px}.quick{padding:10px 12px}.stats{margin-top:4px}.stat{padding:10px 12px}.stat strong{font-size:20px}.catalog-head{padding-top:14px}.filters{gap:7px}.notes{padding:10px 0}footer{flex-direction:column;gap:6px}}
+"""
+
+
 def asset_path(root, value):
     path=PurePosixPath(value)
     if path.is_absolute() or '..' in path.parts or not path.parts or value.startswith('//'):
@@ -80,6 +145,7 @@ const rows=[...document.querySelectorAll('#images tr')],search=document.querySel
                   'GENERATED':datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M')}
     # Replace longer placeholders first, avoiding overlapping token names.
     pattern='|'.join(re.escape(token) for token in sorted(replacements,key=len,reverse=True))
+    content=content.replace('</style></head>','</style><style>'+PORTAL_STYLE+'</style></head>',1)
     return re.sub(pattern,lambda match:replacements[match.group(0)],content)
 
 

@@ -57,8 +57,9 @@ fi
 get_versions() {
     local system=$1
     local yaml_file="./images_yaml/$system.yaml"
+    local release_text
     if [ -f "$yaml_file" ]; then
-        versions=$(awk '
+        release_text=$(awk '
             /^[[:space:]]*releases:/ {
                 getline
                 while ($0 ~ /^[[:space:]]*-[[:space:]]*/) {
@@ -78,7 +79,7 @@ get_versions() {
                 }
             }
         ' "$yaml_file")
-        echo "${versions,,}"
+        printf '%s\n' "${release_text,,}"
     else
         echo ""
     fi
@@ -89,6 +90,7 @@ build_or_list_images() {
     local versions=()
     local ver_nums=()
     local variants=()
+    local -a EXTRA_ARGS=() BUILDER_CMD=()
     read -ra versions <<<"$1"
     read -ra ver_nums <<<"$2"
     read -ra variants <<<"$3"
@@ -136,44 +138,45 @@ build_or_list_images() {
                     elif [[ "$run_funct" == "opensuse" ]]; then
                         manager="zypper"
                     fi
-                    EXTRA_ARGS=""
+                    EXTRA_ARGS=()
                     if [[ "$run_funct" == "alpine" ]]; then
                         [ "${arch}" = "amd64" ] && arch="x86_64"
                         [ "${arch}" = "arm64" ] && arch="aarch64"
                         if [ "${version}" = "edge" ]; then
-                            EXTRA_ARGS="-o source.same_as=3.21"
+                            EXTRA_ARGS=(-o source.same_as=3.21)
                         fi
                     elif [[ "$run_funct" == "centos" ]]; then
                         [ "${arch}" = "amd64" ] && arch="x86_64"
                         [ "${arch}" = "arm64" ] && arch="aarch64"
                         if [ "$version" = "7" ] && [ "${arch}" != "amd64" ] && [ "${arch}" != "x86_64" ]; then
-                            EXTRA_ARGS="-o source.url=http://mirror.math.princeton.edu/pub/centos-altarch/ -o source.skip_verification=true"
+                            EXTRA_ARGS=(-o source.url=http://mirror.math.princeton.edu/pub/centos-altarch/ -o source.skip_verification=true)
                         fi
                         if [ "$version" = "8-Stream" ] || [ "$version" = "9-Stream" ] || [ "$version" = "10-Stream" ]; then
-                            EXTRA_ARGS="${EXTRA_ARGS} -o source.variant=boot"
+                            EXTRA_ARGS+=(-o source.variant=boot)
                         fi
                         if [ "$version" = "9-Stream" ] || [ "$version" = "10-Stream" ]; then
-                            EXTRA_ARGS="${EXTRA_ARGS} -o source.url=https://mirror.stream.centos.org"
+                            # The CentOS downloader appends the stream path itself.
+                            EXTRA_ARGS+=(-o source.url=https://mirror.stream.centos.org/)
                         fi
                     elif [[ "$run_funct" == "rockylinux" ]]; then
                         [ "${arch}" = "amd64" ] && arch="x86_64"
                         [ "${arch}" = "arm64" ] && arch="aarch64"
-                        EXTRA_ARGS="-o source.variant=boot"
+                        EXTRA_ARGS=(-o source.variant=boot)
                     elif [[ "$run_funct" == "almalinux" ]]; then
                         [ "${arch}" = "amd64" ] && arch="x86_64"
                         [ "${arch}" = "arm64" ] && arch="aarch64"
-                        EXTRA_ARGS="-o source.variant=boot"
+                        EXTRA_ARGS=(-o source.variant=boot)
                     elif [[ "$run_funct" == "oracle" ]]; then
                         [ "${arch}" = "amd64" ] && arch="x86_64"
                         [ "${arch}" = "arm64" ] && arch="aarch64"
                         if [[ "$version" == "9" || "$version" == "10" ]]; then
-                            EXTRA_ARGS="-o source.url=https://yum.oracle.com/ISOS/OracleLinux"
+                            EXTRA_ARGS=(-o source.url=https://yum.oracle.com/ISOS/OracleLinux)
                         fi
                     elif [[ "$run_funct" == "archlinux" ]]; then
                         [ "${arch}" = "amd64" ] && arch="x86_64"
                         [ "${arch}" = "arm64" ] && arch="aarch64"
                         if [ "${arch}" != "amd64" ] && [ "${arch}" != "i386" ] && [ "${arch}" != "x86_64" ]; then
-                            EXTRA_ARGS="-o source.url=https://ca.us.mirror.archlinuxarm.org"
+                            EXTRA_ARGS=(-o source.url=https://ca.us.mirror.archlinuxarm.org)
                         fi
                     elif [[ "$run_funct" == "fedora" || "$run_funct" == "openeuler" || "$run_funct" == "opensuse" ]]; then
                         [ "${arch}" = "amd64" ] && arch="x86_64"
@@ -182,9 +185,9 @@ build_or_list_images() {
                         [ "${arch}" = "x86_64" ] && arch="amd64"
                         [ "${arch}" = "aarch64" ] && arch="arm64"
                         if [ "${variant}" = "cloud" ]; then
-                            EXTRA_ARGS="-o source.variant=openrc"
+                            EXTRA_ARGS=(-o source.variant=openrc)
                         else
-                            EXTRA_ARGS="-o source.variant=${variant}"
+                            EXTRA_ARGS=(-o "source.variant=${variant}")
                         fi
                     elif [[ "$run_funct" == "debian" ]]; then
                         [ "${arch}" = "x86_64" ] && arch="amd64"
@@ -193,29 +196,25 @@ build_or_list_images() {
                         [ "${arch}" = "x86_64" ] && arch="amd64"
                         [ "${arch}" = "aarch64" ] && arch="arm64"
                         if [ "${arch}" != "amd64" ] && [ "${arch}" != "i386" ] && [ "${arch}" != "x86_64" ]; then
-                            EXTRA_ARGS="-o source.url=http://ports.ubuntu.com/ubuntu-ports"
+                            EXTRA_ARGS=(-o source.url=http://ports.ubuntu.com/ubuntu-ports)
                         fi
                     fi
-                    if command -v lxd-imagebuilder >/dev/null 2>&1; then
-                        BUILDER_CMD=( sudo lxd-imagebuilder build-lxd "${opath}/images_yaml/${run_funct}.yaml" \
-                            -o image.architecture="${arch}" \
-                            -o image.variant="${variant}" \
-                            -o packages.manager="${manager}" \
-                            ${EXTRA_ARGS} )
-                        if [[ "$run_funct" != gentoo && "$run_funct" != archlinux ]]; then
-                            BUILDER_CMD+=( -o "image.release=${version}" )
-                        fi
-                        echo "Running: ${BUILDER_CMD[*]}"
-                        if ! "${BUILDER_CMD[@]}"; then
-                            echo "Image builder failed; preserving the previous release" >&2
-                            rm -f lxd.tar.xz rootfs.squashfs disk.qcow2 disk_compressed.qcow2
-                            return 1
-                        fi
-                    else
-                        echo "lxd-imagebuilder not found" >&2
+                    builder_bin=$(command -v lxd-imagebuilder) || { echo "lxd-imagebuilder is not installed on this runner" >&2; return 1; }
+                    BUILDER_CMD=(sudo "$builder_bin" build-lxd "${opath}/images_yaml/${run_funct}.yaml")
+                    BUILDER_CMD+=(-o "image.architecture=${arch}" -o "image.variant=${variant}" -o "packages.manager=${manager}")
+                    if [[ "$run_funct" != gentoo && "$run_funct" != archlinux ]]; then
+                        BUILDER_CMD+=(-o "image.release=${version}")
+                    fi
+                    BUILDER_CMD+=("${EXTRA_ARGS[@]}")
+                    printf 'Running:'
+                    printf ' %q' "${BUILDER_CMD[@]}"
+                    printf '\n'
+                    if ! "${BUILDER_CMD[@]}"; then
+                        echo "Image builder failed; preserving the previous release" >&2
+                        rm -f lxd.tar.xz rootfs.squashfs disk.qcow2 disk_compressed.qcow2
                         return 1
                     fi
-                    du -sh *
+                    du -sh ./*
                     if [ -f lxd.tar.xz ] && [ -f rootfs.squashfs ]; then
                         case "$arch" in
                           x86_64)
@@ -288,14 +287,8 @@ openwrt)
     build_or_list_images "23.05 24.10 snapshot" "23.05 24.10 snapshot" "cloud default"
     ;;
 almalinux | rockylinux | alpine | fedora | opensuse)
-    versions=$(get_versions "$run_funct")
-    releases=$(get_versions "$run_funct")
-    if [[ -z "$versions" && -n "$releases" ]]; then
-        versions="$releases"
-    elif [[ -z "$releases" && -n "$versions" ]]; then
-        releases="$versions"
-    fi
-    build_or_list_images "$versions" "$releases" "cloud default"
+    release_names=$(get_versions "$run_funct")
+    build_or_list_images "$release_names" "$release_names" "cloud default"
     ;;
 *)
     echo "Invalid distribution specified." >&2

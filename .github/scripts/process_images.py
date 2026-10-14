@@ -7,7 +7,9 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
+import urllib.error
 import zipfile
 from release_assets import Publisher
 
@@ -15,16 +17,49 @@ NAME = re.compile(r'^([A-Za-z0-9]+)_([A-Za-z0-9.-]+)_([A-Za-z0-9.-]+)_([A-Za-z0-
 
 
 def sources(publisher):
-    values = []
+    values = {}
     for page in range(1, 21):
         releases = publisher.request(publisher.base+f'/releases?per_page=100&page={page}')
         for release in releases:
             if release['tag_name'] in ['processed', 'kvm_images'] or release['draft'] or release['prerelease']:
                 continue
-            values.extend(asset for asset in publisher.assets(release['id']).values() if NAME.fullmatch(asset['name']))
+            for asset in publisher.assets(release['id']).values():
+                if not NAME.fullmatch(asset['name']):
+                    continue
+                previous = values.get(asset['name'])
+                if previous is None or asset['updated_at'] > previous['updated_at']:
+                    values[asset['name']] = asset
         if len(releases) < 100:
-            return values
+            return list(values.values())
     raise RuntimeError('source release pagination exceeded')
+
+
+def processed_pair_names(asset, metadata):
+    match = NAME.fullmatch(asset['name'])
+    if not match:
+        raise ValueError('invalid source image asset name')
+    os_name, version, _, arch, variant = match.groups()
+    arch = {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(arch, arch)
+    prefix = f'{os_name}-{version}-{arch}-{variant}-'
+    return [prefix + 'rootfs.squashfs', prefix + metadata + '.tar.xz']
+
+
+def has_processed_pair(publisher, asset, metadata):
+    release = publisher.ensure_release('processed')
+    available = publisher.assets(release['id'])
+    return all(name in available and available[name].get('state') == 'uploaded' and available[name].get('size', 0) > 0
+               for name in processed_pair_names(asset, metadata))
+
+
+def failure_detail(error):
+    if isinstance(error, urllib.error.HTTPError):
+        return f'HTTP {error.code} {error.reason}'
+    if isinstance(error, subprocess.CalledProcessError):
+        return f'command exited with status {error.returncode}'
+    detail = str(error).splitlines()[0] if str(error) else ''
+    detail = re.sub(r'https?://\S+', '[URL]', detail)
+    detail = re.sub(r'(?i)(authorization|token|password|secret)([=: ]+)\S+', r'\1\2[redacted]', detail)
+    return type(error).__name__ + (': ' + detail[:300] if detail else '')
 
 
 def process(publisher, asset, metadata):
@@ -70,16 +105,27 @@ def main():
     if not assets:
         raise RuntimeError('no valid source image archives')
     failures=[]
+    fallback_count=0
     for asset in assets:
         try:
             process(publisher,asset,args.metadata)
             print('Published valid image pair:',asset['name'])
         except Exception as exc:
-            failures.append(asset['name'])
-            print('Image pair refresh failed:',asset['name'],type(exc).__name__)
+            detail = failure_detail(exc)
+            try:
+                fallback = has_processed_pair(publisher, asset, args.metadata)
+            except Exception as fallback_error:
+                fallback = False
+                detail += '; fallback lookup failed: ' + failure_detail(fallback_error)
+            if fallback:
+                fallback_count += 1
+                print('Image pair refresh failed; retaining the previously validated pair:', asset['name'], detail)
+            else:
+                failures.append(asset['name'])
+                print('Image pair refresh failed with no valid fallback:', asset['name'], detail, file=sys.stderr)
     if failures:
-        raise RuntimeError(f'{len(failures)} image pairs failed; previous pairs retained where available')
-    print('Processed image refresh completed:',len(assets))
+        raise RuntimeError(f'{len(failures)} image pairs failed without a complete previous pair: {", ".join(failures)}')
+    print('Processed image refresh completed:',len(assets),'; reused previous pairs:',fallback_count)
 
 
 if __name__=='__main__':

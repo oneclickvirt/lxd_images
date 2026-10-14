@@ -36,3 +36,10 @@ class PortalTests(unittest.TestCase):
         self.assertNotIn('<img src=x',page);self.assertIn('&lt;img src=x',page)
         self.assertIn('incus remote add spiritlhl https://incusimages.spiritlhl.net',page)
         self.assertNotIn('lxdimages.spiritlhl.net --protocol',page)
+    def test_compact_portal_layout_has_desktop_and_mobile_rules(self):
+        self.save()
+        page=portal.render(portal.models(self.root,'incus'),'incus')
+        self.assertIn('--accent:#176b55',page)
+        self.assertIn('@media(max-width:860px)',page)
+        self.assertIn('@media(max-width:520px)',page)
+        self.assertIn('letter-spacing:0',page)
