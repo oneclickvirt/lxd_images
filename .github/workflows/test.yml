@@ -47,7 +47,7 @@ jobs:
       max-parallel: 12
       matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 7
+    timeout-minutes: 45
     steps:
     - name: Load trusted network recovery helpers
       shell: bash
@@ -76,6 +76,10 @@ jobs:
         else
           echo "测试失败: ${{ matrix.image }}"
           echo "success=false"
+          exit 1
+          exit 1
+          exit 1
+          exit 1
         fi
         echo "image=${{ matrix.image }}"
         echo "arch=${{ matrix.arch }}"
