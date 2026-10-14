@@ -2,11 +2,42 @@
 """Validate an anonymous Incus client listing and the published portal identity."""
 import argparse
 import json
+import os
 from pathlib import Path
 import re
 
 
 SHA256 = re.compile(r'^[0-9a-f]{64}$')
+
+
+def diagnostic(images, build, flavour):
+    records = images if isinstance(images, list) else []
+    dictionaries = [image for image in records if isinstance(image, dict)]
+    valid_build = isinstance(build, dict)
+    layout_hash = build.get('layout_sha256', '') if valid_build else ''
+    return '\n'.join([
+        '### Simplestreams remote validation diagnostics',
+        '',
+        f'- Requested flavour: `{flavour}`',
+        f'- Client JSON is a non-empty list: `{isinstance(images, list) and bool(images)}`',
+        f'- Client image records: `{len(records)}`',
+        f'- Records with fingerprint: `{sum(isinstance(image.get("fingerprint"), str) and bool(image["fingerprint"]) for image in dictionaries)}`',
+        f'- Records with architecture: `{sum(isinstance(image.get("architecture"), str) and bool(image["architecture"]) for image in dictionaries)}`',
+        f'- Portal schema valid: `{valid_build and build.get("schema") == 1}`',
+        f'- Portal flavour matches: `{valid_build and build.get("flavour") == flavour}`',
+        f'- Portal product count: `{build.get("products", 0) if valid_build else 0}`',
+        f'- Portal layout hash valid: `{isinstance(layout_hash, str) and bool(SHA256.fullmatch(layout_hash))}`',
+        '',
+    ])
+
+
+def report(text):
+    summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if summary:
+        with open(summary, 'a', encoding='utf-8') as output:
+            output.write(text)
+    else:
+        print(text, end='')
 
 
 def validate(images, build, flavour):
@@ -40,6 +71,7 @@ def main():
     args = parser.parse_args()
     images = json.loads(args.images.read_text())
     build = json.loads(args.build.read_text())
+    report(diagnostic(images, build, args.flavour))
     count = validate(images, build, args.flavour)
     print('Anonymous Simplestreams client validated', count, 'images; portal products', build['products'])
 

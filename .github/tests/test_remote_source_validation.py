@@ -16,6 +16,13 @@ class RemoteSourceValidationTests(unittest.TestCase):
     def test_accepts_anonymous_simple_streams_images_without_public_flag(self):
         self.assertEqual(1, validator.validate(self.images, self.build, 'lxd'))
 
+    def test_diagnostic_reports_only_sanitized_counts_and_checks(self):
+        summary = validator.diagnostic(self.images, self.build, 'lxd')
+        self.assertIn('Client image records: `1`', summary)
+        self.assertIn('Records with architecture: `1`', summary)
+        self.assertIn('Portal flavour matches: `True`', summary)
+        self.assertNotIn('b' * 64, summary)
+
     def test_rejects_empty_listing(self):
         with self.assertRaisesRegex(ValueError, 'no images'):
             validator.validate([], self.build, 'lxd')
