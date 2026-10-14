@@ -1,3 +1,5 @@
+almalinux_10_10_amd64_cloud.zip
+almalinux_10_10_amd64_default.zip
 almalinux_8_8_amd64_cloud.zip
 almalinux_8_8_amd64_default.zip
 almalinux_9_9_amd64_cloud.zip
@@ -7,6 +9,7 @@ alpine_3.18_3.18_amd64_cloud.zip
 alpine_3.19_3.19_amd64_cloud.zip
 alpine_3.20_3.20_amd64_cloud.zip
 alpine_3.21_3.21_amd64_cloud.zip
+alpine_3.21_3.21_amd64_default.zip
 alpine_edge_edge_amd64_cloud.zip
 archlinux_current_current_amd64_cloud.zip
 archlinux_current_current_amd64_default.zip

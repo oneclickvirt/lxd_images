@@ -1,3 +1,5 @@
+almalinux_10_10_arm64_cloud.zip
+almalinux_10_10_arm64_default.zip
 almalinux_8_8_arm64_cloud.zip
 almalinux_8_8_arm64_default.zip
 almalinux_9_9_arm64_cloud.zip
