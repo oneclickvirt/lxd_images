@@ -113,7 +113,6 @@ packages:
   - packages:
     - attr
     - curl
-    - dhclient
     - initscripts
     - openssh-clients
     - passwd
@@ -142,6 +141,12 @@ packages:
     action: install
     variants:
     - cloud
+  - packages:
+    - dhclient
+    action: install
+    releases:
+    - '8'
+    - '9'
   repositories:
   - name: AppStream
     url: |-

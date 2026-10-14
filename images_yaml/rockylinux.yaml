@@ -217,7 +217,6 @@ packages:
     - cronie
     - cronie-noanacron
     - curl
-    - dhclient
     - glibc-langpack-en
     - glibc-locale-source
     - hostname
@@ -282,6 +281,12 @@ packages:
     - vm
     architectures:
     - aarch64
+  - packages:
+    - dhclient
+    action: install
+    releases:
+    - '8'
+    - '9'
 actions:
 - trigger: post-unpack
   action: |-
@@ -354,10 +359,13 @@ actions:
     printf "[main]\ndhcp=dhclient" > /etc/NetworkManager/conf.d/dhcp-client.conf
 
     systemctl enable NetworkManager.service
-  types:
+  types: &id001
   - container
-  variants:
+  variants: &id002
   - default
+  releases:
+  - '8'
+  - '9'
 - trigger: post-files
   action: |-
     #!/bin/sh
@@ -438,3 +446,16 @@ actions:
   variants:
   - cloud
   - default
+- trigger: post-files
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    mkdir -p /etc/NetworkManager/conf.d/
+    printf "[main]\ndhcp=internal" > /etc/NetworkManager/conf.d/dhcp-client.conf
+
+    systemctl enable NetworkManager.service
+  types: *id001
+  variants: *id002
+  releases:
+  - '10'
