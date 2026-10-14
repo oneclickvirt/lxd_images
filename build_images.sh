@@ -209,7 +209,7 @@ build_or_list_images() {
                     printf 'Running:'
                     printf ' %q' "${BUILDER_CMD[@]}"
                     printf '\n'
-                    if ! "${BUILDER_CMD[@]}"; then
+                    if ! python3 "${opath}/.github/scripts/build_image_retry.py" -- "${BUILDER_CMD[@]}"; then
                         echo "Image builder failed; preserving the previous release" >&2
                         rm -f lxd.tar.xz rootfs.squashfs disk.qcow2 disk_compressed.qcow2
                         return 1
