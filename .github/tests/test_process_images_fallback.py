@@ -1,10 +1,13 @@
 from contextlib import redirect_stderr, redirect_stdout
 import importlib
+import hashlib
 import io
 import os
 from pathlib import Path
 import sys
 import tempfile
+import tarfile
+import zipfile
 import unittest
 from unittest import mock
 
@@ -126,6 +129,42 @@ class ProcessImageFallbackTests(unittest.TestCase):
              self.assertRaisesRegex(RuntimeError, 'checksum mismatch'):
             process_images.process(publisher, source, 'lxd')
         publisher.publish.assert_not_called()
+
+    def test_cold_cache_adopts_only_identical_remote_file_digests(self):
+        metadata = io.BytesIO()
+        with tarfile.open(fileobj=metadata, mode='w:xz') as archive:
+            entry = tarfile.TarInfo('metadata.yaml')
+            content = b'architecture: aarch64\n'
+            entry.size = len(content)
+            archive.addfile(entry, io.BytesIO(content))
+        contents = [b'hsqs-verified-fixture', metadata.getvalue()]
+        bundle = io.BytesIO()
+        with zipfile.ZipFile(bundle, 'w') as archive:
+            for name, content in zip(['rootfs.squashfs', 'lxd.tar.xz'], contents):
+                archive.writestr(name, content)
+        payload = bundle.getvalue()
+        source = dict(self.asset, id=71, size=len(payload), digest='sha256:'+hashlib.sha256(payload).hexdigest(),
+                      browser_download_url='https://example.invalid/public.zip')
+        publisher = mock.Mock(base='/repos/oneclickvirt/lxd_images')
+        publisher.ensure_release.return_value = {'id': 1}
+        publisher.assets.return_value = {name: {'id': index+1, 'state': 'uploaded', 'size': len(content),
+                                                'digest': 'sha256:'+hashlib.sha256(content).hexdigest()}
+                                         for index, (name, content) in enumerate(zip(self.pair, contents))}
+        publisher.digest.side_effect = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+        original_run = process_images.subprocess.run
+        def commands(command, **kwargs):
+            if command[0] == 'curl':
+                Path(command[command.index('-o')+1]).write_bytes(payload)
+            else:
+                return original_run(command, **kwargs)
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.dict(os.environ, {'RUNNER_TEMP': directory}), \
+             mock.patch.object(process_images.subprocess, 'run', side_effect=commands):
+            self.assertFalse(process_images.process(publisher, source, 'lxd'))
+        publisher.publish.assert_not_called()
+        self.assertEqual(publisher.request.call_count, 2)
+        for call in publisher.request.call_args_list:
+            self.assertEqual(call.args[1:], ('PATCH', {'label': process_images.source_label(source, 'lxd')}))
 
 
 if __name__ == '__main__':
