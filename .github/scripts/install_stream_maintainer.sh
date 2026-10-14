@@ -5,6 +5,10 @@ flavour=${1:-lxd}
 task_dir=$(mktemp -d "$RUNNER_TEMP/stream-maintainer.XXXXXXXX")
 trap 'rm -rf -- "$task_dir"' EXIT
 export GOPROXY='https://proxy.golang.org|direct'
+export GOTOOLCHAIN=auto
+source .github/scripts/ci_network.sh
+ci_retry sudo apt-get update -y
+ci_retry sudo apt-get install -y --no-install-recommends xdelta3
 build_source() {
     local repository=$1 commit=$2 digest=${3:-}
     local folder="$task_dir/source-${commit}"
@@ -14,13 +18,17 @@ build_source() {
     if [[ -n "$digest" ]]; then printf '%s  %s\n' "$digest" "$folder/source.tar.gz" | sha256sum --check --status || return 1; fi
     tar -xzf "$folder/source.tar.gz" -C "$folder" --strip-components=1 || return 1
     if [[ "$flavour" == incus ]]; then
-        python3 - "$folder/simplestream-maintainer/stream/stream.go" <<'PY'
+        python3 - "$folder/simplestream-maintainer" <<'PY'
 from pathlib import Path
 import sys
-path=Path(sys.argv[1]);text=path.read_text()
+root=Path(sys.argv[1]);path=root/'stream/stream.go';text=path.read_text()
 before='ItemTypeMetadata = "lxd.tar.xz"'
 if text.count(before)!=1:raise SystemExit('Unsupported upstream metadata schema')
-path.write_text(text.replace(before,'ItemTypeMetadata = "incus.tar.xz"'))
+# Keep the upstream tests and their generated fixtures consistent with the
+# production filename adaptation, retaining every upstream assertion.
+for path in root.rglob('*.go'):
+    text=path.read_text()
+    if 'lxd.tar.xz' in text:path.write_text(text.replace('lxd.tar.xz','incus.tar.xz'))
 PY
         [[ $? == 0 ]] || return 1
     fi

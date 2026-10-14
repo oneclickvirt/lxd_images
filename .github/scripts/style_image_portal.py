@@ -91,6 +91,8 @@ def main():
     stamp={'schema':1,'flavour':args.flavour,'products':len(values),'source_commit':os.environ.get('GITHUB_SHA','local-preview'),
            'layout_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
            'generated_at':datetime.datetime.now(datetime.timezone.utc).isoformat()}
+    source=Path(os.environ.get('RUNNER_TEMP','/nonexistent'))/'stream-source.json'
+    if source.is_file():stamp['stream_builder']=json.loads(source.read_text())
     (args.root/'image-portal-build.json').write_text(json.dumps(stamp,indent=2)+'\n')
     print('Validated portal products:',len(values))
 
