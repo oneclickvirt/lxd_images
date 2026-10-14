@@ -14,9 +14,15 @@ alpine_3.22_3.22_arm64_cloud.zip
 alpine_3.22_3.22_arm64_default.zip
 alpine_3.23_3.23_arm64_cloud.zip
 alpine_3.23_3.23_arm64_default.zip
+alpine_3.24_3.24_arm64_cloud.zip
+alpine_3.24_3.24_arm64_default.zip
 alpine_edge_edge_arm64_cloud.zip
 archlinux_current_current_arm64_cloud.zip
 archlinux_current_current_arm64_default.zip
+centos_10_10-Stream_arm64_cloud.zip
+centos_10_10-Stream_arm64_default.zip
+centos_9_9-Stream_arm64_cloud.zip
+centos_9_9-Stream_arm64_default.zip
 debian_11_bullseye_arm64_cloud.zip
 debian_11_bullseye_arm64_default.zip
 debian_12_bookworm_arm64_cloud.zip

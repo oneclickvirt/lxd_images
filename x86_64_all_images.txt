@@ -19,6 +19,10 @@ alpine_3.24_3.24_amd64_default.zip
 alpine_edge_edge_amd64_cloud.zip
 archlinux_current_current_amd64_cloud.zip
 archlinux_current_current_amd64_default.zip
+centos_10_10-Stream_amd64_cloud.zip
+centos_10_10-Stream_amd64_default.zip
+centos_9_9-Stream_amd64_cloud.zip
+centos_9_9-Stream_amd64_default.zip
 debian_11_bullseye_amd64_cloud.zip
 debian_11_bullseye_amd64_default.zip
 debian_12_bookworm_amd64_cloud.zip
@@ -29,6 +33,8 @@ fedora_40_40_amd64_cloud.zip
 fedora_40_40_amd64_default.zip
 fedora_41_41_amd64_cloud.zip
 fedora_41_41_amd64_default.zip
+fedora_43_43_amd64_cloud.zip
+fedora_43_43_amd64_default.zip
 gentoo_current_current_amd64_openrc.zip
 gentoo_current_current_amd64_systemd.zip
 kali_latest_kali-rolling_amd64_cloud.zip
