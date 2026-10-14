@@ -4,6 +4,7 @@ import io
 import os
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -82,6 +83,49 @@ class ProcessImageFallbackTests(unittest.TestCase):
         result = process_images.sources(SourcePublisher())
         self.assertEqual(1, len(result))
         self.assertEqual('2026-10-14T00:00:00Z', result[0]['updated_at'])
+
+    def test_unchanged_pair_requires_source_identity_and_both_verified_members(self):
+        source = dict(self.asset, id=71, size=2048, digest='sha256:'+'a'*64)
+        label = process_images.source_label(source, 'lxd')
+        available = {name: {'state': 'uploaded', 'size': 1024, 'digest': 'sha256:'+'b'*64,
+                            'label': label} for name in self.pair}
+        self.assertTrue(process_images.unchanged_pair(available, source, 'lxd'))
+        for changed in (dict(source, id=72), dict(source, digest='sha256:'+'c'*64),
+                        dict(source, updated_at='2026-10-15T00:00:00Z'), self.asset):
+            self.assertFalse(process_images.unchanged_pair(available, changed, 'lxd'))
+        self.assertFalse(process_images.unchanged_pair(available, source, 'incus'))
+        available[self.pair[1]]['digest'] = None
+        self.assertFalse(process_images.unchanged_pair(available, source, 'incus'))
+        del available[self.pair[1]]
+        self.assertFalse(process_images.unchanged_pair(available, source, 'incus'))
+
+    def test_current_pair_is_reused_without_download_or_upload(self):
+        source = dict(self.asset, id=71, size=2048, digest='sha256:'+'a'*64)
+        available = {name: {'state': 'uploaded', 'size': 1024, 'digest': 'sha256:'+'b'*64,
+                            'label': process_images.source_label(source, 'lxd')} for name in self.pair}
+        with mock.patch.dict(os.environ, {'GITHUB_REPOSITORY': 'oneclickvirt/lxd_images', 'GH_TOKEN': 'fixture'}), \
+             mock.patch.object(process_images, 'Publisher', return_value=FakePublisher(available)), \
+             mock.patch.object(process_images, 'sources', return_value=[source]), \
+             mock.patch.object(process_images, 'process') as process, \
+             mock.patch.object(sys, 'argv', ['process_images.py', '--metadata', 'lxd']), \
+             redirect_stdout(io.StringIO()) as output:
+            process_images.main()
+        process.assert_not_called()
+        self.assertIn('unchanged verified pairs: 1', output.getvalue())
+
+    def test_source_digest_mismatch_never_replaces_a_pair(self):
+        source = dict(self.asset, id=71, size=4, digest='sha256:'+'a'*64,
+                      browser_download_url='https://example.invalid/public.zip')
+        publisher = mock.Mock()
+        publisher.digest.return_value = 'b'*64
+        def download(command, **kwargs):
+            Path(command[command.index('-o')+1]).write_bytes(b'data')
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.dict(os.environ, {'RUNNER_TEMP': directory}), \
+             mock.patch.object(process_images.subprocess, 'run', side_effect=download), \
+             self.assertRaisesRegex(RuntimeError, 'checksum mismatch'):
+            process_images.process(publisher, source, 'lxd')
+        publisher.publish.assert_not_called()
 
 
 if __name__ == '__main__':

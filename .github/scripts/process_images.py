@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Refresh processed image pairs while keeping the last valid pair on failure."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -51,6 +52,26 @@ def has_processed_pair(publisher, asset, metadata):
                for name in processed_pair_names(asset, metadata))
 
 
+def source_label(asset, metadata):
+    # A missing source identity must cause a rebuild, never a cache hit.
+    if not asset.get('id') or not asset.get('size') or not asset.get('updated_at'):
+        return None
+    identity = {key: asset.get(key) for key in ('id', 'name', 'size', 'digest', 'updated_at')}
+    identity['metadata'] = metadata
+    return 'image-source-v1:' + hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+
+
+def unchanged_pair(available, asset, metadata):
+    label = source_label(asset, metadata)
+    if label is None:
+        return False
+    pair = [available.get(name, {}) for name in processed_pair_names(asset, metadata)]
+    return all(row.get('state') == 'uploaded' and row.get('size', 0) > 0
+               and row.get('label') == label
+               and re.fullmatch(r'sha256:[0-9a-f]{64}', row.get('digest') or '')
+               for row in pair)
+
+
 def failure_detail(error):
     if isinstance(error, urllib.error.HTTPError):
         return f'HTTP {error.code} {error.reason}'
@@ -74,6 +95,8 @@ def process(publisher, asset, metadata):
                         asset['browser_download_url']], check=True, timeout=1600)
         if archive.stat().st_size != asset['size']:
             raise RuntimeError('downloaded archive size mismatch')
+        if asset.get('digest') and asset['digest'] != 'sha256:' + publisher.digest(archive):
+            raise RuntimeError('downloaded archive checksum mismatch')
         paths = []
         with zipfile.ZipFile(archive) as z:
             names = z.namelist()
@@ -94,6 +117,15 @@ def process(publisher, asset, metadata):
         subprocess.run(['tar','-tJf',str(paths[1])], check=True, stdout=subprocess.DEVNULL, timeout=120)
         # Metadata and rootfs are a single replacement set, including rollback.
         publisher.publish('processed', paths)
+        label = source_label(asset, metadata)
+        if label:
+            # Label both members only after transactional publication succeeds.
+            release = publisher.ensure_release('processed')
+            available = publisher.assets(release['id'])
+            for path in paths:
+                row = available[path.name]
+                publisher.request(publisher.base + '/releases/assets/' + str(row['id']),
+                                  'PATCH', {'label': label})
 
 
 def main():
@@ -106,10 +138,17 @@ def main():
         raise RuntimeError('no valid source image archives')
     failures=[]
     fallback_count=0
+    unchanged_count=0
+    release=publisher.ensure_release('processed')
+    available=publisher.assets(release['id'])
     for asset in assets:
         try:
+            if unchanged_pair(available,asset,args.metadata):
+                unchanged_count += 1
+                print('Reused unchanged verified image pair:',asset['name'],flush=True)
+                continue
             process(publisher,asset,args.metadata)
-            print('Published valid image pair:',asset['name'])
+            print('Published valid image pair:',asset['name'],flush=True)
         except Exception as exc:
             detail = failure_detail(exc)
             try:
@@ -125,7 +164,8 @@ def main():
                 print('Image pair refresh failed with no valid fallback:', asset['name'], detail, file=sys.stderr)
     if failures:
         raise RuntimeError(f'{len(failures)} image pairs failed without a complete previous pair: {", ".join(failures)}')
-    print('Processed image refresh completed:',len(assets),'; reused previous pairs:',fallback_count)
+    print('Processed image refresh completed:',len(assets),'; reused previous pairs:',fallback_count,
+          '; unchanged verified pairs:',unchanged_count)
 
 
 if __name__=='__main__':
