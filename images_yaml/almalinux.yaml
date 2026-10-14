@@ -338,7 +338,7 @@ packages:
     types:
     - vm
     architectures:
-    - aaarch64
+    - aarch64
   - packages:
     - dhclient
     action: install
