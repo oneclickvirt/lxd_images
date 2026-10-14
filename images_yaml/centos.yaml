@@ -276,6 +276,7 @@ packages:
     - vm
     architectures:
     - aarch64
+  repositories: []
 actions:
 - trigger: post-unpack
   action: |-

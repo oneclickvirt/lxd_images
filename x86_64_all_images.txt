@@ -12,6 +12,10 @@ alpine_3.21_3.21_amd64_cloud.zip
 alpine_3.21_3.21_amd64_default.zip
 alpine_3.22_3.22_amd64_cloud.zip
 alpine_3.22_3.22_amd64_default.zip
+alpine_3.23_3.23_amd64_cloud.zip
+alpine_3.23_3.23_amd64_default.zip
+alpine_3.24_3.24_amd64_cloud.zip
+alpine_3.24_3.24_amd64_default.zip
 alpine_edge_edge_amd64_cloud.zip
 archlinux_current_current_amd64_cloud.zip
 archlinux_current_current_amd64_default.zip
