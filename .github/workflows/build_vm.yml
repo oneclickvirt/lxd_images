@@ -1,65 +1,4 @@
 name: Multi-Distro KVM Images Builder
-jobs:
-  build-lxd-kvm-images:
-    strategy:
-      fail-fast: false
-      max-parallel: 6
-      matrix:
-        distro: ${{ fromJSON(format('["{0}"]', inputs.distro)) }}
-        arch: ${{ fromJSON(inputs.arch == 'arm64' && '[{"name":"arm64","runner":"ubuntu-24.04-arm"}]' || '[{"name":"amd64","runner":"ubuntu-latest"}]')
-          }}
-    runs-on: ${{ matrix.arch.runner }}
-    timeout-minutes: 180
-    steps:
-    - name: Load trusted network recovery helpers
-      shell: bash
-      run: |
-        set -euo pipefail
-        curl --fail --silent --show-error --location --connect-timeout 15 --max-time 90 --retry 3 --retry-max-time 180 --retry-connrefused "https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/.github/scripts/ci_network.sh" -o "$RUNNER_TEMP/ci-network.sh"
-        curl --fail --silent --show-error --location --connect-timeout 15 --max-time 90 --retry 3 --retry-max-time 180 --retry-connrefused "https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/.github/scripts/release_assets.py" -o "$RUNNER_TEMP/ci-release-assets.py"
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-    - name: Validate image definitions
-      shell: bash
-      run: |
-        set -euo pipefail
-        python3 -m venv "$RUNNER_TEMP/image-definition-check"
-        "$RUNNER_TEMP/image-definition-check/bin/python" -m pip install --disable-pip-version-check --retries 3 --timeout 30 PyYAML==6.0.3
-        "$RUNNER_TEMP/image-definition-check/bin/python" .github/scripts/verify_image_definitions.py
-    - name: Check workspace
-      run: pwd
-    - name: Build environment
-      run: |
-        sudo apt update -y
-        sudo apt install -y polkit || sudo apt install -y policykit-1
-        sudo apt install -y jq btrfs-progs dosfstools qemu-kvm
-    - name: Configure Git Identity
-      run: |
-        git config --global user.name "lxd-kvm-builder"
-        git config --global user.email "tg@spiritlhl.top"
-    - name: Install GitHub CLI
-      run: |
-        sudo apt install -y gh
-    - name: Build and Upload LXD KVM Images
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GH_TOKEN: ${{ github.token }}
-        CI_IMAGE_RELEASES: ${{ inputs.release }}
-      run: |
-        source "$RUNNER_TEMP/ci-network.sh"
-        set -euo pipefail
-        DISTRO="${{ matrix.distro }}"
-        ARCH="${{ matrix.arch.name }}"
-        distros=("$DISTRO")
-        for distro in "${distros[@]}"; do
-          output=$(bash build_kvm_images.sh "$distro" false "$ARCH" | tail -n 1)
-          read -r -a assets <<< "$output"
-          [[ ${#assets[@]} -gt 0 ]] || { echo "No configured image outputs." >&2; exit 1; }
-          sudo --preserve-env=CI_IMAGE_RELEASES bash -c 'source "$1"; export -f ci_retry gh git ci_clone_attempt curl wget; bash "$2" "$3" true "$4"' -- "$RUNNER_TEMP/ci-network.sh" "build_kvm_images.sh" "$distro" "$ARCH"
-          python3 .github/scripts/verify_image_outputs.py "${assets[@]}"
-          python3 "$RUNNER_TEMP/ci-release-assets.py" kvm_images "${assets[@]}"
-          sudo rm -f "${assets[@]}"
-        done
-      shell: bash
 'on':
   workflow_dispatch:
     inputs:
@@ -96,6 +35,12 @@ jobs:
         - arm64
 permissions:
   contents: write
-concurrency:
-  group: image-publish-build_vm
-  cancel-in-progress: false
+jobs:
+  validated-build:
+    uses: ./.github/workflows/hosted-build.yml
+    with:
+      distro: ${{ inputs.distro }}
+      arch: all
+      kind: vm
+      scope: current
+      release: ${{ inputs.release || '' }}

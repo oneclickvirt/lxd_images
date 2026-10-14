@@ -28,12 +28,42 @@ name: Hosted image build and boot validation
         - container
         - vm
         default: container
+      release:
+        description: Exact upstream release; empty uses the selected catalog
+        type: string
+        default: ''
+      variant:
+        description: Exact variant; empty builds all supported variants
+        type: string
+        default: ''
   schedule:
   - cron: 41 1 * * 0
+  workflow_call:
+    inputs:
+      distro:
+        type: string
+        default: all
+      arch:
+        type: string
+        default: all
+      scope:
+        type: string
+        default: current
+      kind:
+        type: string
+        default: container
+      release:
+        type: string
+        default: ''
+      variant:
+        type: string
+        default: ''
 permissions:
-  contents: read
+  contents: write
 concurrency:
-  group: hosted-image-build-${{ inputs.kind || 'container' }}
+  group: hosted-image-build-${{ inputs.distro || 'all' }}-${{ inputs.kind || 'container'
+    }}-${{ inputs.arch || 'all' }}-${{ inputs.release || inputs.scope || 'current'
+    }}
   cancel-in-progress: false
 jobs:
   catalog:
@@ -43,7 +73,7 @@ jobs:
       matrix: ${{ steps.catalog.outputs.matrix }}
     steps:
     - &id001
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
     - id: catalog
@@ -52,8 +82,10 @@ jobs:
         ARCH: ${{ inputs.arch || 'all' }}
         SCOPE: ${{ inputs.scope || 'current' }}
         KIND: ${{ inputs.kind || 'container' }}
-      run: python3 .github/scripts/image_catalog.py matrix --distro "$DISTRO" --arch "$ARCH" --scope "$SCOPE" --kind
-        "$KIND"
+        RELEASE: ${{ inputs.release }}
+        VARIANT: ${{ inputs.variant }}
+      run: python3 .github/scripts/image_catalog.py matrix --distro "$DISTRO" --arch
+        "$ARCH" --scope "$SCOPE" --kind "$KIND" --release "$RELEASE" --variant "$VARIANT"
   build-test-publish:
     needs: catalog
     runs-on: ${{ matrix.runner }}
@@ -69,9 +101,10 @@ jobs:
       DISTRO: ${{ matrix.distro }}
       ARCH: ${{ matrix.arch }}
       KIND: ${{ matrix.kind }}
+      CI_IMAGE_VARIANTS: ${{ inputs.variant }}
     steps:
     - *id001
-    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
       with:
         go-version: 1.26.5
         cache: false
@@ -117,3 +150,5 @@ jobs:
         printf -- '- %s
         ' "${assets[@]}" >> "$GITHUB_STEP_SUMMARY"
         sudo rm -f -- "${assets[@]}"
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
