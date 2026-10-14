@@ -115,17 +115,24 @@ def process(publisher, asset, metadata):
                     shutil.copyfileobj(source,output,length=1024*1024)
                 paths.append(path)
         subprocess.run(['tar','-tJf',str(paths[1])], check=True, stdout=subprocess.DEVNULL, timeout=120)
-        # Metadata and rootfs are a single replacement set, including rollback.
-        publisher.publish('processed', paths)
+        release = publisher.ensure_release('processed')
+        available = publisher.assets(release['id'])
+        identical = all(available.get(path.name, {}).get('state') == 'uploaded'
+                        and available[path.name].get('size') == path.stat().st_size
+                        and available[path.name].get('digest') == 'sha256:' + publisher.digest(path)
+                        for path in paths)
+        if not identical:
+            # Metadata and rootfs are one replacement set, including rollback.
+            publisher.publish('processed', paths)
+            available = publisher.assets(release['id'])
         label = source_label(asset, metadata)
         if label:
             # Label both members only after transactional publication succeeds.
-            release = publisher.ensure_release('processed')
-            available = publisher.assets(release['id'])
             for path in paths:
                 row = available[path.name]
                 publisher.request(publisher.base + '/releases/assets/' + str(row['id']),
                                   'PATCH', {'label': label})
+        return not identical
 
 
 def main():
@@ -147,8 +154,9 @@ def main():
                 unchanged_count += 1
                 print('Reused unchanged verified image pair:',asset['name'],flush=True)
                 continue
-            process(publisher,asset,args.metadata)
-            print('Published valid image pair:',asset['name'],flush=True)
+            changed = process(publisher,asset,args.metadata)
+            print('Published valid image pair:' if changed else 'Reused identical verified image pair:',
+                  asset['name'],flush=True)
         except Exception as exc:
             detail = failure_detail(exc)
             try:
