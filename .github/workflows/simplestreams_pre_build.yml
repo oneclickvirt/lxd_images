@@ -17,7 +17,9 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: python3 .github/scripts/process_images.py --metadata lxd
     timeout-minutes: 360
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    # Each producer job publishes only after its image passes validation.
+    # A different failed matrix entry must not delay these verified updates.
+    if: github.event_name != 'workflow_run' || contains(fromJSON('["success", "failure"]'), github.event.workflow_run.conclusion)
 'on':
   schedule:
   - cron: 0 18 * * *
