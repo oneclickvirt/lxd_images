@@ -20,6 +20,7 @@ jobs:
         GH_TOKEN: ${{ github.token }}
         CI_IMAGE_PYTHON: ${{ runner.temp }}/image-definition-check/bin/python
     - name: Commit validated source snapshot
+      if: github.event_name != 'workflow_dispatch' || inputs.publish
       shell: bash
       run: |-
         set -euo pipefail
@@ -44,7 +45,12 @@ jobs:
 'on':
   schedule:
   - cron: 55 1 2-30/2 * *
-  workflow_dispatch: null
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Commit validated upstream snapshot and start hosted builds
+        type: boolean
+        default: true
 permissions:
   contents: write
   actions: write
