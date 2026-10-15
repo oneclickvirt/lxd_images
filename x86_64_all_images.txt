@@ -51,9 +51,13 @@ opensuse_16.0_16.0_amd64_default.zip
 opensuse_tumbleweed_tumbleweed_amd64_cloud.zip
 opensuse_tumbleweed_tumbleweed_amd64_default.zip
 openwrt_25.12_25.12_amd64_default.zip
+oracle_10_10_amd64_cloud.zip
+oracle_10_10_amd64_default.zip
 oracle_7_7_amd64_default.zip
 oracle_8_8_amd64_cloud.zip
+oracle_8_8_amd64_default.zip
 oracle_9_9_amd64_cloud.zip
+oracle_9_9_amd64_default.zip
 rockylinux_10_10_amd64_cloud.zip
 rockylinux_10_10_amd64_default.zip
 rockylinux_8_8_amd64_cloud.zip

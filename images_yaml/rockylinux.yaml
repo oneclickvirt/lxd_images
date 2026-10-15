@@ -523,34 +523,6 @@ actions:
     #!/bin/sh
     set -eux
 
-    mkdir -p /etc/NetworkManager/conf.d/
-    printf "[main]\ndhcp=internal" > /etc/NetworkManager/conf.d/dhcp-client.conf
-
-    systemctl enable NetworkManager.service
-  types: *id001
-  variants: *id002
-  releases:
-  - '10'
-- trigger: post-packages
-  types:
-  - vm
-  action: |
-    #!/bin/sh
-    set -eu
-    # hosted-rpm-kernel-image
-    mkdir -p /boot
-    for modules in /usr/lib/modules/* /lib/modules/*; do
-      [ -d "$modules" ] || continue
-      version=${modules##*/}
-      if [ -s "$modules/vmlinuz" ] && [ ! -s "/boot/vmlinuz-$version" ]; then
-        cp "$modules/vmlinuz" "/boot/vmlinuz-$version"
-      fi
-    done
-- trigger: post-files
-  action: |-
-    #!/bin/sh
-    set -eux
-
     # Track down the kernel
     kver=$(basename /boot/initramfs-*.img | sed -r 's#initramfs-(.+)\.img#\1#' | head -n1)
     if [ -z "$kver" ]; then
@@ -625,6 +597,34 @@ actions:
   - vm
   releases:
   - 10
+- trigger: post-files
+  action: |-
+    #!/bin/sh
+    set -eux
+
+    mkdir -p /etc/NetworkManager/conf.d/
+    printf "[main]\ndhcp=internal" > /etc/NetworkManager/conf.d/dhcp-client.conf
+
+    systemctl enable NetworkManager.service
+  types: *id001
+  variants: *id002
+  releases:
+  - '10'
+- trigger: post-packages
+  types:
+  - vm
+  action: |
+    #!/bin/sh
+    set -eu
+    # hosted-rpm-kernel-image
+    mkdir -p /boot
+    for modules in /usr/lib/modules/* /lib/modules/*; do
+      [ -d "$modules" ] || continue
+      version=${modules##*/}
+      if [ -s "$modules/vmlinuz" ] && [ ! -s "/boot/vmlinuz-$version" ]; then
+        cp "$modules/vmlinuz" "/boot/vmlinuz-$version"
+      fi
+    done
 - trigger: post-files
   types:
   - vm
