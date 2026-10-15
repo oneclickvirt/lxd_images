@@ -31,6 +31,7 @@ path.write_text(source)
 PY
     [[ $? == 0 ]] || return 1
     python3 .github/scripts/patch_lxd_builder.py "$folder" || return 1
+    python3 .github/scripts/patch_container_labels.py "$folder" || return 1
     (
         cd "$folder"
         timeout --kill-after=30s 900s go test -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp ./sources ./shared ./generators &&
