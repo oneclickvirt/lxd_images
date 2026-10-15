@@ -46,8 +46,8 @@
       "release": "10-Stream",
       "arch": "arm64",
       "kind": "vm",
-      "reason": "Vendor package transaction failed before a bootable image was accepted; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+      "reason": "ARM guest panicked in MOPS memset while loading a kernel module under QEMU TCG max CPU; stable CPU baseline repair requires complete variant validation before re-enabling automation",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38676604321"
     },
     {
       "distro": "centos",
