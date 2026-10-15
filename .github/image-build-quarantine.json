@@ -51,22 +51,6 @@
     },
     {
       "distro": "alpine",
-      "release": "3.21",
-      "arch": "amd64",
-      "kind": "vm",
-      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
-    },
-    {
-      "distro": "alpine",
-      "release": "3.22",
-      "arch": "amd64",
-      "kind": "vm",
-      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
-    },
-    {
-      "distro": "alpine",
       "release": "3.22",
       "arch": "arm64",
       "kind": "vm",
@@ -142,16 +126,16 @@
       "release": "9-Stream",
       "arch": "amd64",
       "kind": "vm",
-      "reason": "RPM boot metadata referenced a kernel outside the guest boot filesystem; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38663866109"
+      "reason": "Guest booted but its SSH listener failed the readiness gate; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38664993188"
     },
     {
       "distro": "centos",
       "release": "9-Stream",
       "arch": "arm64",
       "kind": "vm",
-      "reason": "RPM boot metadata referenced a kernel outside the guest boot filesystem; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38663866109"
+      "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38668630118"
     },
     {
       "distro": "debian",
@@ -175,7 +159,7 @@
       "arch": "arm64",
       "kind": "vm",
       "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38663876753"
     },
     {
       "distro": "fedora",
@@ -196,18 +180,10 @@
     {
       "distro": "fedora",
       "release": "44",
-      "arch": "amd64",
+      "arch": "arm64",
       "kind": "vm",
-      "reason": "Native VM agent failed readiness; boot and guest integration remain unverified; previous assets retained and manual repair remains available",
+      "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
       "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38664010321"
-    },
-    {
-      "distro": "fedora",
-      "release": "44",
-      "arch": "arm64",
-      "kind": "vm",
-      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
     },
     {
       "distro": "gentoo",
@@ -278,16 +254,16 @@
       "release": "25.12",
       "arch": "amd64",
       "kind": "vm",
-      "reason": "OpenWrt downloader architecture mapping produced an empty target; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+      "reason": "Native VM agent failed readiness; boot and guest integration remain unverified; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38665541818"
     },
     {
       "distro": "openwrt",
       "release": "25.12",
       "arch": "arm64",
       "kind": "vm",
-      "reason": "OpenWrt downloader architecture mapping produced an empty target; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+      "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38665541818"
     },
     {
       "distro": "oracle",
@@ -344,14 +320,6 @@
       "kind": "vm",
       "reason": "Vendor bootstrap package signature verification failed; signature validation remains enabled; previous assets retained and manual repair remains available",
       "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
-    },
-    {
-      "distro": "rockylinux",
-      "release": "10",
-      "arch": "arm64",
-      "kind": "container",
-      "reason": "Build or guest validation failed; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38665521236"
     },
     {
       "distro": "rockylinux",
