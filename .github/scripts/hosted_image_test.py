@@ -53,6 +53,22 @@ network_recovery() {
 }
 network_recovery
 https_check || { echo 'Guest HTTPS/DNS network check failed' >&2; exit 1; }
+if [ -x /usr/local/sbin/image-grow-root ]; then
+  for service in incus-growpart lxd-growpart; do
+    if [ -f "/etc/systemd/system/$service.service" ]; then
+      systemctl is-active --quiet "$service.service" || { echo 'Root growth service failed' >&2; exit 1; }
+    fi
+  done
+  root=$(readlink -f "$(findmnt -n -o SOURCE /)")
+  disk="/dev/$(lsblk -dn -o PKNAME "$root")"
+  root_bytes=$(lsblk -bdn -o SIZE "$root")
+  disk_bytes=$(lsblk -bdn -o SIZE "$disk")
+  fs_bytes=$(df -B1 --output=size / | tail -n 1)
+  # This consumer expands the test disk to at least 10 GiB. Require the
+  # root partition and its filesystem to use the added capacity, on both boots.
+  awk -v root="$root_bytes" -v disk="$disk_bytes" -v fs="$fs_bytes" \
+    'BEGIN {exit !(root >= disk * 0.8 && fs >= root * 0.85)}' || { echo 'Root disk expansion failed' >&2; exit 1; }
+fi
 cat /proc/sys/kernel/random/boot_id
 """
 
@@ -370,17 +386,32 @@ def qemu_seed_network():
 def qemu_guest_diagnostics(disk):
     # QEMU must already be stopped. These tools only read the disposable
     # overlay; the published image and its boot configuration stay intact.
-    for title, command in [
-        ('guest journal', ['sudo', 'virt-log', '-a', str(disk)]),
-        ('cloud-init log', ['sudo', 'virt-cat', '-a', str(disk), '/var/log/cloud-init.log']),
+    network_state = '''-cat /etc/netplan/50-cloud-init.yaml
+-cat /etc/netplan/10-lxc.yaml
+-cat /etc/network/interfaces
+-cat /var/lib/cloud/instance/network-config.json
+-ls /etc/systemd/system/multi-user.target.wants
+-ls /etc/systemd/system/network-online.target.wants
+'''
+    for title, command, payload in [
+        ('guest journal', ['sudo', 'virt-log', '-a', str(disk)], None),
+        ('cloud-init log', ['sudo', 'virt-cat', '-a', str(disk), '/var/log/cloud-init.log'], None),
+        ('network configuration', ['sudo', 'guestfish', '--ro', '-a', str(disk), '-i'], network_state),
     ]:
         try:
             # On ARM TCG the guestfs appliance alone can need 40-60 seconds.
             # Leave a bounded window for it to read the journal as well.
             result = subprocess.run(command, capture_output=True, text=True, timeout=120,
-                                    check=False, env=isolated_environment())
+                                    check=False, env=isolated_environment(), input=payload)
             details = '\n'.join(part for part in (result.stdout, result.stderr) if part).strip()
             if details:
+                if payload is None:
+                    # Late cloud-final messages used to displace the DHCP,
+                    # renderer and interface evidence from the bounded tail.
+                    network = '\n'.join(line for line in details.splitlines()
+                                        if re.search(r'networkd|netplan|enp[0-9]|eth[0-9]|DHCP|renderer|network.config|ci-info:', line, re.I))
+                    if network:
+                        print('Offline '+title+' network initialization:\n'+network[-14000:], file=sys.stderr)
                 print('Offline '+title+' diagnostics:\n'+details[-14000:], file=sys.stderr)
         except (OSError, subprocess.SubprocessError) as error:
             print('Offline '+title+' diagnostics unavailable: '+type(error).__name__, file=sys.stderr)

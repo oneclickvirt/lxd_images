@@ -565,24 +565,51 @@ actions:
   types:
   - vm
 - trigger: post-files
-  action: |-
+  action: |
     #!/bin/sh
-    set -eux
-
-    # Automatic disk resize
-    cat << EOF > /etc/systemd/system/lxd-growpart.service
+    set -eu
+    # hosted-ubuntu-root-growth
+    install -d /usr/local/sbin
+    cat << 'IMAGE_GROW_ROOT' > /usr/local/sbin/image-grow-root
+    #!/bin/sh
+    set -eu
+    # Resolve the mounted root instead of assuming a SCSI bus or partition number.
+    root=$(readlink -f "$(findmnt -n -o SOURCE /)")
+    case "$root" in /dev/*) ;; *) echo 'Root is not a block device' >&2; exit 1;; esac
+    [ "$(findmnt -n -o FSTYPE /)" = ext4 ] || { echo 'Expected an ext4 root' >&2; exit 1; }
+    [ "$(lsblk -dn -o TYPE "$root")" = part ] || { echo 'Expected a plain root partition' >&2; exit 1; }
+    parent=$(lsblk -dn -o PKNAME "$root")
+    part=$(cat "/sys/class/block/${root##*/}/partition")
+    case "$parent" in ''|*/*|*[!a-zA-Z0-9_.-]*) echo 'Invalid root disk' >&2; exit 1;; esac
+    case "$part" in ''|*[!0-9]*) echo 'Invalid root partition number' >&2; exit 1;; esac
+    [ "$part" -gt 0 ]
+    if output=$(growpart "/dev/$parent" "$part" 2>&1); then
+      printf '%s\n' "$output"
+    else
+      status=$?
+      printf '%s\n' "$output"
+      # growpart uses exit 1 for the normal case on subsequent boots.
+      if [ "$status" -ne 1 ] || ! printf '%s\n' "$output" | grep -q '^NOCHANGE:'; then
+        exit "$status"
+      fi
+    fi
+    resize2fs "$root"
+    IMAGE_GROW_ROOT
+    chmod 0755 /usr/local/sbin/image-grow-root
+    cat << 'IMAGE_GROW_SERVICE' > /etc/systemd/system/lxd-growpart.service
     [Unit]
-    Description=LXD - grow root partition
+    Description=Grow the mounted ext4 root partition
+    After=local-fs.target
 
     [Service]
     Type=oneshot
-    ExecStartPre=-/usr/bin/growpart /dev/sda 2
-    ExecStart=/sbin/resize2fs /dev/sda2
+    RemainAfterExit=yes
+    ExecStart=/usr/local/sbin/image-grow-root
 
     [Install]
-    WantedBy=default.target
-    EOF
-    systemctl enable lxd-growpart
+    WantedBy=multi-user.target
+    IMAGE_GROW_SERVICE
+    systemctl enable lxd-growpart.service
   types:
   - vm
 - trigger: post-packages
@@ -749,6 +776,18 @@ actions:
           ;;
       esac
     fi
+- trigger: post-packages
+  types:
+  - vm
+  releases:
+  - noble
+  - resolute
+  action: |
+    #!/bin/sh
+    set -eu
+    # hosted-ubuntu-vm-networkd
+    # A generated netplan file still needs its renderer to start on every boot.
+    systemctl enable systemd-networkd.service
 - trigger: post-files
   action: |
     #!/bin/sh

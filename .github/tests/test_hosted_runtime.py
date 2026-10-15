@@ -140,12 +140,24 @@ class QEMUEntropyTests(unittest.TestCase):
         with mock.patch.dict(runtime.os.environ, {'GH_TOKEN': 'secret-a', 'GITHUB_TOKEN': 'secret-b'}), \
              mock.patch.object(runtime.subprocess, 'run', return_value=result) as execute, redirect_stderr(output):
             runtime.qemu_guest_diagnostics(Path('/tmp/disposable-overlay.qcow2'))
-        self.assertLess(len(output.getvalue()), 28200)
-        self.assertEqual([call.args[0][1] for call in execute.call_args_list], ['virt-log', 'virt-cat'])
+        self.assertLess(len(output.getvalue()), 42300)
+        self.assertEqual([call.args[0][1] for call in execute.call_args_list], ['virt-log', 'virt-cat', 'guestfish'])
+        self.assertIn('--ro', execute.call_args.args[0])
+        self.assertIn('-cat /etc/netplan/50-cloud-init.yaml', execute.call_args.kwargs['input'])
+        self.assertNotIn('user-data', execute.call_args.kwargs['input'])
         for call in execute.call_args_list:
             self.assertEqual(call.kwargs['timeout'], 120)
             self.assertNotIn('GH_TOKEN', call.kwargs['env'])
             self.assertNotIn('GITHUB_TOKEN', call.kwargs['env'])
+
+    def test_early_network_evidence_survives_late_cloud_final_output(self):
+        output = io.StringIO()
+        evidence = 'enp5s0: DHCPv4 address 10.0.2.15 acquired\n'
+        result = subprocess.CompletedProcess([], 0, evidence + 'late final module\n' * 2500, '')
+        with mock.patch.object(runtime.subprocess, 'run', return_value=result), redirect_stderr(output):
+            runtime.qemu_guest_diagnostics(Path('/tmp/disposable-overlay.qcow2'))
+        self.assertIn(evidence.strip(), output.getvalue())
+        self.assertLess(len(output.getvalue()), 71000)
 
     def test_mops_workaround_is_limited_to_arm_software_emulation(self):
         self.assertEqual(runtime.qemu_cpu_model('arm64', False), 'neoverse-n1')

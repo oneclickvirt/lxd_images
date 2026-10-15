@@ -1,5 +1,6 @@
 """Apply compatibility fixes after every upstream definition refresh."""
 from pathlib import Path
+import re
 from append_image_actions import serialize, normalize_el_boot
 from verify_image_definitions import verify
 from image_ssh_identity import BUILD_HOOK
@@ -75,6 +76,80 @@ def ubuntu_arm_device_budget(document):
     files = document.setdefault('files', [])
     files[:] = [entry for entry in files if entry.get('path') != config['path']]
     files.append(config)
+
+
+UBUNTU_GROW_ROOT = r'''#!/bin/sh
+set -eu
+# Resolve the mounted root instead of assuming a SCSI bus or partition number.
+root=$(readlink -f "$(findmnt -n -o SOURCE /)")
+case "$root" in /dev/*) ;; *) echo 'Root is not a block device' >&2; exit 1;; esac
+[ "$(findmnt -n -o FSTYPE /)" = ext4 ] || { echo 'Expected an ext4 root' >&2; exit 1; }
+[ "$(lsblk -dn -o TYPE "$root")" = part ] || { echo 'Expected a plain root partition' >&2; exit 1; }
+parent=$(lsblk -dn -o PKNAME "$root")
+part=$(cat "/sys/class/block/${root##*/}/partition")
+case "$parent" in ''|*/*|*[!a-zA-Z0-9_.-]*) echo 'Invalid root disk' >&2; exit 1;; esac
+case "$part" in ''|*[!0-9]*) echo 'Invalid root partition number' >&2; exit 1;; esac
+[ "$part" -gt 0 ]
+if output=$(growpart "/dev/$parent" "$part" 2>&1); then
+  printf '%s\n' "$output"
+else
+  status=$?
+  printf '%s\n' "$output"
+  # growpart uses exit 1 for the normal case on subsequent boots.
+  if [ "$status" -ne 1 ] || ! printf '%s\n' "$output" | grep -q '^NOCHANGE:'; then
+    exit "$status"
+  fi
+fi
+resize2fs "$root"
+'''
+
+
+def ubuntu_vm_compat(document):
+    """Keep netplan's renderer enabled and grow the actual ext4 root device."""
+    actions = document.setdefault('actions', [])
+    for entry in actions:
+        if ('growpart /dev/sda 2' not in entry['action']
+                and 'hosted-ubuntu-root-growth' not in entry['action']):
+            continue
+        match = re.search(r'/etc/systemd/system/((?:incus|lxd)-growpart)\.service', entry['action'])
+        if not match or entry.get('types') != ['vm']:
+            raise ValueError('Ubuntu root growth hook contract changed')
+        service = match[1]
+        entry['action'] = '''#!/bin/sh
+set -eu
+# hosted-ubuntu-root-growth
+install -d /usr/local/sbin
+cat << 'IMAGE_GROW_ROOT' > /usr/local/sbin/image-grow-root
+''' + UBUNTU_GROW_ROOT + '''IMAGE_GROW_ROOT
+chmod 0755 /usr/local/sbin/image-grow-root
+cat << 'IMAGE_GROW_SERVICE' > /etc/systemd/system/SERVICE_NAME.service
+[Unit]
+Description=Grow the mounted ext4 root partition
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/image-grow-root
+
+[Install]
+WantedBy=multi-user.target
+IMAGE_GROW_SERVICE
+systemctl enable SERVICE_NAME.service
+'''.replace('SERVICE_NAME', service)
+    network = {'trigger': 'post-packages', 'types': ['vm'],
+               'releases': ['noble', 'resolute'], 'action': '''#!/bin/sh
+set -eu
+# hosted-ubuntu-vm-networkd
+# A generated netplan file still needs its renderer to start on every boot.
+systemctl enable systemd-networkd.service
+'''}
+    for index, entry in enumerate(actions):
+        if 'hosted-ubuntu-vm-networkd' in entry['action']:
+            actions[index] = network
+            break
+    else:
+        actions.append(network)
 
 
 def rpm_vm_compat(document, distro):
@@ -576,6 +651,7 @@ done
             rocky_download_budget(document)
         if path.stem == 'ubuntu':
             ubuntu_arm_device_budget(document)
+            ubuntu_vm_compat(document)
         if not NATIVE_IMAGE_ARCHIVES and any(entry.get('generator') == 'cloud-init'
                                                for entry in document.get('files', [])):
             raw_cloud_compat(document)

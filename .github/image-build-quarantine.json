@@ -6,8 +6,8 @@
       "release": "resolute",
       "arch": "arm64",
       "kind": "vm",
-      "reason": "Guest entered emergency mode after its EFI filesystem device timed out under ARM TCG; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38716648738"
+      "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38730326378"
     }
   ]
 }
