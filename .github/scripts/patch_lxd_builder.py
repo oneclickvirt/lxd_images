@@ -5,6 +5,43 @@ import sys
 
 
 KEY_DIGEST = 'be8c4f070b696e64d8ce40e59a95a57e8b5c776f0015c2fd64e14b896622bdb4'
+COMPATIBILITY_FIXTURES = {
+    'openwrt-combined-http.go.txt': 'a6f1841f1341cbbbf397fca5f55596b891e27630c6f7ae4c7de55d297aa25e05',
+    'lxd-procd-agent.go.txt': 'abef9ad81e40d7c9b36a7564b8f46699ee3802abecb2e715f4df0f69a3cd3144',
+}
+
+
+def fixture(name):
+    payload = Path(__file__).with_name('fixtures').joinpath(name).read_bytes()
+    if hashlib.sha256(payload).hexdigest() != COMPATIBILITY_FIXTURES[name]:
+        raise ValueError('OpenWrt compatibility fixture integrity mismatch')
+    return payload.decode()
+
+
+def openwrt_source(source):
+    if 'unpackCombinedImg(' in source:
+        return source
+    if (source.count('func (s *openwrt) Run() error') != 1
+            or 'shared.Unpack(filepath.Join(fpath, fname), s.rootfsDir)' not in source):
+        raise ValueError('OpenWrt source contract changed; revalidate the builder')
+    # Use the signed official combined EFI image, as distrobuilder 3.4 does.
+    # A rootfs tarball lacks the EFI loader required by VM consumers.
+    return '// hosted-openwrt-combined-efi\n' + fixture('openwrt-combined-http.go.txt')
+
+
+def openwrt_agent(source):
+    if 'func (g *lxdAgent) handleProcd() error' in source:
+        return source
+    before = '\n\tif fi.Mode()&os.ModeSymlink != 0 {'
+    if (source.count(before) != 1 or source.count('func (g *lxdAgent) RunLXD(') != 1):
+        raise ValueError('OpenWrt agent contract changed; revalidate the builder')
+    dispatch = '''
+    // hosted-openwrt-procd-agent
+    if _, err := os.Stat(filepath.Join(g.sourceDir, "etc", "openwrt_version")); err == nil {
+        return g.handleProcd()
+    }
+'''
+    return source.replace(before, dispatch + before) + '\n' + fixture('lxd-procd-agent.go.txt')
 
 
 def arch_release_test(source):
@@ -105,9 +142,19 @@ def main(root):
     first = oracle_source(oracle.read_text())
     second = rocky_source(rocky.read_text(), Path(__file__).with_name('rocky-10.asc').read_bytes())
     third = arch_release_test(arch_test.read_text())
+    openwrt = root / 'sources/openwrt-http.go'
+    agent = root / 'generators/lxd-agent.go'
+    fourth = openwrt_source(openwrt.read_text())
+    fifth = openwrt_agent(agent.read_text())
     oracle.write_text(first)
     rocky.write_text(second)
     arch_test.write_text(third)
+    openwrt.write_text(fourth)
+    agent.write_text(fifth)
+    source_tests = Path(__file__).with_name('fixtures') / 'openwrt-hosted-source_test.go.txt'
+    agent_tests = Path(__file__).with_name('fixtures') / 'openwrt-hosted-agent_test.go.txt'
+    (root / 'sources/hosted_openwrt_test.go').write_text(source_tests.read_text())
+    (root / 'generators/hosted_openwrt_test.go').write_text(agent_tests.read_text())
 
 
 if __name__ == '__main__':

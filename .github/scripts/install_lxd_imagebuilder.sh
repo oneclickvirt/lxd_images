@@ -33,7 +33,7 @@ PY
     python3 .github/scripts/patch_lxd_builder.py "$folder" || return 1
     (
         cd "$folder"
-        timeout --kill-after=30s 900s go test -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp ./sources ./shared &&
+        timeout --kill-after=30s 900s go test -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp ./sources ./shared ./generators &&
         timeout --kill-after=30s 600s go build -trimpath -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp \
             -o "$task_dir/lxd-imagebuilder" ./lxd-imagebuilder
     ) || return 1

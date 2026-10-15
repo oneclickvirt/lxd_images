@@ -182,17 +182,15 @@ systemctl enable ssh.service
 
     path = root / 'images_yaml/openwrt.yaml'
     document = verify(path.read_text())
-    # The canonical downloader switches on x86_64/aarch64, while this
-    # workflow supplies amd64/arm64. Its valid named maps omit OpenWrt.
-    # Explicit mappings work in both the current builder and the fallback.
-    document['mappings'] = {'architectures': {'amd64': 'x86_64', 'x86_64': 'x86_64',
-                                              'arm64': 'aarch64', 'aarch64': 'aarch64',
-                                              'armhf': 'armv7l', 'armv7l': 'armv7l'}}
+    # The combined EFI downloader uses the vendor target/subtarget names.
+    # The builder's named architecture maps do not include OpenWrt.
+    document['mappings'] = {'architectures': {'amd64': 'x86-64', 'x86_64': 'x86-64',
+                                              'arm64': 'armsr-armv8', 'aarch64': 'armsr-armv8'}}
     # Upstream APK definitions no longer have the old '- sudo' insertion anchor.
     sets = document.setdefault('packages', {}).setdefault('sets', [])
     existing = {p for s in sets if s.get('action') == 'install' and not s.get('types')
                 for p in s.get('packages', [])}
-    missing = [p for p in ['curl', 'ca-bundle'] if p not in existing]
+    missing = [p for p in ['curl', 'ca-bundle', 'openssh-server', 'openssh-keygen', 'bash'] if p not in existing]
     if missing:
         sets.append({'packages': missing, 'action': 'install'})
     path.write_text(serialize(document))

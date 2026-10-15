@@ -1,0 +1,18 @@
+package sources
+
+import (
+    "net/http"
+    "net/http/httptest"
+    "testing"
+)
+
+func TestHostedOpenWrtStableBeforeReleaseCandidate(t *testing.T) {
+    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        _, _ = w.Write([]byte(`<a>25.12.0</a><a>25.12.0-rc1</a>`))
+    }))
+    defer server.Close()
+    source := &openwrt{}
+    source.client = server.Client()
+    release, err := source.getLatestServiceRelease(server.URL, "25.12")
+    if err != nil || release != "25.12.0" { t.Fatalf("unstable or missing vendor release: %s %v", release, err) }
+}

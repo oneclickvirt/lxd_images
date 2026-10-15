@@ -1,5 +1,6 @@
 """Stage upstream definition updates and release indexes; retain a valid fallback."""
 import argparse
+import base64
 import datetime
 import json
 import os
@@ -16,7 +17,7 @@ import urllib.request
 
 import yaml
 
-from append_image_actions import normalize_oracle, normalize_el10, normalize_el_boot
+from append_image_actions import normalize_oracle, normalize_el10, normalize_el_boot, append as append_custom_actions, serialize
 from image_source_compat import normalize
 from image_catalog import refresh_catalog
 from verify_image_definitions import verify
@@ -129,13 +130,31 @@ def promote(root, stage, names):
     return len(installed)
 
 
+def current_openwrt_for_lxd(root, payload):
+    # Canonical's archived OpenWrt recipe lacks VM boot hooks and has retired
+    # signing keys. Follow the same maintained recipe as Incus, translating
+    # only its image format and builder-provided environment variables.
+    document = verify(payload)
+    targets = document.get('targets', {})
+    if 'incus' in targets:
+        targets['lxd'] = targets.pop('incus')
+    for item in document.get('files', []):
+        if item.get('generator') == 'incus-agent':
+            item['generator'] = 'lxd-agent'
+    for hook in document.get('actions', []):
+        hook['action'] = hook['action'].replace('DISTROBUILDER_', 'LXD_IMAGEBUILDER_')
+    path = root / 'images_yaml/openwrt.yaml'
+    path.write_text(serialize(document))
+    append_custom_actions(path, root / 'sh_insert_content.text')
+
+
 def prepare(root, stage, repo, deadline):
     shutil.copytree(root / "images_yaml", stage / "images_yaml")
     for name in ["bash_insert_content.text", "sh_insert_content.text"]:
         shutil.copy2(root / name, stage / name)
     scripts = stage / ".github/scripts"
     scripts.mkdir(parents=True)
-    for name in ["append_image_actions.py", "verify_image_definitions.py", "ci_network.sh", "image_catalog.py", "image_source_compat.py"]:
+    for name in ["append_image_actions.py", "verify_image_definitions.py", "ci_network.sh", "image_catalog.py", "image_source_compat.py", "image_ssh_identity.py"]:
         shutil.copy2(root / ".github/scripts" / name, scripts / name)
     legacy = (root / ".github/scripts/refresh_image_definitions.sh").read_text()
     source_commit = api_json("/repos/lxc/lxc-ci/commits/main", deadline)["sha"]
@@ -159,6 +178,9 @@ def prepare(root, stage, repo, deadline):
         raise
     if code:
         raise subprocess.CalledProcessError(code, "isolated image definition generator")
+    if repo == 'lxd_images':
+        upstream = api_json(f'/repos/lxc/lxc-ci/contents/images/openwrt.yaml?ref={source_commit}', deadline)
+        current_openwrt_for_lxd(stage, base64.b64decode(upstream['content']).decode())
     normalize_oracle(stage / "images_yaml/oracle.yaml")
     for distro in ("almalinux", "rockylinux", "oracle"):
         normalize_el10(stage / f"images_yaml/{distro}.yaml")

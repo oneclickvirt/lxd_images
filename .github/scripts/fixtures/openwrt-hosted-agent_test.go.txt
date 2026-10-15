@@ -1,0 +1,32 @@
+package generators
+
+import (
+    "os"
+    "path/filepath"
+    "strings"
+    "testing"
+)
+
+func TestHostedOpenWrtProcdAgent(t *testing.T) {
+    root := t.TempDir()
+    for _, dir := range []string{"etc/init.d", "etc/rc.d", "usr/local/sbin"} {
+        if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil { t.Fatal(err) }
+    }
+    generator := &lxdAgent{}
+    generator.sourceDir = root
+    if err := generator.handleProcd(); err != nil { t.Fatal(err) }
+    for _, name := range []string{"S05lxd-agent", "K85lxd-agent"} {
+        target, err := os.Readlink(filepath.Join(root, "etc/rc.d", name))
+        if err != nil || target != "/etc/init.d/lxd-agent" { t.Fatalf("invalid agent lifecycle link: %s %v", target, err) }
+    }
+    for _, name := range []string{"etc/init.d/lxd-agent", "usr/local/sbin/lxd-agent-wrapper", "usr/local/sbin/lxd-agent-setup"} {
+        info, err := os.Stat(filepath.Join(root, name))
+        if err != nil || info.Mode().Perm() != 0755 { t.Fatalf("agent script missing or not executable: %s %v", name, err) }
+    }
+    wrapper, err := os.ReadFile(filepath.Join(root, "usr/local/sbin/lxd-agent-wrapper"))
+    if err != nil { t.Fatal(err) }
+    if !strings.Contains(string(wrapper), "exec /run/lxd_agent/lxd-agent") { t.Fatal("wrapper does not launch the native LXD agent") }
+    setup, err := os.ReadFile(filepath.Join(root, "usr/local/sbin/lxd-agent-setup"))
+    if err != nil { t.Fatal(err) }
+    if string(setup) != lxdAgentSetupScript { t.Fatal("procd changed the vendor config-drive setup") }
+}
