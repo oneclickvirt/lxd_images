@@ -42,14 +42,6 @@
       "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38668630118"
     },
     {
-      "distro": "centos",
-      "release": "9-Stream",
-      "arch": "arm64",
-      "kind": "vm",
-      "reason": "Guest boot command line retained a build-host loop device; newer UUID-root repair requires complete variant validation before re-enabling automation",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38668630118"
-    },
-    {
       "distro": "fedora",
       "release": "43",
       "arch": "arm64",
@@ -94,8 +86,8 @@
       "release": "10",
       "arch": "amd64",
       "kind": "vm",
-      "reason": "Vendor bootstrap package signature verification failed; signature validation remains enabled; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+      "reason": "Vendor image hook failed before a bootable image was accepted; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38712468873"
     },
     {
       "distro": "rockylinux",
