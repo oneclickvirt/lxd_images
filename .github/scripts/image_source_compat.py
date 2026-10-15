@@ -7,6 +7,31 @@ from image_ssh_identity import BUILD_HOOK
 NATIVE_IMAGE_ARCHIVES = True
 
 
+def openwrt_vm_root(document):
+    """Reject empty boot roots instead of silently producing an unbootable VM."""
+    hooks = [entry for entry in document.get('actions', [])
+             if entry.get('types') == ['vm'] and '/boot/efi/' in entry['action']
+             and 'ROOT_PARTUUID' in entry['action']]
+    if len(hooks) != 2:
+        raise ValueError('OpenWrt VM boot hook contract changed')
+    for entry in hooks:
+        action = entry['action']
+        if 'hosted-openwrt-root-partuuid' in action:
+            continue
+        rootvar = ('LXD_IMAGEBUILDER_ROOT_PARTUUID' if 'LXD_IMAGEBUILDER_ROOT_PARTUUID' in action
+                   else 'DISTROBUILDER_ROOT_PARTUUID')
+        action = action.removeprefix('#!/bin/sh\n')
+        entry['action'] = '''#!/bin/sh
+set -eu
+# hosted-openwrt-root-partuuid
+guest_root=${ROOT_VARIABLE}
+case "$guest_root" in PARTUUID=?*) ;; *) echo 'Expected root partition UUID' >&2; exit 1;; esac
+case "${guest_root#PARTUUID=}" in *[!0-9a-fA-F-]*) echo 'Invalid root partition UUID' >&2; exit 1;; esac
+'''.replace('ROOT_VARIABLE', rootvar) + action + '''
+grep -Eq "(^|[[:space:]])root=${guest_root}([[:space:]]|$)" "$target"
+'''
+
+
 def instance_identity(document):
     actions = document.setdefault('actions', [])
     actions[:] = [entry for entry in actions if 'hosted-instance-ssh-identity' not in entry['action']]
@@ -235,6 +260,7 @@ systemctl enable ssh.service
     missing = [p for p in ['curl', 'ca-bundle', 'openssh-server', 'openssh-keygen', 'bash'] if p not in existing]
     if missing:
         sets.append({'packages': missing, 'action': 'install'})
+    openwrt_vm_root(document)
     path.write_text(serialize(document))
 
     path = root / 'images_yaml/archlinux.yaml'

@@ -1,0 +1,42 @@
+package main
+
+import (
+    "context"
+    "os"
+    "path/filepath"
+    "testing"
+)
+
+func TestHostedRootPartUUID(t *testing.T) {
+    directory := t.TempDir()
+    command := "#!/bin/sh\nset -eu\n[ \"$*\" = \"-o export /dev/hosted-fixturep2\" ] || exit 2\nprintf '%s' \"$HOSTED_BLKID_OUTPUT\"\nexit \"$HOSTED_BLKID_STATUS\"\n"
+    if err := os.WriteFile(filepath.Join(directory, "blkid"), []byte(command), 0755); err != nil {
+        t.Fatal(err)
+    }
+    t.Setenv("PATH", directory + string(os.PathListSeparator) + os.Getenv("PATH"))
+    for _, test := range []struct {
+        name, output, status, want string
+    }{
+        {"partition differs from filesystem", "UUID=filesystem-id\nPARTUUID=12345678-1234-5678-1234-567812345678\n", "0", "PARTUUID=12345678-1234-5678-1234-567812345678"},
+        {"filesystem alone is insufficient", "UUID=filesystem-id\n", "0", ""},
+        {"empty partition is rejected", "UUID=filesystem-id\nPARTUUID=\n", "0", ""},
+        {"blkid failure is rejected", "PARTUUID=12345678-02\n", "1", ""},
+    } {
+        t.Run(test.name, func(t *testing.T) {
+            t.Setenv("HOSTED_BLKID_OUTPUT", test.output)
+            t.Setenv("HOSTED_BLKID_STATUS", test.status)
+            machine := &vm{ctx: context.Background(), loopDevice: "/dev/hosted-fixture"}
+            got, err := machine.findRootfsDevPARTUUID()
+            if test.want == "" {
+                if err == nil { t.Fatal("Expected invalid partition metadata to fail") }
+                return
+            }
+            if err != nil { t.Fatal(err) }
+            if got != test.want { t.Fatalf("got %q, want %q", got, test.want) }
+        })
+    }
+    machine := &vm{ctx: context.Background()}
+    if _, err := machine.findRootfsDevPARTUUID(); err == nil {
+        t.Fatal("Expected an absent root device to fail")
+    }
+}

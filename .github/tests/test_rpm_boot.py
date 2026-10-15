@@ -22,6 +22,11 @@ class RPMBootTests(unittest.TestCase):
             definitions.mkdir()
             for distro in DISTROS:
                 document = {'image': {'distribution': distro}, 'source': {'downloader': 'fixture'}, 'actions': []}
+                if distro == 'openwrt':
+                    document['actions'].extend([
+                        {'trigger': 'post-files', 'types': ['vm'], 'architectures': [arch],
+                         'action': '#!/bin/sh\ntarget=/boot/efi/' + target + '/grub.cfg\nsed -i "s#root=[^ ]*#root=${DISTROBUILDER_ROOT_PARTUUID}#g" "${target}"\n'}
+                        for arch, target in [('x86-64', 'boot/grub'), ('armsr-armv8', 'efi/openwrt')]])
                 if distro == 'fedora':
                     document['actions'].append({'trigger': 'post-unpack', 'types': ['vm'], 'action': 'systemd-machine-id-setup'})
                 if distro == 'gentoo':

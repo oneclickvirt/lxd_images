@@ -40,6 +40,13 @@ class ImageSourceRefreshTests(unittest.TestCase):
         definitions.mkdir()
         for distro in refresh.DISTROS:
             (definitions / (distro + ".yaml")).write_text(DEFINITION)
+        # VM normalization expects the two boot hooks in the real upstream recipe.
+        openwrt = verify(DEFINITION)
+        openwrt['actions'] = [
+            {'trigger': 'post-files', 'types': ['vm'], 'architectures': [arch],
+             'action': '#!/bin/sh\ntarget=/boot/efi/' + target + '/grub.cfg\nsed -i "s#root=[^ ]*#root=${DISTROBUILDER_ROOT_PARTUUID}#g" "${target}"\n'}
+            for arch, target in [('x86-64', 'boot/grub'), ('armsr-armv8', 'efi/openwrt')]]
+        (definitions / 'openwrt.yaml').write_text(hooks.serialize(openwrt))
         (self.root / "all_images.txt").write_text("previous-valid-index\n")
 
     def tearDown(self):
@@ -50,6 +57,7 @@ class ImageSourceRefreshTests(unittest.TestCase):
 
     def test_hooks_follow_actions_even_when_mappings_is_last(self):
         path = self.root / "images_yaml/openwrt.yaml"
+        path.write_text(DEFINITION)
         hook = self.root / "hook.text"
         hook.write_text('- trigger: post-packages\n  action: |\n    #!/bin/sh\n    echo fixture\n')
         hooks.append(path, hook)

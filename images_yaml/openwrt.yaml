@@ -139,8 +139,15 @@ actions:
 - trigger: post-files
   action: |
     #!/bin/sh
+    set -eu
+    # hosted-openwrt-root-partuuid
+    guest_root=${LXD_IMAGEBUILDER_ROOT_PARTUUID}
+    case "$guest_root" in PARTUUID=?*) ;; *) echo 'Expected root partition UUID' >&2; exit 1;; esac
+    case "${guest_root#PARTUUID=}" in *[!0-9a-fA-F-]*) echo 'Invalid root partition UUID' >&2; exit 1;; esac
     target=/boot/efi/boot/grub/grub.cfg
     sed -i "s#root=[^ ]*#root=${LXD_IMAGEBUILDER_ROOT_PARTUUID}#g" "${target}"
+
+    grep -Eq "(^|[[:space:]])root=${guest_root}([[:space:]]|$)" "$target"
   types:
   - vm
   architectures:
@@ -148,8 +155,15 @@ actions:
 - trigger: post-files
   action: |
     #!/bin/sh
+    set -eu
+    # hosted-openwrt-root-partuuid
+    guest_root=${LXD_IMAGEBUILDER_ROOT_PARTUUID}
+    case "$guest_root" in PARTUUID=?*) ;; *) echo 'Expected root partition UUID' >&2; exit 1;; esac
+    case "${guest_root#PARTUUID=}" in *[!0-9a-fA-F-]*) echo 'Invalid root partition UUID' >&2; exit 1;; esac
     target=/boot/efi/efi/openwrt/grub.cfg
     sed -i "s#root=[^ ]*#root=${LXD_IMAGEBUILDER_ROOT_PARTUUID}#g" "${target}"
+
+    grep -Eq "(^|[[:space:]])root=${guest_root}([[:space:]]|$)" "$target"
   types:
   - vm
   architectures:

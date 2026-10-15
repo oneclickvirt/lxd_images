@@ -90,14 +90,6 @@
       "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38669612255"
     },
     {
-      "distro": "fedora",
-      "release": "44",
-      "arch": "arm64",
-      "kind": "vm",
-      "reason": "Guest entered emergency mode after its EFI filesystem device timed out under ARM TCG; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38668638968"
-    },
-    {
       "distro": "gentoo",
       "release": "current",
       "arch": "amd64",
@@ -135,15 +127,15 @@
       "arch": "amd64",
       "kind": "vm",
       "reason": "Native VM agent failed readiness; boot and guest integration remain unverified; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38676574040"
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38692237443"
     },
     {
       "distro": "openwrt",
       "release": "25.12",
       "arch": "arm64",
       "kind": "vm",
-      "reason": "Vendor source download failed; the recorded run contains the exact failing URL; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38676574040"
+      "reason": "Guest kernel received an empty root device because the builder did not export the required root partition UUID; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38692237443"
     },
     {
       "distro": "oracle",
@@ -182,16 +174,16 @@
       "release": "9",
       "arch": "amd64",
       "kind": "container",
-      "reason": "Vendor SELinux symlink labels cannot be unpacked by the hosted container runtime; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38672692150"
+      "reason": "Vendor SELinux labels cannot be unpacked by the hosted container runtime; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38691127318"
     },
     {
       "distro": "oracle",
       "release": "9",
       "arch": "arm64",
       "kind": "container",
-      "reason": "Vendor SELinux symlink labels cannot be unpacked by the hosted container runtime; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38672692150"
+      "reason": "Vendor SELinux labels cannot be unpacked by the hosted container runtime; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38691127318"
     },
     {
       "distro": "rockylinux",
