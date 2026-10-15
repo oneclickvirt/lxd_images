@@ -7,6 +7,7 @@ import threading
 import unittest
 import os
 import sys
+import subprocess
 from unittest import mock
 from contextlib import redirect_stdout
 import io
@@ -70,6 +71,58 @@ class NativeVMConsoleTests(unittest.TestCase):
                 output = diagnostics.capture_console([sys.executable, str(fixture)])
             self.assertIn('Kernel fixture: missing virtio driver', output)
             self.assertNotIn('AssertionError', output)
+
+
+class NativeVMOfflineTests(unittest.TestCase):
+    def test_running_vm_disk_is_never_opened(self):
+        state = subprocess.CompletedProcess([], 0, '{"status_code":103}', '')
+        with mock.patch.object(diagnostics.subprocess, 'run', return_value=state), \
+                mock.patch.object(Path, 'is_file') as inspect_disk:
+            with self.assertRaisesRegex(RuntimeError, 'must be stopped'):
+                diagnostics.stopped_disk(Path('/unavailable'), 'test-012345abcdef', 'incus')
+        inspect_disk.assert_not_called()
+
+    def test_stopped_vm_uses_its_disposable_storage_volume(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            disk = base / 'storage-pools/default/virtual-machines/test-012345abcdef/root.img'
+            disk.parent.mkdir(parents=True)
+            disk.write_bytes(b'disposable disk')
+            state = subprocess.CompletedProcess([], 0, '{"status_code":102}', '')
+            with mock.patch.dict(os.environ, GH_TOKEN='secret-a', GITHUB_TOKEN='secret-b'), \
+                    mock.patch.object(diagnostics.subprocess, 'run', return_value=state) as execute:
+                self.assertEqual(diagnostics.stopped_disk(base, 'test-012345abcdef', '/snap/bin/lxc'), disk)
+            self.assertNotIn('GH_TOKEN', execute.call_args.kwargs['env'])
+            self.assertNotIn('GITHUB_TOKEN', execute.call_args.kwargs['env'])
+            self.assertEqual(execute.call_args.kwargs['timeout'], 15)
+
+    def test_missing_stopped_volume_preserves_failure(self):
+        state = subprocess.CompletedProcess([], 0, '{"status_code":102}', '')
+        with tempfile.TemporaryDirectory() as temporary, \
+                mock.patch.object(diagnostics.subprocess, 'run', return_value=state):
+            with self.assertRaises(FileNotFoundError):
+                diagnostics.stopped_disk(Path(temporary), 'test-012345abcdef', 'incus')
+
+    def test_offline_reads_are_bounded_and_exclude_credentials(self):
+        output = io.StringIO()
+        result = subprocess.CompletedProcess([], 0, 'journal ' + 'x' * 50000, '')
+        with mock.patch.dict(os.environ, GH_TOKEN='secret-a', GITHUB_TOKEN='secret-b'), \
+                mock.patch.object(diagnostics.subprocess, 'run', return_value=result) as execute, \
+                redirect_stdout(output):
+            diagnostics.offline_diagnostics(Path('/tmp/disposable/root.img'))
+        self.assertLess(len(output.getvalue()), 64200)
+        self.assertEqual([call.args[0][0] for call in execute.call_args_list], ['virt-log', 'virt-cat'])
+        for call in execute.call_args_list:
+            self.assertEqual(call.kwargs['timeout'], 60)
+            self.assertEqual(call.kwargs['env']['LIBGUESTFS_BACKEND'], 'direct')
+            self.assertNotIn('GH_TOKEN', call.kwargs['env'])
+            self.assertNotIn('GITHUB_TOKEN', call.kwargs['env'])
+
+    def test_guestfs_failure_does_not_replace_the_original_image_error(self):
+        output = io.StringIO()
+        with mock.patch.object(diagnostics.subprocess, 'run', side_effect=OSError('fixture')), redirect_stdout(output):
+            diagnostics.offline_diagnostics(Path('/tmp/disposable/root.img'))
+        self.assertEqual(output.getvalue().count('unavailable: OSError'), 2)
 
 
 if __name__ == '__main__':

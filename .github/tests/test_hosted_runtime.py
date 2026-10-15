@@ -181,6 +181,29 @@ class FirmwareFallbackTests(unittest.TestCase):
 
 
 class NativeStartupDiagnosticsTests(unittest.TestCase):
+    def test_offline_diagnostics_stop_before_reading_and_keep_tokens_out(self):
+        output = io.StringIO()
+        result = subprocess.CompletedProcess([], 0, 'offline journal', '')
+        with mock.patch.dict(runtime.os.environ, GH_TOKEN='secret-a', GITHUB_TOKEN='secret-b'), \
+                mock.patch.object(runtime.subprocess, 'run', return_value=result) as execute, \
+                redirect_stderr(output):
+            runtime.native_offline_diagnostics(['sudo', '/snap/bin/lxc'], 'test-012345abcdef')
+        self.assertEqual(execute.call_count, 2)
+        self.assertEqual(execute.call_args_list[0].args[0], ['sudo', '/snap/bin/lxc', 'stop', 'test-012345abcdef', '--force'])
+        self.assertEqual(execute.call_args_list[1].args[0][-3:], ['--runtime', 'lxd', '--offline'])
+        self.assertIn('offline journal', output.getvalue())
+        for call in execute.call_args_list:
+            self.assertNotIn('GH_TOKEN', call.kwargs['env'])
+            self.assertNotIn('GITHUB_TOKEN', call.kwargs['env'])
+
+    def test_stop_failure_never_reads_a_live_disk(self):
+        output = io.StringIO()
+        with mock.patch.object(runtime.subprocess, 'run', side_effect=subprocess.TimeoutExpired('stop', 45)) as execute, \
+                redirect_stderr(output):
+            runtime.native_offline_diagnostics(['sudo', 'incus'], 'test-012345abcdef')
+        self.assertEqual(execute.call_count, 1)
+        self.assertIn('unavailable: TimeoutExpired', output.getvalue())
+
     def test_vm_host_diagnostics_capture_console_without_guest_agent_or_tokens(self):
         output = io.StringIO()
         diagnostic = subprocess.CompletedProcess(['fixture'], 0, 'x' * 15000, '')

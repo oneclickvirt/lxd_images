@@ -97,14 +97,56 @@ def capture_console(command):
         os.close(master)
 
 
+def offline_diagnostics(disk):
+    """Read an already stopped disposable VM, without changing its image."""
+    environment = os.environ.copy()
+    environment['LIBGUESTFS_BACKEND'] = 'direct'
+    for key in ('GH_TOKEN', 'GITHUB_TOKEN'):
+        environment.pop(key, None)
+    for title, command in (
+        ('guest journal', ['virt-log', '-a', str(disk)]),
+        ('cloud-init log', ['virt-cat', '-a', str(disk), '/var/log/cloud-init.log']),
+    ):
+        try:
+            result = subprocess.run(command, capture_output=True, text=True,
+                                    timeout=60, check=False, env=environment)
+            details = '\n'.join(part for part in (result.stdout, result.stderr) if part).strip()
+            if details:
+                print('Native VM offline ' + title + ':\n' + details[-32000:])
+        except (OSError, subprocess.SubprocessError) as error:
+            print('Native VM offline ' + title + ' unavailable: ' + type(error).__name__)
+
+
+def stopped_disk(base, name, cli):
+    """Refuse guestfs access while the runtime still has the disk open."""
+    environment = os.environ.copy()
+    for key in ('GH_TOKEN', 'GITHUB_TOKEN'):
+        environment.pop(key, None)
+    state = subprocess.run([cli, 'query', '/1.0/instances/' + name + '/state'],
+                           capture_output=True, text=True, timeout=15,
+                           check=True, env=environment)
+    if json.loads(state.stdout).get('status_code') != 102:
+        raise RuntimeError('Disposable VM must be stopped before offline diagnostics')
+    for disk in (base / 'virtual-machines' / name / 'root.img',
+                 base / 'storage-pools/default/virtual-machines' / name / 'root.img'):
+        if disk.is_file():
+            return disk
+    raise FileNotFoundError('Disposable VM disk is unavailable')
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--name', required=True)
     parser.add_argument('--runtime', choices=('incus', 'lxd'), required=True)
+    parser.add_argument('--offline', action='store_true')
     args = parser.parse_args()
     if not re.fullmatch(r'test-[0-9a-f]{12}', args.name):
         raise ValueError('Only disposable validation instances may be diagnosed')
     base = Path('/var/lib/incus') if args.runtime == 'incus' else Path('/var/snap/lxd/common/lxd')
+    cli = 'incus' if args.runtime == 'incus' else '/snap/bin/lxc'
+    if args.offline:
+        offline_diagnostics(stopped_disk(base, args.name, cli))
+        return
     logs = Path('/var/log/incus') if args.runtime == 'incus' else base / 'logs'
     for filename in ('qemu.log', 'console.log'):
         path = logs / args.name / filename
@@ -122,7 +164,6 @@ def main():
             except (OSError, ValueError, RuntimeError, TimeoutError) as error:
                 print('Native VM serial diagnostics unavailable: ' + type(error).__name__)
             break
-    cli = 'incus' if args.runtime == 'incus' else '/snap/bin/lxc'
     try:
         details = capture_console([cli, 'console', args.name, '--type=console'])
         if details:

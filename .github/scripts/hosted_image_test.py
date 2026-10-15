@@ -144,6 +144,21 @@ def native_host_diagnostics(prefix, name, vm=False):
             print('Hosted '+title+' diagnostics unavailable: '+type(error).__name__, file=sys.stderr)
 
 
+def native_offline_diagnostics(prefix, name):
+    """Collect a failed disposable VM's journal before cleanup removes it."""
+    try:
+        run(prefix + ['stop', name, '--force'], capture_output=True, text=True, timeout=45)
+        runtime = 'lxd' if prefix[-1].endswith('/lxc') else 'incus'
+        command = ['sudo', 'python3', str(Path(__file__).with_name('native_vm_diagnostics.py')),
+                   '--name', name, '--runtime', runtime, '--offline']
+        result = run(command, capture_output=True, text=True, timeout=150)
+        details = '\n'.join(part for part in (result.stdout, result.stderr) if part).strip()
+        if details:
+            print(details[-65000:], file=sys.stderr)
+    except (OSError, subprocess.SubprocessError) as error:
+        print('Native VM offline diagnostics unavailable: ' + type(error).__name__, file=sys.stderr)
+
+
 def native_test(folder, metadata, rootfs, vm=False, cli='incus'):
     alias='image-'+uuid.uuid4().hex[:12]; name='test-'+uuid.uuid4().hex[:12]
     prefix=['sudo', cli]
@@ -166,6 +181,7 @@ def native_test(folder, metadata, rootfs, vm=False, cli='incus'):
         native_host_diagnostics(prefix, name, vm=vm)
         print('Last guest readiness error: '+last_error)
         raise RuntimeError('guest boot, SSH listener or external network check timed out')
+    accepted = False
     try:
         run(prefix+['image','import',str(metadata),str(rootfs),'--alias',alias],timeout=180)
         command=prefix+['init',alias,name,'-c','limits.memory=1GiB']
@@ -203,8 +219,11 @@ def native_test(folder, metadata, rootfs, vm=False, cli='incus'):
         boot=ready()
         run(prefix+['restart',name,'--force'],timeout=180)
         ready(boot)
+        accepted = True
         print('Runtime validation: native '+('VM' if vm else 'container')+' boot, SSH listener, network and restart passed')
     finally:
+        if vm and not accepted:
+            native_offline_diagnostics(prefix, name)
         for command in [prefix+['delete',name,'--force'],prefix+['image','delete',alias]]:
             try:
                 subprocess.run(command,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
