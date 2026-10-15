@@ -2,6 +2,9 @@ name: LXD Simplestreams Pre Build
 jobs:
   build:
     runs-on: ubuntu-latest
+    concurrency:
+      group: processed-image-refresh
+      cancel-in-progress: false
     steps:
     - name: Load trusted network recovery helpers
       shell: bash
@@ -33,6 +36,3 @@ jobs:
     - main
 permissions:
   contents: write
-concurrency:
-  group: processed-image-refresh
-  cancel-in-progress: false

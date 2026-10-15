@@ -2,6 +2,10 @@ name: Build LXD Simplestreams
 jobs:
   build-simplestreams:
     runs-on: ubuntu-24.04
+    # Skipped upstream events must not replace a waiting real deployment.
+    concurrency:
+      group: image-portal-deploy
+      cancel-in-progress: false
     steps:
     - name: Load trusted network recovery helpers
       shell: bash
@@ -110,6 +114,3 @@ jobs:
     - main
 permissions:
   contents: read
-concurrency:
-  group: image-portal-deploy
-  cancel-in-progress: false
