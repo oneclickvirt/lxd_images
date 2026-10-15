@@ -103,6 +103,7 @@ jobs:
     - .github/scripts/validate_image_remote.py
     - .github/scripts/verify_image_remote.sh
     - .github/scripts/install_stream_maintainer.sh
+    - .github/scripts/download_processed.py
     - .github/workflows/simplestreams.yml
     - back/google9217a97bfdec3a8f.html
   workflow_run:
