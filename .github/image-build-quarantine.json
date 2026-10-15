@@ -277,25 +277,9 @@
       "distro": "openwrt",
       "release": "25.12",
       "arch": "amd64",
-      "kind": "container",
-      "reason": "OpenWrt downloader architecture mapping produced an empty target; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
-    },
-    {
-      "distro": "openwrt",
-      "release": "25.12",
-      "arch": "amd64",
       "kind": "vm",
       "reason": "OpenWrt downloader architecture mapping produced an empty target; previous assets retained and manual repair remains available",
       "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
-    },
-    {
-      "distro": "openwrt",
-      "release": "25.12",
-      "arch": "arm64",
-      "kind": "container",
-      "reason": "OpenWrt downloader architecture mapping produced an empty target; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
     },
     {
       "distro": "openwrt",
