@@ -102,8 +102,8 @@
       "release": "25.12",
       "arch": "arm64",
       "kind": "vm",
-      "reason": "Guest kernel received an empty root device because the builder did not export the required root partition UUID; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38692237443"
+      "reason": "Guest failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38698467423"
     },
     {
       "distro": "rockylinux",

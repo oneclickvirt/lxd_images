@@ -1,0 +1,126 @@
+"""Exercise console authentication, result framing and rejection over real sockets."""
+import importlib.util
+from pathlib import Path
+import re
+import socket
+import tempfile
+import threading
+import unittest
+
+spec = importlib.util.spec_from_file_location('console_runtime', Path(__file__).resolve().parents[1] / 'scripts/hosted_image_test.py')
+runtime = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(runtime)
+BOOT = '2b175b98-8e84-4f79-b781-25b4f64f0866'
+
+
+class OpenWrtConsoleTests(unittest.TestCase):
+    def exchange(self, reply, timeout=2, reboot=False):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'console.sock'
+            server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            server.bind(str(path)); server.listen(1)
+            errors = []
+            def serve():
+                try:
+                    with server.accept()[0] as client:
+                        client.settimeout(3)
+                        reply(client)
+                except Exception as error:
+                    errors.append(error)
+                finally:
+                    server.close()
+            thread = threading.Thread(target=serve); thread.start()
+            try:
+                return runtime.openwrt_console_command(path, 'private-fixture-password', runtime.CHECK,
+                                                       timeout=timeout, reboot=reboot)
+            finally:
+                thread.join(4)
+                self.assertFalse(thread.is_alive(), 'console fixture exceeded its budget')
+                if errors:
+                    raise errors[0]
+
+    def read_command(self, client):
+        command = b''
+        while not command.endswith(b'\r'):
+            part = client.recv(4096)
+            self.assertTrue(part)
+            command += part
+        return command
+
+    def command_reply(self, client, status=0, framed=True):
+        command = self.read_command(client)
+        self.assertNotIn(b'private-fixture-password', command)
+        marker = re.search(rb'hosted_console_[0-9a-f]+', command)[0]
+        # Echoed shell source is never proof that the guest ran assertions.
+        client.sendall(command + b'\r\n')
+        if framed:
+            client.sendall(b'\r\n' + marker + b'_begin\r\n')
+        client.sendall(BOOT.encode() + b'\r\n' + marker + b'_end:' + str(status).encode() + b'\r\nroot@OpenWrt:/# ')
+
+    def root_shell(self, client):
+        self.assertEqual(self.read_command(client), b'\r')
+        client.sendall(b'\r\nroot@OpenWrt:/# ')
+
+    def test_existing_host_console_needs_no_password_in_shell_commands(self):
+        def reply(client):
+            self.root_shell(client); self.command_reply(client)
+        self.assertEqual(self.exchange(reply), BOOT)
+
+    def test_password_only_follows_complete_split_password_prompt(self):
+        def reply(client):
+            self.assertEqual(self.read_command(client), b'\r')
+            client.sendall(b'\r\nOpenWrt login: ')
+            self.assertEqual(self.read_command(client), b'root\r')
+            client.sendall(b'\r\nPass'); client.sendall(b'word: ')
+            self.assertEqual(self.read_command(client), b'private-fixture-password\r')
+            client.sendall(b'\r\nroot@OpenWrt:/# ')
+            self.command_reply(client)
+        self.assertEqual(self.exchange(reply), BOOT)
+
+    def test_guest_assertion_failure_is_never_success(self):
+        def reply(client):
+            self.root_shell(client); self.command_reply(client, status=1)
+        with self.assertRaisesRegex(RuntimeError, 'guest assertions failed'):
+            self.exchange(reply)
+
+    def test_echoed_command_cannot_supply_missing_result_frame(self):
+        def reply(client):
+            self.root_shell(client); self.command_reply(client, framed=False)
+        with self.assertRaisesRegex(RuntimeError, 'framing failed'):
+            self.exchange(reply)
+
+    def test_disconnected_console_is_failure(self):
+        def reply(client):
+            self.assertEqual(self.read_command(client), b'\r')
+        with self.assertRaises(ConnectionError):
+            self.exchange(reply)
+
+    def test_failed_login_is_bounded_and_does_not_expose_password(self):
+        def reply(client):
+            self.assertEqual(self.read_command(client), b'\r')
+            for _ in range(2):
+                client.sendall(b'\r\nOpenWrt login: ')
+                self.assertEqual(self.read_command(client), b'root\r')
+                client.sendall(b'\r\nPassword: ')
+                self.assertEqual(self.read_command(client), b'private-fixture-password\r')
+            client.sendall(b'\r\nOpenWrt login: ')
+        with self.assertRaisesRegex(RuntimeError, '^OpenWrt consumer console login failed$'):
+            self.exchange(reply)
+
+    def test_reboot_uses_the_existing_guest_service(self):
+        def reply(client):
+            self.root_shell(client)
+            self.assertEqual(self.read_command(client), b'test -s /etc/openwrt_release && reboot\r')
+        self.assertEqual(self.exchange(reply, reboot=True), '')
+
+    def test_missing_prompt_respects_deadline(self):
+        def reply(client):
+            self.assertEqual(self.read_command(client), b'\r')
+            client.sendall(b'Guest still booting\r\n')
+            self.assertEqual(client.recv(1), b'')
+        with self.assertRaises(TimeoutError):
+            self.exchange(reply, timeout=0.1)
+
+
+if __name__ == '__main__':
+    unittest.main()

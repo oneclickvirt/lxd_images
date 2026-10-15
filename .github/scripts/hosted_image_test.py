@@ -365,7 +365,70 @@ def qemu_guest_diagnostics(disk):
             print('Offline '+title+' diagnostics unavailable: '+type(error).__name__, file=sys.stderr)
 
 
-def qemu_test(folder, disk, provision_key=False):
+def openwrt_console_command(path, password, script, timeout=90, reboot=False):
+    """Use the consumer console without opening the router's WAN firewall."""
+    deadline = time.monotonic() + timeout
+    shell = re.compile(rb'(?:^|[\r\n])root@[^\r\n: ]+:[^\r\n]{0,100}# ?$')
+    login = re.compile(rb'(?i)(?:^|[\r\n])[^\r\n]{0,100}login: *$')
+    challenge = re.compile(rb'(?i)(?:^|[\r\n])password: *$')
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stream:
+        stream.settimeout(max(0.001, deadline - time.monotonic()))
+        stream.connect(str(path))
+        stream.sendall(b'\r')
+        buffer = b''
+        attempts = 0
+        while time.monotonic() < deadline:
+            stream.settimeout(max(0.001, deadline - time.monotonic()))
+            chunk = stream.recv(4096)
+            if not chunk:
+                raise ConnectionError('OpenWrt consumer console disconnected')
+            buffer = (buffer + chunk)[-16384:]
+            if shell.search(buffer):
+                break
+            if login.search(buffer):
+                attempts += 1
+                if attempts > 2:
+                    raise RuntimeError('OpenWrt consumer console login failed')
+                stream.sendall(b'root\r')
+                buffer = b''
+            elif challenge.search(buffer):
+                # Only send a password in response to a complete login prompt.
+                # Never include it in a command, exception or diagnostic output.
+                stream.sendall(password.encode() + b'\r')
+                buffer = b''
+        else:
+            raise TimeoutError('OpenWrt consumer console readiness timed out')
+        if reboot:
+            stream.sendall(b'test -s /etc/openwrt_release && reboot\r')
+            return ''
+        marker = 'hosted_console_' + uuid.uuid4().hex
+        payload = base64.b64encode(('set -eu\ntest "$(id -u)" = 0\n'
+                                   'test -s /etc/openwrt_release\n' + script).encode()).decode()
+        command = ("printf '\\n" + marker + "_begin\\n'; printf '%s' '" + payload +
+                   "' | base64 -d | /bin/sh; printf '\\n" + marker + "_end:%s\\n' \"$?\"\r")
+        stream.sendall(command.encode())
+        buffer = b''
+        end = re.compile(rb'(?:^|[\r\n])' + marker.encode() + rb'_end:([0-9]+)\r?\n')
+        while time.monotonic() < deadline:
+            stream.settimeout(max(0.001, deadline - time.monotonic()))
+            chunk = stream.recv(4096)
+            if not chunk:
+                raise ConnectionError('OpenWrt consumer console disconnected during guest checks')
+            buffer += chunk
+            if len(buffer) > 131072:
+                raise RuntimeError('OpenWrt consumer console output exceeded its limit')
+            match = end.search(buffer)
+            if match:
+                if match[1] != b'0':
+                    raise RuntimeError('OpenWrt guest assertions failed through the consumer console')
+                begin = re.search(rb'(?:^|[\r\n])' + marker.encode() + rb'_begin\r?\n', buffer)
+                if begin is None or begin.end() > match.start():
+                    raise RuntimeError('OpenWrt consumer console response framing failed')
+                return buffer[begin.end():match.start()].decode(errors='replace').strip()
+        raise TimeoutError('OpenWrt consumer console guest checks timed out')
+
+
+def qemu_test(folder, disk, provision_key=False, openwrt_console=False):
     arch='arm64' if os.uname().machine=='aarch64' else 'amd64'
     accelerated=kvm_available()
     overlay=folder/'validation-overlay.qcow2'
@@ -392,13 +455,15 @@ def qemu_test(folder, disk, provision_key=False):
                 env=dict(os.environ,LIBGUESTFS_BACKEND='direct'))
         except subprocess.CalledProcessError:
             raise RuntimeError('consumer key provisioning failed on the disposable overlay') from None
-    serial=folder/'serial.log';sock=folder/'guest-agent.sock';monitor=folder/'monitor.sock'
+    serial=folder/'serial.log';console_socket=folder/'serial.sock';sock=folder/'guest-agent.sock';monitor=folder/'monitor.sock'
     with socket.socket() as listener:
         listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
+    serial_arguments=(['-chardev',f'socket,id=hosted-console,path={console_socket},server=on,wait=off,logfile={serial}',
+                       '-serial','chardev:hosted-console'] if openwrt_console else ['-serial',f'file:{serial}'])
     command=['qemu-system-aarch64' if arch=='arm64' else 'qemu-system-x86_64',
              '-machine','virt' if arch=='arm64' else 'q35','-accel','kvm' if accelerated else 'tcg,thread=multi',
              '-cpu',qemu_cpu_model(arch,accelerated),'-m','2048','-smp','2',
-             '-display','none','-serial',f'file:{serial}','-monitor',f'unix:{monitor},server=on,wait=off',
+             '-display','none',*serial_arguments,'-monitor',f'unix:{monitor},server=on,wait=off',
              '-drive',f'file={overlay},format=qcow2,if=none,id=guestdisk','-drive',f'file={seed},format=raw,if=virtio',
              '-netdev',f'user,id=net0,hostfwd=tcp:127.0.0.1:{port}-:22',
              '-device','virtio-serial-pci','-chardev',f'socket,path={sock},server=on,wait=off,id=qga',
@@ -417,7 +482,7 @@ def qemu_test(folder, disk, provision_key=False):
             except subprocess.TimeoutExpired:process.kill();process.wait()
     def start(bios=False,storage="virtio"):
         nonlocal process,mode,storage_mode
-        for path in [serial,sock,monitor]:path.unlink(missing_ok=True)
+        for path in [serial,console_socket,sock,monitor]:path.unlink(missing_ok=True)
         mode='BIOS' if bios else 'UEFI'
         storage_mode=storage
         devices=['-device','virtio-blk-pci,drive=guestdisk,bootindex=1']
@@ -434,6 +499,7 @@ def qemu_test(folder, disk, provision_key=False):
         deadline=initial_deadline if previous is None else time.monotonic()+readiness_budget
         last_error='guest execution unavailable';agent_disabled=False
         began=time.monotonic()
+        next_console=began+45
         serial_size=-1;serial_changed=began
         while time.monotonic()<deadline:
             if process.poll() is not None: raise RuntimeError('QEMU terminated before guest readiness')
@@ -450,6 +516,23 @@ def qemu_test(folder, disk, provision_key=False):
                     if boot and boot!=previous:transport='SSH';ssh_password=password;return boot
                 except subprocess.CalledProcessError as error:last_error=(error.stderr or str(error))[-1500:]
                 except (subprocess.SubprocessError,OSError) as error:last_error=type(error).__name__
+            if openwrt_console and consumer_password and time.monotonic() >= next_console:
+                # OpenWrt's default WAN firewall can reject inbound SSH while
+                # its guest service and outbound networking are healthy. Like
+                # native agent/QGA checks, use host console access and retain
+                # every guest assertion, including port 22 and changed boot ID.
+                try:
+                    diagnostic = ("printf 'OpenWrt consumer network:\\n'\nip -4 address; ip -4 route\n"
+                                  "printf 'OpenWrt WAN firewall input policy:\\n'\n"
+                                  "uci -q show firewall | grep -E '\\.(name|input)=' || true\n")
+                    output = openwrt_console_command(console_socket,consumer_password,diagnostic+CHECK,
+                                                     timeout=min(90,max(0.001,deadline-time.monotonic())))
+                    boot=output.splitlines()[-1] if output else ''
+                    if re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',boot) and boot!=previous:
+                        print(output.replace(consumer_password,'[redacted]')[-6000:])
+                        transport='console';return boot
+                except (OSError,RuntimeError,TimeoutError) as error:last_error=type(error).__name__+': '+str(error)
+                next_console=time.monotonic()+30
             # A confirmed firmware shell has no guest kernel. Retry once with
             # SeaBIOS on AMD64; keep the same guest assertions and overlay.
             if time.monotonic()-began>45 and serial.exists():
@@ -475,7 +558,9 @@ def qemu_test(folder, disk, provision_key=False):
                     raise RuntimeError('guest kernel cannot mount its root filesystem with compatible storage controllers')
             time.sleep(5)
         if serial.exists():
-            console=serial.read_text(errors='replace');print(console if len(console)<=131072 else console[:8192]+'\n...\n'+console[-122880:])
+            console=serial.read_text(errors='replace')
+            if consumer_password:console=console.replace(consumer_password,'[redacted]')
+            print(console if len(console)<=131072 else console[:8192]+'\n...\n'+console[-122880:])
         qemu_host_diagnostics(monitor)
         print((folder/'qemu.log').read_text(errors='replace')[-3000:])
         print('Last guest readiness error: '+last_error)
@@ -491,7 +576,9 @@ def qemu_test(folder, disk, provision_key=False):
             print('Retrying compatible VM boot: '+('BIOS' if next_bios else 'UEFI')+' '+next_storage)
             stop();start(bios=next_bios,storage=next_storage);boot=ready(allow_bios=True)
         if boot is None:raise RuntimeError('VM compatibility retry budget exhausted')
-        if transport=='SSH':
+        if transport=='console':
+            openwrt_console_command(console_socket,consumer_password,'',reboot=True)
+        elif transport=='SSH':
             # reboot commonly disconnects SSH before returning a status.
             # The changed kernel boot_id is the success condition.
             try:ssh_command(port,key,'reboot',ssh_password)
@@ -569,7 +656,8 @@ def main():
         folder=Path(temporary);metadata,rootfs=unpack(args.file,folder,args.runtime)
         vm=rootfs.name.endswith('.qcow2')
         if args.runtime=='qemu' or (vm and not kvm_available()):
-            qemu_test(folder,rootfs,provision_key=metadata is not None)
+            qemu_test(folder,rootfs,provision_key=metadata is not None,
+                      openwrt_console=metadata is not None and args.file.name.startswith('openwrt_'))
         else:
             native_test(folder,metadata,rootfs,vm=vm,cli='/snap/bin/lxc' if args.runtime=='lxd' else 'incus')
     print('IMAGE_TEST_RESULT success=true image='+args.file.name)
