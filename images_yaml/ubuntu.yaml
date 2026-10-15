@@ -397,6 +397,8 @@ files:
   - vm
   architectures:
   - arm64
+  releases:
+  - resolute
   content: |
     [Manager]
     DefaultDeviceTimeoutSec=180s

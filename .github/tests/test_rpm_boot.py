@@ -71,6 +71,7 @@ class RPMBootTests(unittest.TestCase):
             devices = next(f for f in ubuntu['files'] if f['path'].endswith('/50-image-arm-devices.conf'))
             self.assertEqual(devices['types'], ['vm'])
             self.assertEqual(devices['architectures'], ['arm64'])
+            self.assertEqual(devices['releases'], ['resolute'])
             self.assertEqual(devices['content'], '[Manager]\nDefaultDeviceTimeoutSec=180s\n')
             debian = verify((definitions / 'debian.yaml').read_text())
             hook = next(a['action'] for a in debian['actions'] if 'hosted-debian-ssh-hostkeys' in a['action'])

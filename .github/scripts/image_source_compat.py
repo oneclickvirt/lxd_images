@@ -66,11 +66,15 @@ def rocky_download_budget(document):
 
 def ubuntu_arm_device_budget(document):
     """Keep EFI mandatory while ARM software emulation coldplugs devices."""
+    # Jammy's older systemd does not support DefaultDeviceTimeoutSec.
+    # Keep the override scoped to the release with the observed coldplug fault.
     config = {'path': '/etc/systemd/system.conf.d/50-image-arm-devices.conf',
               'generator': 'dump', 'types': ['vm'], 'architectures': ['arm64'],
+              'releases': ['resolute'],
               'content': '[Manager]\nDefaultDeviceTimeoutSec=180s\n'}
-    if config not in document.setdefault('files', []):
-        document['files'].append(config)
+    files = document.setdefault('files', [])
+    files[:] = [entry for entry in files if entry.get('path') != config['path']]
+    files.append(config)
 
 
 def rpm_vm_compat(document, distro):
