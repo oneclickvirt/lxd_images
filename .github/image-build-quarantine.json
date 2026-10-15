@@ -2,22 +2,6 @@
   "schema": 1,
   "entries": [
     {
-      "distro": "almalinux",
-      "release": "10",
-      "arch": "arm64",
-      "kind": "vm",
-      "reason": "Vendor image hook failed before a bootable image was accepted; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38711599207"
-    },
-    {
-      "distro": "almalinux",
-      "release": "8",
-      "arch": "arm64",
-      "kind": "vm",
-      "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
-    },
-    {
       "distro": "centos",
       "release": "9-Stream",
       "arch": "amd64",
@@ -26,20 +10,12 @@
       "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38668630118"
     },
     {
-      "distro": "gentoo",
-      "release": "current",
-      "arch": "arm64",
-      "kind": "vm",
-      "reason": "Vendor image hook failed before a bootable image was accepted; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
-    },
-    {
       "distro": "openeuler",
       "release": "24.03",
       "arch": "arm64",
       "kind": "vm",
-      "reason": "Vendor package transaction failed before a bootable image was accepted; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+      "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38712567606"
     },
     {
       "distro": "opensuse",
@@ -51,35 +27,19 @@
     },
     {
       "distro": "rockylinux",
-      "release": "10",
-      "arch": "amd64",
-      "kind": "vm",
-      "reason": "Vendor image hook failed before a bootable image was accepted; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38712468873"
-    },
-    {
-      "distro": "rockylinux",
-      "release": "10",
-      "arch": "arm64",
-      "kind": "vm",
-      "reason": "Vendor image hook failed before a bootable image was accepted; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38712468873"
-    },
-    {
-      "distro": "rockylinux",
       "release": "8",
       "arch": "arm64",
       "kind": "vm",
-      "reason": "Vendor package transaction failed before a bootable image was accepted; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+      "reason": "Build or guest validation failed; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38712468873"
     },
     {
       "distro": "ubuntu",
       "release": "resolute",
       "arch": "arm64",
       "kind": "vm",
-      "reason": "Guest failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38707741119"
+      "reason": "Guest entered emergency mode after its EFI filesystem device timed out under ARM TCG; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38716648738"
     }
   ]
 }

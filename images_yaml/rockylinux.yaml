@@ -245,18 +245,30 @@ packages:
     - dos2unix
     - cronie
     action: install
+    flags:
+    - --setopt=minrate=262144
+    - --setopt=timeout=30
+    - --setopt=retries=3
   - packages:
     - NetworkManager
     action: install
     variants:
     - default
     - cloud
+    flags:
+    - --setopt=minrate=262144
+    - --setopt=timeout=30
+    - --setopt=retries=3
   - packages:
     - cloud-init
     - openssh-server
     action: install
     variants:
     - cloud
+    flags:
+    - --setopt=minrate=262144
+    - --setopt=timeout=30
+    - --setopt=retries=3
   - packages:
     - cloud-utils-growpart
     action: install
@@ -264,16 +276,28 @@ packages:
     - vm
     variants:
     - cloud
+    flags:
+    - --setopt=minrate=262144
+    - --setopt=timeout=30
+    - --setopt=retries=3
   - packages:
     - shim
     action: install
     types:
     - vm
+    flags:
+    - --setopt=minrate=262144
+    - --setopt=timeout=30
+    - --setopt=retries=3
   - packages:
     - kernel
     action: install
     types:
     - vm
+    flags:
+    - --setopt=minrate=262144
+    - --setopt=timeout=30
+    - --setopt=retries=3
   - packages:
     - grub2-efi-x64
     action: install
@@ -281,6 +305,10 @@ packages:
     - vm
     architectures:
     - x86_64
+    flags:
+    - --setopt=minrate=262144
+    - --setopt=timeout=30
+    - --setopt=retries=3
   - packages:
     - grub2-efi-aa64
     action: install
@@ -288,18 +316,30 @@ packages:
     - vm
     architectures:
     - aarch64
+    flags:
+    - --setopt=minrate=262144
+    - --setopt=timeout=30
+    - --setopt=retries=3
   - packages:
     - dhclient
     action: install
     releases:
     - '8'
     - '9'
+    flags:
+    - --setopt=minrate=262144
+    - --setopt=timeout=30
+    - --setopt=retries=3
   - packages:
     - grub2-tools
     - grubby
     action: install
     types:
     - vm
+    flags:
+    - --setopt=minrate=262144
+    - --setopt=timeout=30
+    - --setopt=retries=3
 actions:
 - trigger: post-unpack
   action: |-

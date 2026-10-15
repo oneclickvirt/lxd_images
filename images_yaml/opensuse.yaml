@@ -267,6 +267,13 @@ files:
   - vm
   variants:
   - desktop-kde
+- path: /etc/dracut.conf.d/50-hosted-storage.conf
+  generator: dump
+  types:
+  - vm
+  content: |
+    hostonly="no"
+    add_drivers+=" virtio_scsi virtio_blk virtio_pci virtio_console sd_mod ext4 "
 packages:
   manager: zypper
   update: true

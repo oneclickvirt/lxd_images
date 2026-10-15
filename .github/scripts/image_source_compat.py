@@ -41,16 +41,41 @@ def instance_identity(document):
     actions.append({'trigger': 'post-files', 'action': BUILD_HOOK})
 
 
-def rpm_vm_compat(document, distro):
-    """Keep EL firmware, BLS entries and the actual root partition in sync."""
-    # A loop-backed build host must not decide the guest initramfs drivers.
-    # In particular ARM hosted validation and some consumers use virtio-blk.
+def vm_storage_drivers(document):
+    """Build guest initramfs independently of a loop-backed build host."""
     drivers = {'path': '/etc/dracut.conf.d/50-hosted-storage.conf',
                'generator': 'dump', 'types': ['vm'],
                'content': 'hostonly="no"\nadd_drivers+=" virtio_scsi virtio_blk virtio_pci virtio_console sd_mod ext4 "\n'}
     files = document.setdefault('files', [])
     if drivers not in files:
         files.append(drivers)
+
+
+def rocky_download_budget(document):
+    """Let DNF switch slow mirrors before a large firmware exhausts the build."""
+    # CLI flags affect only image construction, leaving guest DNF policy and
+    # upstream mirror lists/signature verification intact.
+    options = ['--setopt=minrate=262144', '--setopt=timeout=30', '--setopt=retries=3']
+    for entry in document.get('packages', {}).get('sets', []):
+        if entry.get('action') == 'install':
+            flags = entry.setdefault('flags', [])
+            for option in options:
+                if option not in flags:
+                    flags.append(option)
+
+
+def ubuntu_arm_device_budget(document):
+    """Keep EFI mandatory while ARM software emulation coldplugs devices."""
+    config = {'path': '/etc/systemd/system.conf.d/50-image-arm-devices.conf',
+              'generator': 'dump', 'types': ['vm'], 'architectures': ['arm64'],
+              'content': '[Manager]\nDefaultDeviceTimeoutSec=180s\n'}
+    if config not in document.setdefault('files', []):
+        document['files'].append(config)
+
+
+def rpm_vm_compat(document, distro):
+    """Keep EL firmware, BLS entries and the actual root partition in sync."""
+    vm_storage_drivers(document)
     sets = document.setdefault('packages', {}).setdefault('sets', [])
     for entry in sets:
         if 'architectures' in entry:
@@ -59,14 +84,16 @@ def rpm_vm_compat(document, distro):
         entry['packages'] = ['grub2-efi-aa64' if package == 'grub2-efi-aarch64' else package
                              for package in entry.get('packages', [])]
     required = {'packages': ['grub2-tools', 'grubby'], 'action': 'install', 'types': ['vm']}
-    if required not in sets:
+    if not any({key: value for key, value in entry.items() if key != 'flags'} == required
+               for entry in sets):
         sets.append(required)
     # CentOS's upstream ARM selector omits EL9/EL10 entirely.
     if distro == 'centos':
         required = {'packages': ['grub2-efi-aa64'], 'action': 'install',
                     'types': ['vm'], 'architectures': ['aarch64'],
                     'releases': ['9-Stream', '10-Stream']}
-        if required not in sets:
+        if not any({key: value for key, value in entry.items() if key != 'flags'} == required
+                   for entry in sets):
             sets.append(required)
     actions = document.setdefault('actions', [])
     rootvar = ('LXD_IMAGEBUILDER_ROOT_UUID' if any('LXD_IMAGEBUILDER_ROOT_UUID' in a['action']
@@ -539,6 +566,12 @@ done
                 document['actions'].append(kernel_hook)
         if path.stem in ('almalinux', 'centos', 'rockylinux', 'fedora'):
             rpm_vm_compat(document, path.stem)
+        if path.stem in ('openeuler', 'opensuse'):
+            vm_storage_drivers(document)
+        if path.stem == 'rockylinux':
+            rocky_download_budget(document)
+        if path.stem == 'ubuntu':
+            ubuntu_arm_device_budget(document)
         if not NATIVE_IMAGE_ARCHIVES and any(entry.get('generator') == 'cloud-init'
                                                for entry in document.get('files', [])):
             raw_cloud_compat(document)

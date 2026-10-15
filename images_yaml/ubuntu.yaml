@@ -391,6 +391,15 @@ files:
   - desktop
   types:
   - vm
+- path: /etc/systemd/system.conf.d/50-image-arm-devices.conf
+  generator: dump
+  types:
+  - vm
+  architectures:
+  - arm64
+  content: |
+    [Manager]
+    DefaultDeviceTimeoutSec=180s
 packages:
   manager: apt
   update: true

@@ -60,17 +60,39 @@ class RPMBootTests(unittest.TestCase):
             self.assertIn('grub_platforms_efi-64', efi['action'])
             euler = verify((definitions / 'openeuler.yaml').read_text())
             self.assertTrue(any('grub2-efi-aa64' in s['packages'] for s in euler['packages']['sets']))
-            for distro in ('almalinux', 'centos', 'rockylinux', 'fedora'):
+            for distro in ('almalinux', 'centos', 'rockylinux', 'fedora', 'openeuler', 'opensuse'):
                 rpm = verify((definitions / (distro + '.yaml')).read_text())
                 drivers = next(f for f in rpm['files'] if f['path'] == '/etc/dracut.conf.d/50-hosted-storage.conf')
                 self.assertEqual(drivers['types'], ['vm'])
                 self.assertIn('hostonly="no"', drivers['content'])
                 for module in ('virtio_scsi', 'virtio_blk', 'virtio_pci', 'sd_mod', 'ext4'):
                     self.assertIn(module, drivers['content'].split())
+            ubuntu = verify((definitions / 'ubuntu.yaml').read_text())
+            devices = next(f for f in ubuntu['files'] if f['path'].endswith('/50-image-arm-devices.conf'))
+            self.assertEqual(devices['types'], ['vm'])
+            self.assertEqual(devices['architectures'], ['arm64'])
+            self.assertEqual(devices['content'], '[Manager]\nDefaultDeviceTimeoutSec=180s\n')
             debian = verify((definitions / 'debian.yaml').read_text())
             hook = next(a['action'] for a in debian['actions'] if 'hosted-debian-ssh-hostkeys' in a['action'])
             self.assertIn('ExecStartPre=\\nExecStartPre=/usr/bin/ssh-keygen -A', hook)
             self.assertIn('ExecStartPre=/usr/sbin/sshd -t', hook)
+
+    def test_rocky_build_download_limits_preserve_signature_and_guest_policy(self):
+        from image_source_compat import rocky_download_budget
+        document = {'packages': {'sets': [
+            {'action': 'install', 'packages': ['kernel'], 'flags': ['--setopt=gpgcheck=1']},
+            {'action': 'remove', 'packages': ['old-package'], 'flags': ['--fixture']},
+        ]}, 'files': [], 'actions': []}
+        rocky_download_budget(document)
+        first = repr(document)
+        rocky_download_budget(document)
+        self.assertEqual(repr(document), first)
+        self.assertEqual(document['files'], [])
+        self.assertEqual(document['actions'], [])
+        install, remove = document['packages']['sets']
+        self.assertEqual(install['flags'], ['--setopt=gpgcheck=1', '--setopt=minrate=262144',
+                                            '--setopt=timeout=30', '--setopt=retries=3'])
+        self.assertEqual(remove['flags'], ['--fixture'])
 
     def test_missing_ssh_keys_are_generated_at_boot_without_replacing_existing_keys(self):
         import configparser
