@@ -2,14 +2,6 @@
   "schema": 1,
   "entries": [
     {
-      "distro": "openeuler",
-      "release": "24.03",
-      "arch": "arm64",
-      "kind": "vm",
-      "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38712567606"
-    },
-    {
       "distro": "ubuntu",
       "release": "resolute",
       "arch": "arm64",
