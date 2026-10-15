@@ -33,6 +33,9 @@ class RPMBootTests(unittest.TestCase):
             snapshot = {p.name: p.read_bytes() for p in definitions.iterdir()}
             normalize(root)
             self.assertEqual(snapshot, {p.name: p.read_bytes() for p in definitions.iterdir()})
+            openwrt = verify((definitions / 'openwrt.yaml').read_text())
+            self.assertEqual(openwrt['mappings']['architectures']['amd64'], 'x86_64')
+            self.assertEqual(openwrt['mappings']['architectures']['arm64'], 'aarch64')
             fedora = verify((definitions / 'fedora.yaml').read_text())
             self.assertTrue(any(a['trigger'] == 'post-packages' and a['action'] == 'systemd-machine-id-setup' for a in fedora['actions']))
             gentoo = verify((definitions / 'gentoo.yaml').read_text())
@@ -55,7 +58,7 @@ class RPMBootTests(unittest.TestCase):
                 (boot / 'vmlinuz-1').write_text('kernel')
                 (boot / 'initramfs-1.img').write_text('initramfs')
                 entry = boot / 'loader/entries/test.conf'
-                entry.write_text('linux /vmlinuz-1\ninitrd /initramfs-1.img\noptions $kernelopts\n')
+                entry.write_text('linux /var/cache/distrobuilder.fixture/rootfs/boot/vmlinuz-1\ninitrd /var/cache/lxd-imagebuilder.fixture/rootfs/boot/initramfs-1.img\noptions $kernelopts\n')
                 binary = root / 'bin'
                 binary.mkdir()
                 editenv = binary / 'grub2-editenv'
@@ -74,6 +77,7 @@ class RPMBootTests(unittest.TestCase):
                     subprocess.run(['sh', '-c', command], env=environment, check=True, timeout=5)
                 self.assertIn('linux ' + str(boot / 'vmlinuz-1'), entry.read_text())
                 self.assertIn('initrd ' + str(boot / 'initramfs-1.img'), entry.read_text())
+                self.assertNotIn('/var/cache/', entry.read_text())
                 for directory in [vendor, 'BOOT']:
                     config = (boot / 'efi/EFI' / directory / 'grub.cfg').read_text()
                     self.assertIn('search --no-floppy --fs-uuid --set=dev fixture-root', config)

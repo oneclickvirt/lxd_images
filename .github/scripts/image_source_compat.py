@@ -45,7 +45,18 @@ test -s /boot/grub2/grub.cfg
 entries=0
 for entry in /boot/loader/entries/*.conf; do
   [ -f "$entry" ] || continue
-  sed -E 's#^(linux|initrd)[[:space:]]+/(vmlinuz-|initramfs-)#\1 /boot/\2#' "$entry" > "$entry.hosted"
+  # RPM may record the builder host's mount prefix in a BLS entry.
+  # Resolve kernel/initramfs basenames against the guest's actual /boot;
+  # the existence gate below still rejects missing or unexpected images.
+  awk '
+    $1 == "linux" || $1 == "initrd" {
+      for (i=2; i<=NF; i++) {
+        name=$i; sub(/^.*\//, "", name)
+        if (name ~ /^(vmlinuz-|initramfs-)/) $i="/boot/" name
+      }
+    }
+    { print }
+  ' "$entry" > "$entry.hosted"
   cat "$entry.hosted" > "$entry"
   rm "$entry.hosted"
   for image_path in $(awk '$1 == "linux" || $1 == "initrd" {for (i=2; i<=NF; i++) print $i}' "$entry"); do
@@ -112,6 +123,12 @@ systemctl enable ssh.service
 
     path = root / 'images_yaml/openwrt.yaml'
     document = verify(path.read_text())
+    # The canonical downloader switches on x86_64/aarch64, while this
+    # workflow supplies amd64/arm64. Its valid named maps omit OpenWrt.
+    # Explicit mappings work in both the current builder and the fallback.
+    document['mappings'] = {'architectures': {'amd64': 'x86_64', 'x86_64': 'x86_64',
+                                              'arm64': 'aarch64', 'aarch64': 'aarch64',
+                                              'armhf': 'armv7l', 'armv7l': 'armv7l'}}
     # Upstream APK definitions no longer have the old '- sudo' insertion anchor.
     sets = document.setdefault('packages', {}).setdefault('sets', [])
     existing = {p for s in sets if s.get('action') == 'install' and not s.get('types')
