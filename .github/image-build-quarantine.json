@@ -1,0 +1,461 @@
+{
+  "schema": 1,
+  "entries": [
+    {
+      "distro": "almalinux",
+      "release": "10",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "Native VM agent failed readiness; boot and guest integration remain unverified; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "almalinux",
+      "release": "10",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "almalinux",
+      "release": "8",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "Guest booted but its SSH listener failed the readiness gate; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "almalinux",
+      "release": "8",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "almalinux",
+      "release": "9",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "Native VM agent failed readiness; boot and guest integration remain unverified; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "almalinux",
+      "release": "9",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "alpine",
+      "release": "3.21",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "alpine",
+      "release": "3.22",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "alpine",
+      "release": "3.22",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "alpine",
+      "release": "3.23",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "alpine",
+      "release": "3.23",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "alpine",
+      "release": "3.24",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "alpine",
+      "release": "3.24",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "archlinux",
+      "release": "current",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "archlinux",
+      "release": "current",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "centos",
+      "release": "10-Stream",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "Vendor image hook failed before a bootable image was accepted; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "centos",
+      "release": "10-Stream",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "Vendor package transaction failed before a bootable image was accepted; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "centos",
+      "release": "9-Stream",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "RPM boot metadata referenced a kernel outside the guest boot filesystem; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38663866109"
+    },
+    {
+      "distro": "centos",
+      "release": "9-Stream",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "RPM boot metadata referenced a kernel outside the guest boot filesystem; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38663866109"
+    },
+    {
+      "distro": "debian",
+      "release": "bookworm",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "Guest booted but its SSH listener failed the readiness gate; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "debian",
+      "release": "bookworm",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "debian",
+      "release": "trixie",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "fedora",
+      "release": "43",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "fedora",
+      "release": "43",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "fedora",
+      "release": "44",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "fedora",
+      "release": "44",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "gentoo",
+      "release": "current",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "Vendor image hook failed before a bootable image was accepted; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "gentoo",
+      "release": "current",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "Vendor image hook failed before a bootable image was accepted; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "openeuler",
+      "release": "24.03",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "openeuler",
+      "release": "24.03",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "Vendor package transaction failed before a bootable image was accepted; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "opensuse",
+      "release": "16.0",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "opensuse",
+      "release": "16.0",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "opensuse",
+      "release": "tumbleweed",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "opensuse",
+      "release": "tumbleweed",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "openwrt",
+      "release": "25.12",
+      "arch": "amd64",
+      "kind": "container",
+      "reason": "OpenWrt downloader architecture mapping produced an empty target; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
+    },
+    {
+      "distro": "openwrt",
+      "release": "25.12",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "OpenWrt downloader architecture mapping produced an empty target; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "openwrt",
+      "release": "25.12",
+      "arch": "arm64",
+      "kind": "container",
+      "reason": "OpenWrt downloader architecture mapping produced an empty target; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
+    },
+    {
+      "distro": "openwrt",
+      "release": "25.12",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "OpenWrt downloader architecture mapping produced an empty target; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "oracle",
+      "release": "10",
+      "arch": "amd64",
+      "kind": "container",
+      "reason": "Vendor source download failed; the recorded run contains the exact failing URL; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
+    },
+    {
+      "distro": "oracle",
+      "release": "10",
+      "arch": "arm64",
+      "kind": "container",
+      "reason": "Vendor source download failed; the recorded run contains the exact failing URL; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
+    },
+    {
+      "distro": "oracle",
+      "release": "8",
+      "arch": "amd64",
+      "kind": "container",
+      "reason": "Guest booted but its SSH listener failed the readiness gate; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
+    },
+    {
+      "distro": "oracle",
+      "release": "8",
+      "arch": "arm64",
+      "kind": "container",
+      "reason": "Vendor source download failed; the recorded run contains the exact failing URL; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
+    },
+    {
+      "distro": "oracle",
+      "release": "9",
+      "arch": "amd64",
+      "kind": "container",
+      "reason": "Vendor SELinux symlink labels cannot be unpacked by the hosted container runtime; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
+    },
+    {
+      "distro": "oracle",
+      "release": "9",
+      "arch": "arm64",
+      "kind": "container",
+      "reason": "Vendor SELinux symlink labels cannot be unpacked by the hosted container runtime; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
+    },
+    {
+      "distro": "rockylinux",
+      "release": "10",
+      "arch": "amd64",
+      "kind": "container",
+      "reason": "Vendor bootstrap package signature verification failed; signature validation remains enabled; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
+    },
+    {
+      "distro": "rockylinux",
+      "release": "10",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "Vendor bootstrap package signature verification failed; signature validation remains enabled; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "rockylinux",
+      "release": "10",
+      "arch": "arm64",
+      "kind": "container",
+      "reason": "Vendor bootstrap package signature verification failed; signature validation remains enabled; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
+    },
+    {
+      "distro": "rockylinux",
+      "release": "10",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "Vendor bootstrap package signature verification failed; signature validation remains enabled; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "rockylinux",
+      "release": "8",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "rockylinux",
+      "release": "8",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "Vendor package transaction failed before a bootable image was accepted; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "rockylinux",
+      "release": "9",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "Vendor image hook failed before a bootable image was accepted; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "rockylinux",
+      "release": "9",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "Vendor package transaction failed before a bootable image was accepted; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "ubuntu",
+      "release": "jammy",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "Guest booted but its SSH listener failed the readiness gate; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "ubuntu",
+      "release": "jammy",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "Build or guest validation failed; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "ubuntu",
+      "release": "noble",
+      "arch": "amd64",
+      "kind": "vm",
+      "reason": "Build or guest validation failed; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "ubuntu",
+      "release": "noble",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "Build or guest validation failed; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    },
+    {
+      "distro": "ubuntu",
+      "release": "resolute",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "Guest failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+    }
+  ]
+}
