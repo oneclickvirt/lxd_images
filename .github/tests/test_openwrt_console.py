@@ -1,8 +1,12 @@
 """Exercise console authentication, result framing and rejection over real sockets."""
 import importlib.util
+import os
 from pathlib import Path
 import re
+import shlex
+import shutil
 import socket
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -14,7 +18,7 @@ BOOT = '2b175b98-8e84-4f79-b781-25b4f64f0866'
 
 
 class OpenWrtConsoleTests(unittest.TestCase):
-    def exchange(self, reply, timeout=2, reboot=False):
+    def exchange(self, reply, timeout=2, reboot=False, script=None):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / 'console.sock'
             server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -31,7 +35,7 @@ class OpenWrtConsoleTests(unittest.TestCase):
                     server.close()
             thread = threading.Thread(target=serve); thread.start()
             try:
-                return runtime.openwrt_console_command(path, 'private-fixture-password', runtime.CHECK,
+                return runtime.openwrt_console_command(path, 'private-fixture-password', runtime.CHECK if script is None else script,
                                                        timeout=timeout, reboot=reboot)
             finally:
                 thread.join(4)
@@ -120,6 +124,33 @@ class OpenWrtConsoleTests(unittest.TestCase):
             self.assertEqual(client.recv(1), b'')
         with self.assertRaises(TimeoutError):
             self.exchange(reply, timeout=0.1)
+
+    def execute_wire_program(self, client):
+        self.root_shell(client)
+        command = self.read_command(client).decode()
+        self.assertNotIn('base64', command)
+        self.assertLess(max(map(len, command.splitlines())), 1000)
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            identity = folder / 'openwrt_release'; identity.write_text('fixture identity')
+            # Adapt only the two host identity assertions. All transmitted
+            # quoting, heredoc parsing, script execution and status framing run
+            # through an actual POSIX shell with no base64 in PATH.
+            command = command.replace('test "$(id -u)" = 0', 'test "$(id -u)" = ' + str(os.getuid()))
+            command = command.replace('test -s /etc/openwrt_release', 'test -s ' + shlex.quote(str(identity)))
+            (folder / 'id').symlink_to(shutil.which('id'))
+            result = subprocess.run(['/bin/sh'], input=command.replace('\r', '\n'), text=True,
+                                    capture_output=True, env={'PATH': str(folder)}, timeout=2)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            client.sendall(result.stdout.encode())
+
+    def test_real_posix_wire_program_needs_no_guest_decoder(self):
+        script = "printf '%s\\n' '" + BOOT + "'\n"
+        self.assertEqual(self.exchange(self.execute_wire_program, script=script), BOOT)
+
+    def test_real_shell_preserves_guest_script_failure(self):
+        with self.assertRaisesRegex(RuntimeError, 'guest assertions failed'):
+            self.exchange(self.execute_wire_program, script='exit 23\n')
 
 
 if __name__ == '__main__':

@@ -50,22 +50,6 @@
       "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38668630118"
     },
     {
-      "distro": "debian",
-      "release": "bookworm",
-      "arch": "amd64",
-      "kind": "vm",
-      "reason": "Guest booted but its SSH listener failed the readiness gate; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
-    },
-    {
-      "distro": "debian",
-      "release": "bookworm",
-      "arch": "arm64",
-      "kind": "vm",
-      "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
-    },
-    {
       "distro": "fedora",
       "release": "43",
       "arch": "arm64",
@@ -148,23 +132,7 @@
     {
       "distro": "ubuntu",
       "release": "jammy",
-      "arch": "amd64",
-      "kind": "vm",
-      "reason": "Guest booted but its SSH listener failed the readiness gate; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
-    },
-    {
-      "distro": "ubuntu",
-      "release": "jammy",
       "arch": "arm64",
-      "kind": "vm",
-      "reason": "Build or guest validation failed; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
-    },
-    {
-      "distro": "ubuntu",
-      "release": "noble",
-      "arch": "amd64",
       "kind": "vm",
       "reason": "Build or guest validation failed; previous assets retained and manual repair remains available",
       "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"

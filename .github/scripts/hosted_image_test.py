@@ -402,10 +402,17 @@ def openwrt_console_command(path, password, script, timeout=90, reboot=False):
             stream.sendall(b'test -s /etc/openwrt_release && reboot\r')
             return ''
         marker = 'hosted_console_' + uuid.uuid4().hex
-        payload = base64.b64encode(('set -eu\ntest "$(id -u)" = 0\n'
-                                   'test -s /etc/openwrt_release\n' + script).encode()).decode()
-        command = ("printf '\\n" + marker + "_begin\\n'; printf '%s' '" + payload +
-                   "' | base64 -d | /bin/sh; printf '\\n" + marker + "_end:%s\\n' \"$?\"\r")
+        payload = 'set -eu\ntest "$(id -u)" = 0\ntest -s /etc/openwrt_release\n' + script
+        delimiter = marker + '_payload'
+        if delimiter in payload:
+            raise ValueError('OpenWrt console payload delimiter collision')
+        # OpenWrt's BusyBox need not include base64. A quoted heredoc uses
+        # only POSIX shell and keeps each serial input line below tty limits.
+        # Parse the whole group before emitting result markers, so echoed
+        # input and continuation prompts cannot contaminate the framed output.
+        command = ("{\nprintf '\\n" + marker + "_begin\\n'\n/bin/sh <<'" + delimiter + "'\n" +
+                   payload + '\n' + delimiter + '\nhosted_console_status=$?\n' +
+                   "printf '\\n" + marker + "_end:%s\\n' \"$hosted_console_status\"\n}\r")
         stream.sendall(command.encode())
         buffer = b''
         end = re.compile(rb'(?:^|[\r\n])' + marker.encode() + rb'_end:([0-9]+)\r?\n')
@@ -419,12 +426,14 @@ def openwrt_console_command(path, password, script, timeout=90, reboot=False):
                 raise RuntimeError('OpenWrt consumer console output exceeded its limit')
             match = end.search(buffer)
             if match:
-                if match[1] != b'0':
-                    raise RuntimeError('OpenWrt guest assertions failed through the consumer console')
                 begin = re.search(rb'(?:^|[\r\n])' + marker.encode() + rb'_begin\r?\n', buffer)
                 if begin is None or begin.end() > match.start():
                     raise RuntimeError('OpenWrt consumer console response framing failed')
-                return buffer[begin.end():match.start()].decode(errors='replace').strip()
+                output = buffer[begin.end():match.start()].decode(errors='replace').strip()
+                output = output.replace(password, '[redacted]')
+                if match[1] != b'0':
+                    raise RuntimeError('OpenWrt guest assertions failed through the consumer console: ' + output[-3000:])
+                return output
         raise TimeoutError('OpenWrt consumer console guest checks timed out')
 
 
@@ -531,6 +540,7 @@ def qemu_test(folder, disk, provision_key=False, openwrt_console=False):
                     if re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}',boot) and boot!=previous:
                         print(output.replace(consumer_password,'[redacted]')[-6000:])
                         transport='console';return boot
+                    last_error='OpenWrt console did not return a changed valid boot ID: '+output[-800:]
                 except (OSError,RuntimeError,TimeoutError) as error:last_error=type(error).__name__+': '+str(error)
                 next_console=time.monotonic()+30
             # A confirmed firmware shell has no guest kernel. Retry once with
