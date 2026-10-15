@@ -131,6 +131,8 @@ def native_host_diagnostics(prefix, name, vm=False):
     commands = [('runtime daemon', ['sudo', 'journalctl', '--no-pager', '-n', '80', '-u', unit])]
     if vm:
         commands.append(('VM console', prefix + ['console', name, '--show-log']))
+        commands.append(('VM monitor', ['sudo', 'python3', str(Path(__file__).with_name('native_vm_diagnostics.py')),
+                                        '--name', name, '--runtime', 'lxd' if unit.startswith('snap.') else 'incus']))
     for title, command in commands:
         try:
             result = subprocess.run(command, capture_output=True, text=True, timeout=30,
