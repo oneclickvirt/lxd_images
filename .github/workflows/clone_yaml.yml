@@ -45,7 +45,7 @@ jobs:
         fi
         for kind in container vm; do
           ci_retry gh workflow run hosted-build.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" \
-            --field distro=all --field arch=all --field scope=current --field kind="$kind"
+            --field automatic=true --field distro=all --field arch=all --field scope=current --field kind="$kind"
         done
       env:
         GH_TOKEN: ${{ github.token }}
