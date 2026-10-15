@@ -7,7 +7,7 @@ import unittest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from patch_lxd_builder import openwrt_source, openwrt_agent
+from patch_lxd_builder import openwrt_source, openwrt_agent, openwrt_release_test, signature_tests, fixture
 from refresh_image_sources import current_openwrt_for_lxd
 
 
@@ -36,6 +36,29 @@ class OpenWrtVMCompatibilityTests(unittest.TestCase):
         self.assertEqual(updated.count('func (g *lxdAgent) handleProcd() error'), 1)
         with self.assertRaises(ValueError):
             openwrt_agent('upstream agent contract changed')
+
+    def test_archived_and_current_parser_tests_retain_all_release_assertions(self):
+        for name in ('canonical-openwrt-release-test.go.txt', 'fallback-openwrt-release-test.go.txt'):
+            with self.subTest(name=name):
+                original = (FIXTURES / name).read_text()
+                updated = openwrt_release_test(original)
+                self.assertEqual(openwrt_release_test(updated), updated)
+                for assertion in ('require.NoError(t, err)', 'require.Regexp(t, tt.want, release)', '"21.02"', '"22.03"', '"23.05"'):
+                    self.assertIn(assertion, updated)
+                self.assertIn('s.client = server.Client()', updated)
+                self.assertNotIn('https://downloads.openwrt.org/releases/', updated)
+
+    def test_offline_signature_tests_preserve_every_valid_and_invalid_signature_case(self):
+        original = (FIXTURES / 'canonical-signature-tests.go.txt').read_text()
+        updated = signature_tests(original)
+        self.assertEqual(signature_tests(updated), updated)
+        for assertion in ('require.Error(t, err)', 'require.False(t, valid)', 'require.True(t, valid)',
+                          'testfile-invalid.asc', 'testfile.gpg', 'testfile.sig', 'testfile.asc',
+                          '"no keys"', '"invalid key"'):
+            self.assertIn(assertion, updated)
+        self.assertIn('hosted-wrong-public.asc', updated)
+        self.assertNotIn('0x5DE8949A899C8D99', updated)
+        self.assertTrue(fixture('upstream-test-public-key.asc').startswith('-----BEGIN PGP PUBLIC KEY BLOCK-----'))
 
     def test_current_recipe_translation_preserves_keys_hooks_and_customization(self):
         with tempfile.TemporaryDirectory() as temporary:

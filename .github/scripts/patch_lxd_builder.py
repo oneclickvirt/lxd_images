@@ -6,6 +6,7 @@ import sys
 
 KEY_DIGEST = 'be8c4f070b696e64d8ce40e59a95a57e8b5c776f0015c2fd64e14b896622bdb4'
 COMPATIBILITY_FIXTURES = {
+    'upstream-test-public-key.asc': '777c75cf8dd0c2145a474e81e620efe6987acaf5d41ac63ee7d0d42054c61fea',
     'openwrt-combined-http.go.txt': 'a6f1841f1341cbbbf397fca5f55596b891e27630c6f7ae4c7de55d297aa25e05',
     'lxd-procd-agent.go.txt': 'abef9ad81e40d7c9b36a7564b8f46699ee3802abecb2e715f4df0f69a3cd3144',
 }
@@ -42,6 +43,52 @@ def openwrt_agent(source):
     }
 '''
     return source.replace(before, dispatch + before) + '\n' + fixture('lxd-procd-agent.go.txt')
+
+
+
+def openwrt_release_test(source):
+    if 'hosted-openwrt-release-fixture' in source:
+        return source
+    if (source.count('s := &openwrt{}') != 1
+            or source.count('baseURL := "https://downloads.openwrt.org/releases/"') != 1):
+        raise ValueError('OpenWrt release parser test changed; revalidate the builder')
+    if '"net/http"' not in source:
+        source = source.replace('import (', 'import (\n\t"net/http"')
+    source = source.replace('import (', 'import (\n\t"net/http/httptest"')
+    source = source.replace('\n\ts.client = http.DefaultClient\n', '\n')
+    setup = '''// hosted-openwrt-release-fixture
+    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        _, _ = w.Write([]byte(`<a>21.02.7</a><a>22.03.7</a><a>23.05.6</a>`))
+    }))
+    defer server.Close()
+    s := &openwrt{}
+    s.client = server.Client()'''
+    return source.replace('s := &openwrt{}', setup).replace(
+        'baseURL := "https://downloads.openwrt.org/releases/"', 'baseURL := server.URL')
+
+
+def signature_tests(source):
+    if 'hosted-offline-signature-fixture' in source:
+        return source
+    if (source.count('"0x5DE8949A899C8D99"') != 2
+            or source.count('[]string{"0x46181433FBB75451"}') != 1
+            or source.count('func TestVerifyFile(t *testing.T)') != 1
+            or source.count('func TestCreateGPGKeyring(t *testing.T)') != 1):
+        raise ValueError('GPG signature tests changed; revalidate the builder')
+    # Keep every original positive/negative GPG verification assertion. Only
+    # replace live keyserver retrieval with matching and wrong PUBLIC keys.
+    source = source.replace('"0x5DE8949A899C8D99"', 'hostedPublicKey(t, "hosted-signature-public.asc")')
+    source = source.replace('[]string{"0x46181433FBB75451"}', '[]string{hostedPublicKey(t, "hosted-wrong-public.asc")}')
+    source += '''
+// hosted-offline-signature-fixture
+func hostedPublicKey(t *testing.T, name string) string {
+    t.Helper()
+    content, err := os.ReadFile(filepath.Join("..", "testdata", name))
+    require.NoError(t, err)
+    return string(content)
+}
+'''
+    return source
 
 
 def arch_release_test(source):
@@ -146,11 +193,19 @@ def main(root):
     agent = root / 'generators/lxd-agent.go'
     fourth = openwrt_source(openwrt.read_text())
     fifth = openwrt_agent(agent.read_text())
+    openwrt_test = root / 'sources/openwrt-http_test.go'
+    common_test = root / 'sources/common_test.go'
+    sixth = openwrt_release_test(openwrt_test.read_text())
+    seventh = signature_tests(common_test.read_text())
     oracle.write_text(first)
     rocky.write_text(second)
     arch_test.write_text(third)
     openwrt.write_text(fourth)
     agent.write_text(fifth)
+    openwrt_test.write_text(sixth)
+    common_test.write_text(seventh)
+    (root / 'testdata/hosted-signature-public.asc').write_text(fixture('upstream-test-public-key.asc'))
+    (root / 'testdata/hosted-wrong-public.asc').write_bytes(Path(__file__).with_name('rocky-10.asc').read_bytes())
     source_tests = Path(__file__).with_name('fixtures') / 'openwrt-hosted-source_test.go.txt'
     agent_tests = Path(__file__).with_name('fixtures') / 'openwrt-hosted-agent_test.go.txt'
     (root / 'sources/hosted_openwrt_test.go').write_text(source_tests.read_text())
