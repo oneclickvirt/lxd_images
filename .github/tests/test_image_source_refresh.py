@@ -20,6 +20,55 @@ DEFINITION = "image:\n  distribution: fixture\nsource:\n  downloader: fixture\na
 
 
 class ImageSourceRefreshTests(unittest.TestCase):
+    def test_lxd_el10_vm_boot_follows_the_maintained_hook_without_replacing_other_releases(self):
+        path = self.root / 'images_yaml/almalinux.yaml'
+        legacy = verify(DEFINITION)
+        legacy['actions'] = [
+            {'trigger': 'post-files', 'types': ['vm'], 'releases': [9], 'action': 'existing EL9 boot'},
+            {'trigger': 'post-files', 'types': ['container'], 'releases': [10], 'action': 'existing EL10 container'},
+        ]
+        path.write_text(hooks.serialize(legacy))
+        maintained = verify(DEFINITION)
+        maintained['actions'] = [{'trigger': 'post-files', 'types': ['vm'], 'releases': [10],
+                                  'action': 'dracut --kver "$kver"\nmenuentry root=${DISTROBUILDER_ROOT_UUID}\n'}]
+        payload = hooks.serialize(maintained)
+        refresh.current_almalinux_boot_for_lxd(self.root, payload)
+        first = path.read_bytes()
+        refresh.current_almalinux_boot_for_lxd(self.root, payload)
+        self.assertEqual(first, path.read_bytes())
+        actual = verify(path.read_text())
+        self.assertEqual(actual['actions'][:2], legacy['actions'])
+        self.assertEqual(actual['actions'][2]['types'], ['vm'])
+        self.assertEqual(actual['actions'][2]['releases'], [10])
+        self.assertIn('${LXD_IMAGEBUILDER_ROOT_UUID}', actual['actions'][2]['action'])
+        maintained['actions'][0]['action'] += '# latest vendor boot change\n'
+        refresh.current_almalinux_boot_for_lxd(self.root, hooks.serialize(maintained))
+        self.assertEqual(len(verify(path.read_text())['actions']), 3)
+        self.assertIn('latest vendor boot change', path.read_text())
+
+    def test_changed_el10_boot_contract_retains_the_existing_recipe(self):
+        path = self.root / 'images_yaml/almalinux.yaml'
+        before = path.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'boot hook contract changed'):
+            refresh.current_almalinux_boot_for_lxd(self.root, DEFINITION)
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_el10_boot_precedes_an_already_installed_efi_forwarder(self):
+        path = self.root / 'images_yaml/almalinux.yaml'
+        document = verify(DEFINITION)
+        document['actions'] = [{'trigger': 'post-files', 'types': ['vm'],
+                                'action': '# hosted-rpm-efi-forwarder\ntest -s /boot/grub2/grub.cfg\n'}]
+        path.write_text(hooks.serialize(document))
+        maintained = verify(DEFINITION)
+        maintained['actions'] = [{'trigger': 'post-files', 'types': ['vm'], 'releases': [10],
+                                  'action': 'dracut --kver "$kver"\nmenuentry boot\n'}]
+        for _ in range(2):
+            refresh.current_almalinux_boot_for_lxd(self.root, hooks.serialize(maintained))
+        actions = verify(path.read_text())['actions']
+        self.assertEqual(len(actions), 2)
+        self.assertIn('menuentry', actions[0]['action'])
+        self.assertIn('hosted-rpm-efi-forwarder', actions[1]['action'])
+
     def test_file_permissions_survive_yaml_refresh_without_decimal_conversion(self):
         for mode in ['0600', '0440', '0755', '644']:
             document = verify(DEFINITION + 'files:\n- path: /fixture\n  mode: ' + mode + '\n')

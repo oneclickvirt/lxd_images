@@ -148,6 +148,30 @@ def current_openwrt_for_lxd(root, payload):
     append_custom_actions(path, root / 'sh_insert_content.text')
 
 
+def current_almalinux_boot_for_lxd(root, payload):
+    """Carry the maintained EL10 VM hook into the older LXD recipe."""
+    upstream = verify(payload)
+    hooks = [hook for hook in upstream.get('actions', [])
+             if hook.get('trigger') == 'post-files' and hook.get('types') == ['vm']
+             and [str(release) for release in hook.get('releases', [])] == ['10']
+             and 'menuentry' in hook['action'] and 'dracut' in hook['action']]
+    if len(hooks) != 1:
+        raise ValueError('Maintained AlmaLinux EL10 VM boot hook contract changed')
+    path = root / 'images_yaml/almalinux.yaml'
+    document = verify(path.read_text())
+    actions = document.setdefault('actions', [])
+    actions[:] = [hook for hook in actions if not (
+        hook.get('trigger') == 'post-files' and hook.get('types') == ['vm']
+        and [str(release) for release in hook.get('releases', [])] == ['10']
+        and ('menuentry' in hook['action'] or 'grub2-mkconfig' in hook['action']))]
+    hook = dict(hooks[0])
+    hook['action'] = hook['action'].replace('DISTROBUILDER_', 'LXD_IMAGEBUILDER_')
+    position = next((index for index, entry in enumerate(actions)
+                     if 'hosted-rpm-efi-forwarder' in entry['action']), len(actions))
+    actions.insert(position, hook)
+    path.write_text(serialize(document))
+
+
 def prepare(root, stage, repo, deadline):
     shutil.copytree(root / "images_yaml", stage / "images_yaml")
     for name in ["bash_insert_content.text", "sh_insert_content.text"]:
@@ -181,6 +205,8 @@ def prepare(root, stage, repo, deadline):
     if repo == 'lxd_images':
         upstream = api_json(f'/repos/lxc/lxc-ci/contents/images/openwrt.yaml?ref={source_commit}', deadline)
         current_openwrt_for_lxd(stage, base64.b64decode(upstream['content']).decode())
+        upstream = api_json(f'/repos/lxc/lxc-ci/contents/images/almalinux.yaml?ref={source_commit}', deadline)
+        current_almalinux_boot_for_lxd(stage, base64.b64decode(upstream['content']).decode())
     normalize_oracle(stage / "images_yaml/oracle.yaml")
     for distro in ("almalinux", "rockylinux", "oracle"):
         normalize_el10(stage / f"images_yaml/{distro}.yaml")
