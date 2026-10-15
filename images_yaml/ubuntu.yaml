@@ -761,6 +761,18 @@ actions:
   variants:
   - cloud
   - default
+- trigger: post-packages
+  types:
+  - vm
+  releases:
+  - noble
+  - resolute
+  action: |
+    #!/bin/sh
+    set -eu
+    # hosted-ubuntu-vm-networkd
+    # A generated netplan file still needs its renderer to start on every boot.
+    systemctl enable systemd-networkd.service
 - trigger: post-files
   types:
   - container
@@ -776,18 +788,6 @@ actions:
           ;;
       esac
     fi
-- trigger: post-packages
-  types:
-  - vm
-  releases:
-  - noble
-  - resolute
-  action: |
-    #!/bin/sh
-    set -eu
-    # hosted-ubuntu-vm-networkd
-    # A generated netplan file still needs its renderer to start on every boot.
-    systemctl enable systemd-networkd.service
 - trigger: post-files
   action: |
     #!/bin/sh
