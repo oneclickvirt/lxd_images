@@ -114,8 +114,34 @@ class OpenWrtConsoleTests(unittest.TestCase):
     def test_reboot_uses_the_existing_guest_service(self):
         def reply(client):
             self.root_shell(client)
-            self.assertEqual(self.read_command(client), b'test -s /etc/openwrt_release && reboot\r')
+            command = self.read_command(client)
+            self.assertIn(b'test -s /etc/openwrt_release && reboot;', command)
+            self.assertNotIn(b'reboot -f', command)
+            marker = re.search(rb'hosted_console_[0-9a-f]+', command)[0]
+            # The caller must remain attached until execution, not merely
+            # accept echoed source as evidence that reboot was requested.
+            client.sendall(command + b'\r\n')
+            client.settimeout(0.05)
+            with self.assertRaises(TimeoutError):
+                client.recv(1)
+            client.sendall(b'\r\n' + marker + b'_reboot_requested\r\n')
         self.assertEqual(self.exchange(reply, reboot=True), '')
+
+    def test_reboot_command_failure_is_rejected(self):
+        def reply(client):
+            self.root_shell(client)
+            command = self.read_command(client)
+            marker = re.search(rb'hosted_console_[0-9a-f]+', command)[0]
+            client.sendall(b'\r\n' + marker + b'_reboot_rejected\r\n')
+        with self.assertRaisesRegex(RuntimeError, 'rejected the reboot command'):
+            self.exchange(reply, reboot=True)
+
+    def test_reboot_requires_execution_acknowledgement_before_disconnect(self):
+        def reply(client):
+            self.root_shell(client)
+            client.sendall(self.read_command(client) + b'\r\n')
+        with self.assertRaisesRegex(ConnectionError, 'before reboot acknowledgement'):
+            self.exchange(reply, reboot=True)
 
     def test_missing_prompt_respects_deadline(self):
         def reply(client):

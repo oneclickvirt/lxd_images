@@ -375,7 +375,9 @@ def qemu_guest_diagnostics(disk):
         ('cloud-init log', ['sudo', 'virt-cat', '-a', str(disk), '/var/log/cloud-init.log']),
     ]:
         try:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=60,
+            # On ARM TCG the guestfs appliance alone can need 40-60 seconds.
+            # Leave a bounded window for it to read the journal as well.
+            result = subprocess.run(command, capture_output=True, text=True, timeout=120,
                                     check=False, env=isolated_environment())
             details = '\n'.join(part for part in (result.stdout, result.stderr) if part).strip()
             if details:
@@ -417,10 +419,31 @@ def openwrt_console_command(path, password, script, timeout=90, reboot=False):
                 buffer = b''
         else:
             raise TimeoutError('OpenWrt consumer console readiness timed out')
-        if reboot:
-            stream.sendall(b'test -s /etc/openwrt_release && reboot\r')
-            return ''
         marker = 'hosted_console_' + uuid.uuid4().hex
+        if reboot:
+            # A serial chardev can discard unconsumed input when its client
+            # closes. Keep it attached until the guest has actually executed
+            # the normal reboot command; the caller still requires a new
+            # boot_id and repeats all readiness assertions after restarting.
+            command = ("{\nif test -s /etc/openwrt_release && reboot; then\n" +
+                       "printf '\\n" + marker + "_reboot_requested\\n'\nelse\n" +
+                       "printf '\\n" + marker + "_reboot_rejected\\n'\nfi\n}\r")
+            stream.sendall(command.encode())
+            acknowledgement = re.compile(rb'(?:^|[\r\n])' + marker.encode() +
+                                         rb'_reboot_(requested|rejected)\r?\n')
+            buffer = b''
+            while time.monotonic() < deadline:
+                stream.settimeout(max(0.001, deadline - time.monotonic()))
+                chunk = stream.recv(4096)
+                if not chunk:
+                    raise ConnectionError('OpenWrt console closed before reboot acknowledgement')
+                buffer = (buffer + chunk)[-16384:]
+                match = acknowledgement.search(buffer)
+                if match:
+                    if match[1] != b'requested':
+                        raise RuntimeError('OpenWrt guest rejected the reboot command')
+                    return ''
+            raise TimeoutError('OpenWrt console reboot acknowledgement timed out')
         payload = 'set -eu\ntest "$(id -u)" = 0\ntest -s /etc/openwrt_release\n' + script
         delimiter = marker + '_payload'
         if delimiter in payload:

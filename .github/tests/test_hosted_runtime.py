@@ -143,7 +143,7 @@ class QEMUEntropyTests(unittest.TestCase):
         self.assertLess(len(output.getvalue()), 28200)
         self.assertEqual([call.args[0][1] for call in execute.call_args_list], ['virt-log', 'virt-cat'])
         for call in execute.call_args_list:
-            self.assertEqual(call.kwargs['timeout'], 60)
+            self.assertEqual(call.kwargs['timeout'], 120)
             self.assertNotIn('GH_TOKEN', call.kwargs['env'])
             self.assertNotIn('GITHUB_TOKEN', call.kwargs['env'])
 
