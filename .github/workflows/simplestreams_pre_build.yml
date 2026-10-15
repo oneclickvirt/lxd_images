@@ -30,6 +30,7 @@ jobs:
   workflow_run:
     workflows:
     - Hosted image build and boot validation
+    - Replace inherited SSH identities in published container images
     types:
     - completed
     branches:
