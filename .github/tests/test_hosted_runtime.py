@@ -181,6 +181,32 @@ class FirmwareFallbackTests(unittest.TestCase):
 
 
 class NativeStartupDiagnosticsTests(unittest.TestCase):
+    def test_native_vm_without_share_drivers_uses_the_loader_cd_serial(self):
+        # Incus 6 derives a SCSI serial as incus_<device name>; the image's
+        # distrobuilder agent loader mounts this exact by-id path.
+        loader_path = '/dev/disk/by-id/scsi-0QEMU_QEMU_CD-ROM_incus_agent'
+        state = {'drive': None, 'boots': 0}
+        commands = []
+        def execute(command, **kwargs):
+            commands.append(command)
+            if 'source=agent:config' in command:
+                state['drive'] = '/dev/disk/by-id/scsi-0QEMU_QEMU_CD-ROM_incus_' + command[-3]
+            if 'exec' in command:
+                self.assertEqual(state['drive'], loader_path)
+                self.assertEqual(command[-1], runtime.CHECK)
+                state['boots'] += 1
+                return subprocess.CompletedProcess(command, 0, 'boot-' + str(state['boots']), '')
+            return subprocess.CompletedProcess(command, 0, '', '')
+        with mock.patch.object(runtime, 'run', side_effect=execute), \
+                mock.patch.object(runtime.subprocess, 'run'):
+            runtime.native_test(Path('/tmp'), SimpleNamespace(name='image.tar.xz'),
+                                Path('/tmp/rootfs.qcow2'), vm=True)
+        self.assertEqual(state['boots'], 2)
+        self.assertTrue(any(command[2] == 'restart' for command in commands))
+        added = next(i for i, command in enumerate(commands) if 'source=agent:config' in command)
+        started = next(i for i, command in enumerate(commands) if command[2] == 'start')
+        self.assertLess(added, started)
+
     def test_offline_diagnostics_stop_before_reading_and_keep_tokens_out(self):
         output = io.StringIO()
         result = subprocess.CompletedProcess([], 0, 'offline journal', '')
