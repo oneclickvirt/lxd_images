@@ -35,6 +35,9 @@ fedora_41_41_amd64_cloud.zip
 fedora_41_41_amd64_default.zip
 fedora_43_43_amd64_cloud.zip
 fedora_43_43_amd64_default.zip
+fedora_44_44_amd64_cloud.zip
+fedora_44_44_amd64_default.zip
+gentoo_current_current_amd64_cloud.zip
 gentoo_current_current_amd64_openrc.zip
 gentoo_current_current_amd64_systemd.zip
 kali_latest_kali-rolling_amd64_cloud.zip
@@ -47,6 +50,7 @@ opensuse_16.0_16.0_amd64_cloud.zip
 opensuse_16.0_16.0_amd64_default.zip
 opensuse_tumbleweed_tumbleweed_amd64_cloud.zip
 opensuse_tumbleweed_tumbleweed_amd64_default.zip
+openwrt_25.12_25.12_amd64_default.zip
 oracle_7_7_amd64_default.zip
 oracle_8_8_amd64_cloud.zip
 oracle_9_9_amd64_cloud.zip
@@ -62,3 +66,5 @@ ubuntu_22.04_jammy_amd64_cloud.zip
 ubuntu_22.04_jammy_amd64_default.zip
 ubuntu_24.04_noble_amd64_cloud.zip
 ubuntu_24.04_noble_amd64_default.zip
+ubuntu_26.04_resolute_amd64_cloud.zip
+ubuntu_26.04_resolute_amd64_default.zip
