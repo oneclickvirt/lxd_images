@@ -557,21 +557,6 @@ actions:
   - '10'
 - trigger: post-files
   types:
-  - container
-  action: |
-    #!/bin/sh
-    set -eu
-    # hosted-consumer-dns-file
-    if [ -L /etc/resolv.conf ]; then
-      case "$(readlink /etc/resolv.conf)" in
-        /run/*|../run/*|/var/run/*|../var/run/*)
-          rm /etc/resolv.conf
-          touch /etc/resolv.conf
-          ;;
-      esac
-    fi
-- trigger: post-files
-  types:
   - vm
   action: |
     #!/bin/sh
@@ -593,3 +578,18 @@ actions:
     Requires=hosted-ssh-hostkeys.service
     After=hosted-ssh-hostkeys.service
     UNIT
+- trigger: post-files
+  types:
+  - container
+  action: |
+    #!/bin/sh
+    set -eu
+    # hosted-consumer-dns-file
+    if [ -L /etc/resolv.conf ]; then
+      case "$(readlink /etc/resolv.conf)" in
+        /run/*|../run/*|/var/run/*|../var/run/*)
+          rm /etc/resolv.conf
+          touch /etc/resolv.conf
+          ;;
+      esac
+    fi
