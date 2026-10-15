@@ -904,21 +904,6 @@ actions:
   - default
 - trigger: post-files
   types:
-  - container
-  action: |
-    #!/bin/sh
-    set -eu
-    # hosted-consumer-dns-file
-    if [ -L /etc/resolv.conf ]; then
-      case "$(readlink /etc/resolv.conf)" in
-        /run/*|../run/*|/var/run/*|../var/run/*)
-          rm /etc/resolv.conf
-          touch /etc/resolv.conf
-          ;;
-      esac
-    fi
-- trigger: post-files
-  types:
   - vm
   architectures:
   - aarch64
@@ -942,6 +927,21 @@ actions:
     cat /boot/grub/grub.cfg.hosted > /boot/grub/grub.cfg
     rm /boot/grub/grub.cfg.hosted
     grep -Eq '^[[:space:]]*initrd[[:space:]].*/initramfs-linux\.img([[:space:]]|$)' /boot/grub/grub.cfg
+- trigger: post-files
+  types:
+  - container
+  action: |
+    #!/bin/sh
+    set -eu
+    # hosted-consumer-dns-file
+    if [ -L /etc/resolv.conf ]; then
+      case "$(readlink /etc/resolv.conf)" in
+        /run/*|../run/*|/var/run/*|../var/run/*)
+          rm /etc/resolv.conf
+          touch /etc/resolv.conf
+          ;;
+      esac
+    fi
 - trigger: post-files
   action: |
     #!/bin/sh
