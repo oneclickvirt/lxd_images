@@ -1,13 +1,4 @@
 {
   "schema": 1,
-  "entries": [
-    {
-      "distro": "ubuntu",
-      "release": "resolute",
-      "arch": "arm64",
-      "kind": "vm",
-      "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38730326378"
-    }
-  ]
+  "entries": []
 }
