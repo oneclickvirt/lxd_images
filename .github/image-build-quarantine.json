@@ -14,8 +14,8 @@
       "release": "10",
       "arch": "arm64",
       "kind": "vm",
-      "reason": "Software VM failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+      "reason": "Vendor image hook failed before a bootable image was accepted; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38711599207"
     },
     {
       "distro": "almalinux",
@@ -135,7 +135,7 @@
       "arch": "arm64",
       "kind": "vm",
       "reason": "Guest failed bounded SSH readiness; no working guest was established; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38707741119"
     }
   ]
 }
