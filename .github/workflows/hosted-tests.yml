@@ -13,13 +13,31 @@ name: Hosted published image tests
         description: Exact asset filename; empty selects the suite
         type: string
         default: ''
+      kind:
+        description: Published image type
+        type: choice
+        options:
+        - container
+        - vm
+        default: container
   schedule:
   - cron: 27 3 * * 1
+  workflow_call:
+    inputs:
+      scope:
+        type: string
+        default: smoke
+      image:
+        type: string
+        default: ''
+      kind:
+        type: string
+        default: container
 permissions:
   contents: read
 concurrency:
-  group: hosted-published-image-tests-${{ inputs.image || inputs.scope || 'smoke'
-    }}
+  group: hosted-published-image-tests-${{ inputs.kind || 'container' }}-${{ inputs.image
+    || inputs.scope || 'smoke' }}
   cancel-in-progress: false
 jobs:
   catalog:
@@ -34,8 +52,9 @@ jobs:
         GH_TOKEN: ${{ github.token }}
         SCOPE: ${{ inputs.scope || 'smoke' }}
         IMAGE: ${{ inputs.image }}
+        KIND: ${{ inputs.kind || 'container' }}
       run: python3 .github/scripts/published_image_suite.py matrix --scope "$SCOPE"
-        --kind container
+        --kind "$KIND"
   test:
     needs: catalog
     runs-on: ${{ matrix.runner }}

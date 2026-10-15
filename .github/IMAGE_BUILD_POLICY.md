@@ -14,6 +14,8 @@ Every accepted image must pass archive/OS identity checks, guest execution, an S
 
 Classified transient downloads can retry once within a shared build budget. Signature, checksum and certificate failures remain errors. The publisher stages and validates a complete batch before replacing release assets and restores earlier assets if replacement fails. Failed builders and leftover intermediate files cannot satisfy publication checks.
 
+Legacy container and KVM test entrypoints call the same published-asset validator. They select assets that actually exist, use hosted ARM software emulation when KVM is unavailable, and propagate guest failures. Scheduled smoke checks are bounded; manual full checks retain exhaustive historical asset coverage.
+
 ## Upstream refreshes
 
 A refresh stages all 14 definitions, reapplies compatibility fixes, validates the full catalog and release indexes, then promotes the snapshot transactionally. Download, timeout, malformed YAML, duplicate keys, empty indexes and concurrent maintenance failures retain the validated previous snapshot. The quarantine policy and maintained scripts are outside generated paths.

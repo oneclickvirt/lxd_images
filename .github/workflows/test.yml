@@ -1,89 +1,26 @@
 name: Run LXD Tests
-jobs:
-  prepare-matrix:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-    steps:
-    - name: Load trusted network recovery helpers
-      shell: bash
-      run: |
-        set -euo pipefail
-        curl --fail --silent --show-error --location --connect-timeout 15 --max-time 90 --retry 3 --retry-max-time 180 --retry-connrefused "https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/.github/scripts/ci_network.sh" -o "$RUNNER_TEMP/ci-network.sh"
-        curl --fail --silent --show-error --location --connect-timeout 15 --max-time 90 --retry 3 --retry-max-time 180 --retry-connrefused "https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/.github/scripts/release_assets.py" -o "$RUNNER_TEMP/ci-release-assets.py"
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-    - id: set-matrix
-      run: |
-        source "$RUNNER_TEMP/ci-network.sh"
-        # 下载两个平台的镜像列表
-        curl -o x86_64_all_images.txt https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/x86_64_all_images.txt
-        curl -o arm64_all_images.txt https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/arm64_all_images.txt
-
-        echo "构建测试矩阵..."
-        matrix_json="{\"include\":["
-
-        while IFS= read -r image; do
-          if [[ -n "$image" ]]; then
-            matrix_json+="{\"image\":\"$image\",\"arch\":\"amd64\",\"runner\":\"ubuntu-latest\"},"
-          fi
-        done < x86_64_all_images.txt
-
-        while IFS= read -r image; do
-          if [[ -n "$image" ]]; then
-            matrix_json+="{\"image\":\"$image\",\"arch\":\"arm64\",\"runner\":\"ubuntu-24.04-arm\"},"
-          fi
-        done < arm64_all_images.txt
-
-        # 去掉最后一个逗号
-        matrix_json=${matrix_json%,}
-        matrix_json+="]}"
-
-        echo "matrix=$matrix_json" >> "$GITHUB_OUTPUT"
-      shell: bash
-  test-single-image:
-    needs: prepare-matrix
-    strategy:
-      fail-fast: false
-      max-parallel: 12
-      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
-    steps:
-    - name: Load trusted network recovery helpers
-      shell: bash
-      run: |
-        set -euo pipefail
-        curl --fail --silent --show-error --location --connect-timeout 15 --max-time 90 --retry 3 --retry-max-time 180 --retry-connrefused "https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/.github/scripts/ci_network.sh" -o "$RUNNER_TEMP/ci-network.sh"
-        curl --fail --silent --show-error --location --connect-timeout 15 --max-time 90 --retry 3 --retry-max-time 180 --retry-connrefused "https://raw.githubusercontent.com/oneclickvirt/lxd_images/main/.github/scripts/release_assets.py" -o "$RUNNER_TEMP/ci-release-assets.py"
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-    - name: Setup Fresh Environment
-      run: |
-        source "$RUNNER_TEMP/ci-network.sh"
-        echo "设置新环境..."
-        sudo apt-get update -y
-        sudo sh -c 'export noninteractive=true; curl -L https://raw.githubusercontent.com/oneclickvirt/lxd/main/scripts/lxdinstall.sh -o lxdinstall.sh && chmod +x lxdinstall.sh && bash lxdinstall.sh >/dev/null 2>&1'
-      shell: bash
-    - name: Configure Git
-      run: |
-        git config --global user.name "daily-test"
-        git config --global user.email "test@spiritlhl.top"
-    - name: Test Image
-      run: |
-        echo "测试镜像: ${{ matrix.image }}"
-        if sudo bash test.sh "${{ matrix.image }}"; then
-          echo "测试通过: ${{ matrix.image }}"
-          echo "success=true"
-        else
-          echo "测试失败: ${{ matrix.image }}"
-          echo "success=false"
-          exit 1
-          exit 1
-          exit 1
-          exit 1
-        fi
-        echo "image=${{ matrix.image }}"
-        echo "arch=${{ matrix.arch }}"
 'on':
   schedule:
   - cron: 0 4 2-30/2 * *
-  workflow_dispatch: null
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Published image coverage
+        type: choice
+        options:
+        - smoke
+        - full
+        default: smoke
+      image:
+        description: Exact published asset; empty selects the suite
+        type: string
+        default: ''
+permissions:
+  contents: read
+jobs:
+  validate-published:
+    uses: ./.github/workflows/hosted-tests.yml
+    with:
+      scope: ${{ inputs.scope || 'smoke' }}
+      image: ${{ inputs.image || '' }}
+      kind: container

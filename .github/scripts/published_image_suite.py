@@ -31,6 +31,7 @@ def published(publisher):
 def matrix(assets,repo,scope,kind):
     rows=[]
     if scope not in ('smoke','full'):raise ValueError('invalid suite scope')
+    if kind not in ('container','vm'):raise ValueError('invalid suite image type')
     for asset in sorted(assets,key=lambda a:a['name']):
         name=asset['name'];vm=name.endswith('.qcow2') or name.endswith('_kvm.zip')
         if (kind=='vm')!=vm:continue
@@ -41,7 +42,7 @@ def matrix(assets,repo,scope,kind):
             if name.endswith('.qcow2'):
                 if not re.fullmatch(r'debian(12|13)\.qcow2',name):continue
             elif not re.search(r'^(debian_(12_bookworm|13_trixie)|alpine_3\.24_3\.24)_',name):continue
-            elif '_cloud.' in name:continue
+            elif re.search(r'_cloud(?:_kvm)?\.',name):continue
         rows.append({'image':name,'tag':asset['tag'],'arch':arch,'runner':'ubuntu-24.04-arm' if arch=='arm64' else 'ubuntu-24.04'})
     if not rows:raise ValueError('no published images selected')
     if len(rows)>256:raise ValueError('suite exceeds GitHub matrix limit; select a smaller catalog')
