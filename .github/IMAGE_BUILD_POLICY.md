@@ -22,6 +22,8 @@ Compatibility normalization preserves Fedora bootstrap ordering; Debian first-bo
 
 LXD definitions follow Canonical's published image metadata; the release axes follow the validated LXC catalog. The builder tries the latest Canonical source, applies checked Oracle ISO/EL compatibility repairs, runs upstream tests and builds it. Failure uses a SHA256-pinned compatible source, with the same tests. Rocky 10 bootstrap uses its [official vendor key](https://dl.rockylinux.org/pub/rocky/RPM-GPG-KEY-Rocky-10), pinned at SHA256 `be8c4f070b696e64d8ce40e59a95a57e8b5c776f0015c2fd64e14b896622bdb4`; GPG checks stay enabled. OpenWrt supplies explicit architecture mappings supported by both builders.
 
+Builder installation runs the upstream source and signature tests. The Arch release parser uses a local HTTP fixture covering unsorted releases, empty listings and HTTP errors; unrelated vendor archive availability cannot block Rocky or Oracle builder installation. Actual image downloads and signature checks still run against vendor sources.
+
 ## Simplestreams and portal
 
 Processing verifies both members of each image pair and their digests before a transactional replacement; unchanged source fingerprints skip unnecessary conversion. The stream builder tests the current Canonical source before use and falls back to a SHA256-pinned tested version on failure. Each site build validates its product index and reapplies the maintained search/filter/sort/download layout. Netlify deployment is atomic, bounded retries preserve the existing site on failure, and the published remote is checked with a real client.

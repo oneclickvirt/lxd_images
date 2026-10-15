@@ -4,10 +4,26 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from patch_lxd_builder import oracle_source, rocky_source
+from patch_lxd_builder import arch_release_test, oracle_source, rocky_source
 
 
 class BuilderBootstrapTests(unittest.TestCase):
+    def test_arch_parser_uses_http_fixture_with_success_and_failure_cases(self):
+        for initialize in ('var src archlinux', 'src := &archlinux{}\nsrc.client = http.DefaultClient'):
+            source = ('func TestArchLinuxGetLatestRelease(t *testing.T) {\n' + initialize +
+                      '\nrelease, err := src.getLatestRelease("https://archive.archlinux.org/iso/", "x86_64")\n}')
+            updated = arch_release_test(source)
+            self.assertEqual(arch_release_test(updated), updated)
+            self.assertIn(initialize.replace('\n', '\n\t\t\t'), updated)
+            self.assertIn('httptest.NewServer', updated)
+            self.assertIn('require.Equal(t, test.want, release)', updated)
+            self.assertIn('require.Error(t, err)', updated)
+            self.assertIn('"empty index"', updated)
+            self.assertIn('"upstream error"', updated)
+            self.assertNotIn('archive.archlinux.org', updated)
+        with self.assertRaises(ValueError):
+            arch_release_test('unexpected upstream contract')
+
     def test_oracle_versioned_iso_names_cover_both_architectures(self):
         source = '''if s.definition.Image.Release == "9" {
             fname = fmt.Sprintf("OracleLinux-R9-U%d-%s-boot.iso", i, s.architecture)

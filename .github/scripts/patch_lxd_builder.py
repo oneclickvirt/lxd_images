@@ -7,6 +7,57 @@ import sys
 KEY_DIGEST = 'be8c4f070b696e64d8ce40e59a95a57e8b5c776f0015c2fd64e14b896622bdb4'
 
 
+def arch_release_test(source):
+    if 'hosted-arch-release-fixture' in source:
+        return source
+    if (source.count('func TestArchLinuxGetLatestRelease(t *testing.T)') != 1
+            or source.count('src.getLatestRelease("https://archive.archlinux.org/iso/", "x86_64")') != 1):
+        raise ValueError('Arch release parser test changed; revalidate the builder')
+    initialize = 'src := &archlinux{}\n\t\t\tsrc.client = http.DefaultClient' if 'src.client = http.DefaultClient' in source else 'var src archlinux'
+    # Exercise the actual parser and HTTP client without letting an unrelated
+    # vendor archive outage block every distribution's builder installation.
+    return '''package sources
+
+import (
+    "net/http"
+    "net/http/httptest"
+    "testing"
+
+    "github.com/stretchr/testify/require"
+)
+
+// hosted-arch-release-fixture
+func TestArchLinuxGetLatestRelease(t *testing.T) {
+    for _, test := range []struct {
+        name string
+        body string
+        status int
+        want string
+    }{
+        {"unsorted releases", `<a href="2026.09.01/">2026.09.01/</a><a href="invalid/">invalid/</a><a href="2026.10.01/">2026.10.01/</a><a href="2025.12.01/">2025.12.01/</a>`, 200, "2026.10.01"},
+        {"empty index", `<a href="../">../</a>`, 200, ""},
+        {"upstream error", "unavailable", 503, ""},
+    } {
+        t.Run(test.name, func(t *testing.T) {
+            server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                w.WriteHeader(test.status)
+                _, _ = w.Write([]byte(test.body))
+            }))
+            defer server.Close()
+            ''' + initialize + '''
+            release, err := src.getLatestRelease(server.URL, "x86_64")
+            if test.want == "" {
+                require.Error(t, err)
+                return
+            }
+            require.NoError(t, err)
+            require.Equal(t, test.want, release)
+        })
+    }
+}
+'''
+
+
 def oracle_source(source):
     if 'hosted-oracle-versioned-iso' in source:
         return source
@@ -49,11 +100,14 @@ if [ -d /mnt/cdrom ]; then'''
 def main(root):
     oracle = root / 'sources/oraclelinux-http.go'
     rocky = root / 'sources/rocky-http.go'
-    # Validate both transformations before replacing either source file.
+    arch_test = root / 'sources/archlinux-http_test.go'
+    # Validate every transformation before replacing any source file.
     first = oracle_source(oracle.read_text())
     second = rocky_source(rocky.read_text(), Path(__file__).with_name('rocky-10.asc').read_bytes())
+    third = arch_release_test(arch_test.read_text())
     oracle.write_text(first)
     rocky.write_text(second)
+    arch_test.write_text(third)
 
 
 if __name__ == '__main__':
