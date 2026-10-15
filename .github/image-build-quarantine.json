@@ -198,8 +198,8 @@
       "release": "44",
       "arch": "amd64",
       "kind": "vm",
-      "reason": "VM metadata compatibility gate rejected an incomplete runtime requirement; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
+      "reason": "Native VM agent failed readiness; boot and guest integration remain unverified; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38664010321"
     },
     {
       "distro": "fedora",
@@ -341,14 +341,6 @@
       "distro": "rockylinux",
       "release": "10",
       "arch": "amd64",
-      "kind": "container",
-      "reason": "Vendor bootstrap package signature verification failed; signature validation remains enabled; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
-    },
-    {
-      "distro": "rockylinux",
-      "release": "10",
-      "arch": "amd64",
       "kind": "vm",
       "reason": "Vendor bootstrap package signature verification failed; signature validation remains enabled; previous assets retained and manual repair remains available",
       "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
@@ -358,8 +350,8 @@
       "release": "10",
       "arch": "arm64",
       "kind": "container",
-      "reason": "Vendor bootstrap package signature verification failed; signature validation remains enabled; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
+      "reason": "Build or guest validation failed; previous assets retained and manual repair remains available",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38665521236"
     },
     {
       "distro": "rockylinux",
