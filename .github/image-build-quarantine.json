@@ -10,14 +10,6 @@
       "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38712567606"
     },
     {
-      "distro": "rockylinux",
-      "release": "8",
-      "arch": "arm64",
-      "kind": "vm",
-      "reason": "Build or guest validation failed; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38712468873"
-    },
-    {
       "distro": "ubuntu",
       "release": "resolute",
       "arch": "arm64",
