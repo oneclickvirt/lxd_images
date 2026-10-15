@@ -2,14 +2,6 @@
   "schema": 1,
   "entries": [
     {
-      "distro": "centos",
-      "release": "9-Stream",
-      "arch": "amd64",
-      "kind": "vm",
-      "reason": "Native VM agent failed readiness; boot and guest integration remain unverified; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38668630118"
-    },
-    {
       "distro": "openeuler",
       "release": "24.03",
       "arch": "arm64",
