@@ -6,6 +6,10 @@ name: Replace inherited SSH identities in published container images
         description: Current maintained distribution or all
         type: string
         default: all
+      release:
+        description: Exact catalog release; empty repairs every selected release
+        type: string
+        default: ''
       arch:
         description: Hosted runner architecture
         type: choice
@@ -34,7 +38,8 @@ jobs:
         CI_IMAGE_AUTOMATIC: 'true'
         DISTRO: ${{ inputs.distro }}
         ARCH: ${{ inputs.arch }}
-      run: python3 .github/scripts/image_catalog.py matrix --distro "$DISTRO" --arch "$ARCH" --scope current --kind container
+        RELEASE: ${{ inputs.release }}
+      run: python3 .github/scripts/image_catalog.py matrix --distro "$DISTRO" --arch "$ARCH" --release "$RELEASE" --scope current --kind container
   repair:
     needs: catalog
     if: needs.catalog.outputs.count != '0'
