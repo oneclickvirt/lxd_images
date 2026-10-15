@@ -294,3 +294,11 @@ actions:
           ;;
       esac
     fi
+mappings:
+  architectures:
+    amd64: x86_64
+    x86_64: x86_64
+    arm64: aarch64
+    aarch64: aarch64
+    armhf: armv7l
+    armv7l: armv7l
