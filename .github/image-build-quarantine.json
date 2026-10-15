@@ -34,22 +34,6 @@
       "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
     },
     {
-      "distro": "archlinux",
-      "release": "current",
-      "arch": "arm64",
-      "kind": "vm",
-      "reason": "Guest kernel could not mount its root filesystem with the tested storage controllers; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38669594134"
-    },
-    {
-      "distro": "centos",
-      "release": "10-Stream",
-      "arch": "arm64",
-      "kind": "vm",
-      "reason": "ARM guest panicked in MOPS memset while loading a kernel module under QEMU TCG max CPU; stable CPU baseline repair requires complete variant validation before re-enabling automation",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38676604321"
-    },
-    {
       "distro": "centos",
       "release": "9-Stream",
       "arch": "amd64",
@@ -92,14 +76,6 @@
     {
       "distro": "gentoo",
       "release": "current",
-      "arch": "amd64",
-      "kind": "vm",
-      "reason": "Vendor image hook failed before a bootable image was accepted; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605052351"
-    },
-    {
-      "distro": "gentoo",
-      "release": "current",
       "arch": "arm64",
       "kind": "vm",
       "reason": "Vendor image hook failed before a bootable image was accepted; previous assets retained and manual repair remains available",
@@ -124,66 +100,10 @@
     {
       "distro": "openwrt",
       "release": "25.12",
-      "arch": "amd64",
-      "kind": "vm",
-      "reason": "Native VM agent failed readiness; boot and guest integration remain unverified; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38692237443"
-    },
-    {
-      "distro": "openwrt",
-      "release": "25.12",
       "arch": "arm64",
       "kind": "vm",
       "reason": "Guest kernel received an empty root device because the builder did not export the required root partition UUID; previous assets retained and manual repair remains available",
       "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38692237443"
-    },
-    {
-      "distro": "oracle",
-      "release": "10",
-      "arch": "amd64",
-      "kind": "container",
-      "reason": "Vendor source download failed; the recorded run contains the exact failing URL; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
-    },
-    {
-      "distro": "oracle",
-      "release": "10",
-      "arch": "arm64",
-      "kind": "container",
-      "reason": "Vendor source download failed; the recorded run contains the exact failing URL; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
-    },
-    {
-      "distro": "oracle",
-      "release": "8",
-      "arch": "amd64",
-      "kind": "container",
-      "reason": "Guest booted but its SSH listener failed the readiness gate; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
-    },
-    {
-      "distro": "oracle",
-      "release": "8",
-      "arch": "arm64",
-      "kind": "container",
-      "reason": "Vendor source download failed; the recorded run contains the exact failing URL; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38605024937"
-    },
-    {
-      "distro": "oracle",
-      "release": "9",
-      "arch": "amd64",
-      "kind": "container",
-      "reason": "Vendor SELinux labels cannot be unpacked by the hosted container runtime; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38691127318"
-    },
-    {
-      "distro": "oracle",
-      "release": "9",
-      "arch": "arm64",
-      "kind": "container",
-      "reason": "Vendor SELinux labels cannot be unpacked by the hosted container runtime; previous assets retained and manual repair remains available",
-      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/38691127318"
     },
     {
       "distro": "rockylinux",
