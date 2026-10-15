@@ -1,11 +1,16 @@
 from pathlib import Path
+import json
+import os
 import sys
+import tempfile
 import unittest
+from unittest import mock
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / '.github/scripts'))
-from published_image_suite import matrix
+import published_image_suite as suite
+from published_image_suite import matrix, automatic_published_matrix
 
 
 class PublishedSuiteTests(unittest.TestCase):
@@ -36,6 +41,52 @@ class PublishedSuiteTests(unittest.TestCase):
         for scope, kind in (('smoke', 'vm'), ('invalid', 'vm'), ('smoke', 'invalid')):
             with self.assertRaises(ValueError):
                 matrix([], ROOT.name, scope, kind)
+
+    def test_automated_suite_holds_only_the_quarantined_arch_and_kind(self):
+        entry = {'distro': 'debian', 'release': 'trixie', 'arch': 'arm64', 'kind': 'vm',
+                 'reason': 'Confirmed guest readiness failure',
+                 'evidence': 'https://github.com/oneclickvirt/incus_images/actions/runs/123'}
+        policy = {'schema': 1, 'entries': [entry]}
+        value = matrix(self.assets, ROOT.name, 'full', 'vm')
+        filtered = automatic_published_matrix(value, policy, 'vm')
+        self.assertEqual([row['image'] for row in filtered['include']], [self.assets[-1]['name']])
+        self.assertEqual(len(value['include']), 3)  # Manual selection remains intact.
+        containers = matrix(self.assets, ROOT.name, 'full', 'container')
+        self.assertEqual(automatic_published_matrix(containers, policy, 'container'), containers)
+        with self.assertRaises(ValueError):
+            automatic_published_matrix(value, {'schema': 1, 'entries': [entry, entry]}, 'vm')
+
+    def test_empty_automated_suite_is_explicit_and_manual_repair_still_selects_asset(self):
+        entry = {'distro': 'debian', 'release': 'trixie', 'arch': 'arm64', 'kind': 'vm',
+                 'reason': 'Confirmed guest readiness failure',
+                 'evidence': 'https://github.com/oneclickvirt/incus_images/actions/runs/123'}
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            (folder / '.github').mkdir()
+            (folder / '.github/image-build-quarantine.json').write_text(json.dumps({'schema': 1, 'entries': [entry]}))
+            previous = Path.cwd()
+            try:
+                os.chdir(folder)
+                for automatic, count in [('true', 0), ('false', 1)]:
+                    output = folder / ('output-' + automatic)
+                    summary = folder / ('summary-' + automatic)
+                    environment = {'GITHUB_REPOSITORY': 'oneclickvirt/' + ROOT.name,
+                                   'GH_TOKEN': 'fixture', 'CI_IMAGE_AUTOMATIC': automatic,
+                                   'GITHUB_OUTPUT': str(output), 'GITHUB_STEP_SUMMARY': str(summary),
+                                   'IMAGE': self.assets[2]['name']}
+                    with mock.patch.dict(os.environ, environment, clear=True), \
+                         mock.patch.object(sys, 'argv', ['suite', 'matrix', '--kind', 'vm']), \
+                         mock.patch.object(suite, 'Publisher'), \
+                         mock.patch.object(suite, 'published', return_value=[self.assets[2]]):
+                        suite.main()
+                    fields = dict(line.split('=', 1) for line in output.read_text().splitlines())
+                    self.assertEqual(fields['count'], str(count))
+                    self.assertEqual(len(json.loads(fields['matrix'])['include']), count)
+                    if automatic == 'true':
+                        self.assertIn('0 selected, 1 known-broken tuples held', summary.read_text())
+                        self.assertNotIn('IMAGE_TEST_RESULT', summary.read_text())
+            finally:
+                os.chdir(previous)
 
     def test_legacy_entrypoints_use_the_validated_suite_and_propagate_failure(self):
         target = yaml.safe_load((ROOT / '.github/workflows/hosted-tests.yml').read_text())

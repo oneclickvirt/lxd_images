@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 from release_assets import Publisher
+from image_catalog import automatic_matrix
 
 
 def published(publisher):
@@ -49,6 +50,25 @@ def matrix(assets,repo,scope,kind):
     return {'include':rows}
 
 
+def automatic_published_matrix(value, policy, kind):
+    # The same known-broken tuple must not keep failing its scheduled
+    # published-image test after its producer has been quarantined.
+    automatic_matrix({'include': []}, policy)  # Validate the full policy.
+    blocked = {tuple(entry[key] for key in ('distro', 'release', 'arch', 'kind'))
+               for entry in policy['entries']}
+    selected = []
+    for row in value['include']:
+        match = re.fullmatch(r'([A-Za-z0-9]+)_[A-Za-z0-9.-]+_([A-Za-z0-9.-]+)_'
+                             r'(amd64|x86_64|arm64|aarch64)_(default|cloud|openrc|systemd)'
+                             r'(?:_kvm)?\.zip', row['image'])
+        if match:
+            arch = {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(match[3], match[3])
+            if (match[1], match[2], arch, kind) in blocked:
+                continue
+        selected.append(row)
+    return {'include': selected}
+
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('command',choices=['matrix','download'])
     parser.add_argument('--scope',choices=['smoke','full'],default='smoke');parser.add_argument('--kind',choices=['container','vm'],default='container')
@@ -59,8 +79,20 @@ def main():
         if os.environ.get('IMAGE'):
             assets=[a for a in assets if a['name']==os.environ['IMAGE']]
         value=matrix(assets,repo.split('/')[-1],'full' if os.environ.get('IMAGE') else args.scope,args.kind)
+        if os.environ.get('CI_IMAGE_AUTOMATIC') == 'true':
+            before = len(value['include'])
+            policy = json.loads(Path('.github/image-build-quarantine.json').read_text())
+            value = automatic_published_matrix(value, policy, args.kind)
+            message = (f'Automated published suite: {len(value["include"])} selected, '
+                       f'{before-len(value["include"])} known-broken tuples held; manual repair remains available')
+            print(message)
+            if os.environ.get('GITHUB_STEP_SUMMARY'):
+                with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
+                    print(message, file=stream)
         encoded=json.dumps(value,separators=(',',':'))
-        with open(os.environ['GITHUB_OUTPUT'],'a') as stream:print('matrix='+encoded,file=stream)
+        with open(os.environ['GITHUB_OUTPUT'],'a') as stream:
+            print('matrix='+encoded,file=stream)
+            print('count='+str(len(value['include'])),file=stream)
         print('Published image test jobs:',len(value['include']))
     else:
         name=os.environ['IMAGE'];tag=os.environ['TAG']
