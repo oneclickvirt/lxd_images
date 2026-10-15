@@ -275,20 +275,6 @@ actions:
   action: |
     #!/bin/sh
     set -eu
-    # hosted-oracle-symlink-labels
-    find / -xdev -type l -exec sh -ec '
-      for path do
-        if getfattr -h -n security.selinux -- "$path" >/dev/null 2>&1; then
-          setfattr -h -x security.selinux -- "$path"
-        fi
-      done
-    ' sh {} +
-- trigger: post-files
-  types:
-  - container
-  action: |
-    #!/bin/sh
-    set -eu
     # hosted-consumer-dns-file
     if [ -L /etc/resolv.conf ]; then
       case "$(readlink /etc/resolv.conf)" in
@@ -298,6 +284,20 @@ actions:
           ;;
       esac
     fi
+- trigger: post-files
+  types:
+  - container
+  action: |
+    #!/bin/sh
+    set -eu
+    # hosted-oracle-container-labels
+    find / -xdev -exec sh -ec '
+      for path do
+        if getfattr -h -n security.selinux -- "$path" >/dev/null 2>&1; then
+          setfattr -h -x security.selinux -- "$path"
+        fi
+      done
+    ' sh {} +
 - trigger: post-files
   action: |
     #!/bin/sh

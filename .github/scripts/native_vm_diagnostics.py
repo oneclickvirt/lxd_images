@@ -1,9 +1,13 @@
 """Read disposable native VM logs even when its guest agent cannot start."""
 import argparse
 import json
+import os
 from pathlib import Path
+import pty
 import re
+import select
 import socket
+import subprocess
 import time
 
 
@@ -48,6 +52,51 @@ def console(sock):
                     print('Native VM serial buffer:\n' + output[-16000:])
 
 
+def capture_console(command):
+    """Read the runtime's console when its daemon already owns the QMP socket."""
+    master, slave = pty.openpty()
+    process = None
+    output = bytearray()
+    environment = os.environ.copy()
+    for key in ('GH_TOKEN', 'GITHUB_TOKEN'):
+        environment.pop(key, None)
+    try:
+        process = subprocess.Popen(command, stdin=slave, stdout=slave, stderr=slave,
+                                   env=environment, start_new_session=True)
+        os.close(slave)
+        slave = None
+        deadline = time.monotonic() + 8
+        detach_at = time.monotonic() + 4
+        detached = False
+        while time.monotonic() < deadline and len(output) < 262144:
+            if not detached and time.monotonic() >= detach_at:
+                # Console escape only; no command is sent to the guest shell.
+                os.write(master, b'\x01q')
+                detached = True
+            if select.select([master], [], [], 0.2)[0]:
+                try:
+                    block = os.read(master, 8192)
+                except OSError:
+                    break
+                if not block:
+                    break
+                output.extend(block)
+            if process.poll() is not None:
+                break
+        return output.decode(errors='replace')[-16000:]
+    finally:
+        if slave is not None:
+            os.close(slave)
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
+        os.close(master)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--name', required=True)
@@ -72,8 +121,14 @@ def main():
                 console(path)
             except (OSError, ValueError, RuntimeError, TimeoutError) as error:
                 print('Native VM serial diagnostics unavailable: ' + type(error).__name__)
-            return
-    print('Native VM monitor unavailable; existing guest acceptance failure is retained')
+            break
+    cli = 'incus' if args.runtime == 'incus' else '/snap/bin/lxc'
+    try:
+        details = capture_console([cli, 'console', args.name, '--type=console'])
+        if details:
+            print('Native VM console attachment:\n' + details)
+    except (OSError, subprocess.SubprocessError) as error:
+        print('Native VM console attachment unavailable: ' + type(error).__name__)
 
 
 if __name__ == '__main__':

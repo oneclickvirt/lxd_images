@@ -5,6 +5,9 @@ import socket
 import tempfile
 import threading
 import unittest
+import os
+import sys
+from unittest import mock
 from contextlib import redirect_stdout
 import io
 
@@ -55,6 +58,18 @@ class NativeVMConsoleTests(unittest.TestCase):
     def test_absent_monitor_preserves_an_error(self):
         with self.assertRaises(OSError):
             diagnostics.console(Path('/nonexistent-disposable-vm/monitor'))
+
+    def test_runtime_console_reads_a_tty_and_never_inherits_tokens(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = Path(temporary) / 'console.py'
+            fixture.write_text('import os,sys\n'
+                               'assert os.isatty(0)\n'
+                               'assert "GH_TOKEN" not in os.environ and "GITHUB_TOKEN" not in os.environ\n'
+                               'print("Kernel fixture: missing virtio driver",flush=True)\n')
+            with mock.patch.dict(os.environ, GH_TOKEN='private-a', GITHUB_TOKEN='private-b'):
+                output = diagnostics.capture_console([sys.executable, str(fixture)])
+            self.assertIn('Kernel fixture: missing virtio driver', output)
+            self.assertNotIn('AssertionError', output)
 
 
 if __name__ == '__main__':
