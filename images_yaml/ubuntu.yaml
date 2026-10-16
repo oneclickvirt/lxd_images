@@ -5,12 +5,14 @@ simplestream:
     jammy: 22.04
     noble: 24.04
     resolute: 26.04
+    stonking: 26.1
   requirements:
   - requirements:
       cgroup: v2
     releases:
     - noble
     - resolute
+    - stonking
 source:
   downloader: debootstrap
   same_as: gutsy
@@ -432,6 +434,7 @@ packages:
     releases:
     - noble
     - resolute
+    - stonking
   - packages:
     - grub-efi-amd64-signed
     - shim-signed
@@ -528,6 +531,7 @@ actions:
   releases:
   - noble
   - resolute
+  - stonking
 - trigger: post-packages
   action: |-
     #!/bin/sh
