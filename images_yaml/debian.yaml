@@ -1351,21 +1351,6 @@ actions:
     rm -f /etc/ssh/sshd_not_to_be_run
     systemctl enable ssh.service
 - trigger: post-files
-  types:
-  - container
-  action: |
-    #!/bin/sh
-    set -eu
-    # hosted-consumer-dns-file
-    if [ -L /etc/resolv.conf ]; then
-      case "$(readlink /etc/resolv.conf)" in
-        /run/*|../run/*|/var/run/*|../var/run/*)
-          rm /etc/resolv.conf
-          touch /etc/resolv.conf
-          ;;
-      esac
-    fi
-- trigger: post-files
   action: |
     #!/bin/sh
     set -eu
