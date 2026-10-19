@@ -31,6 +31,7 @@ path.write_text(source)
 PY
     [[ $? == 0 ]] || return 1
     python3 .github/scripts/patch_lxd_builder.py "$folder" || return 1
+    python3 .github/scripts/patch_oracle_rootfs.py "$folder" || return 1
     python3 .github/scripts/patch_container_labels.py "$folder" || return 1
     python3 .github/scripts/patch_vm_partuuid.py "$folder" || return 1
     (
@@ -39,6 +40,7 @@ PY
         # expire while the builder remains valid. Compile all packages here;
         # image builds still enforce live source signatures/checksums.
         timeout --kill-after=30s 900s go test -run '^$' -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp ./sources ./shared ./generators &&
+        timeout --kill-after=30s 120s go test -run '^TestHostedOracleRootfs' -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp ./sources &&
         timeout --kill-after=30s 300s go test -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp ./lxd-imagebuilder/vm.go ./lxd-imagebuilder/hosted_partuuid_test.go -run '^TestHostedRootPartUUID$' &&
         timeout --kill-after=30s 600s go build -trimpath -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp \
             -o "$task_dir/lxd-imagebuilder" ./lxd-imagebuilder
