@@ -59,6 +59,20 @@ Path('disk.qcow2').write_bytes(b'complete')
         self.assertEqual(calls, 'xx')
         self.assertEqual(output, b'complete')
 
+    def test_missing_downloaded_iso_retries_once_and_cleans_outputs(self):
+        value, calls, output = self.execute('''p=Path('calls'); count=len(p.read_text()) if p.exists() else 0
+p.write_text('x'*(count+1))
+if count==0:
+ Path('disk.qcow2').write_bytes(b'partial')
+ print('Error: Error while downloading source: Failed to unpack ISO: Failed to mount "/tmp/source.iso": special device /tmp/source.iso does not exist.')
+ sys.exit(32)
+assert not Path('disk.qcow2').exists()
+Path('disk.qcow2').write_bytes(b'complete')
+''')
+        self.assertEqual(value.returncode, 0, value.stderr)
+        self.assertEqual(calls, 'xx')
+        self.assertEqual(output, b'complete')
+
     def test_permanent_xattr_errors_and_integrity_failures_do_not_retry(self):
         transient = 'rsync: get_xattr_data: lgetxattr("/rootfs/file","security.selinux",30) failed: No data available (61)'
         for message in (transient, 'Failed to unpack ISO: ' + transient.replace('No data available (61)', 'Operation not permitted (1)'),

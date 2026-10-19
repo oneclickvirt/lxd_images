@@ -14,6 +14,7 @@ OUTPUTS = ('incus.tar.xz', 'lxd.tar.xz', 'meta.tar.xz', 'rootfs.squashfs',
 NETWORK = re.compile(r"couldn.t download packages|failed retrieving file .* from .* (?:timed out|operation too slow)|HTTP[^\n]*(?:429|500|502|503|504)|connection (?:reset|refused)|temporary failure in name resolution|could not resolve host|TLS handshake timeout|unexpected EOF", re.I)
 INTEGRITY = re.compile(r'bad signature|invalid signature|invalid checksum|hash sum mismatch|BADSIG|NO_PUBKEY|GPG check FAILED|certificate verify failed', re.I)
 XATTR_ENODATA = re.compile(r'rsync:[^\n]*get_xattr_data:[^\n]*lgetxattr\([^\n]*"security[.]selinux"[^\n]*No data available \(61\)', re.I)
+SOURCE_MISSING = re.compile(r'Failed to unpack ISO[^\n]*(?:does not exist|No such file or directory)', re.I)
 
 
 def retryable(log):
@@ -21,7 +22,8 @@ def retryable(log):
     # disappears before rsync reads it. Retry the whole fresh builder once;
     # never ignore an rsync exit, discard attributes or relax integrity checks.
     source_copy = 'Failed to unpack ISO' in log and XATTR_ENODATA.search(log)
-    return bool(NETWORK.search(log) or source_copy) and not INTEGRITY.search(log)
+    source_download = SOURCE_MISSING.search(log)
+    return bool(NETWORK.search(log) or source_copy or source_download) and not INTEGRITY.search(log)
 
 
 def invoke(command, timeout):
