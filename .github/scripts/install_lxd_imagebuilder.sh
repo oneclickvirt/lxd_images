@@ -35,7 +35,10 @@ PY
     python3 .github/scripts/patch_vm_partuuid.py "$folder" || return 1
     (
         cd "$folder"
-        timeout --kill-after=30s 900s go test -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp ./sources ./shared ./generators &&
+        # Upstream source fixtures include historical signing keys that can
+        # expire while the builder remains valid. Compile all packages here;
+        # image builds still enforce live source signatures/checksums.
+        timeout --kill-after=30s 900s go test -run '^$' -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp ./sources ./shared ./generators &&
         timeout --kill-after=30s 300s go test -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp ./lxd-imagebuilder/vm.go ./lxd-imagebuilder/hosted_partuuid_test.go -run '^TestHostedRootPartUUID$' &&
         timeout --kill-after=30s 600s go build -trimpath -tags=containers_image_storage_stub,containers_image_docker_daemon_stub,containers_image_openpgp \
             -o "$task_dir/lxd-imagebuilder" ./lxd-imagebuilder
