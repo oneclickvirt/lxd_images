@@ -289,6 +289,10 @@
         {
           "release": "resolute",
           "version": "26.04"
+        },
+        {
+          "release": "stonking",
+          "version": "stonking"
         }
       ],
       "variants": [
@@ -298,5 +302,5 @@
     }
   },
   "schema": 1,
-  "source_commit": "843bb51460c6dd95ffd3ffa312349f7829986942"
+  "source_commit": "ef885484024149d26006080c3cfa183d3715ce0f"
 }
