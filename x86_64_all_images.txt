@@ -74,3 +74,5 @@ ubuntu_24.04_noble_amd64_cloud.zip
 ubuntu_24.04_noble_amd64_default.zip
 ubuntu_26.04_resolute_amd64_cloud.zip
 ubuntu_26.04_resolute_amd64_default.zip
+ubuntu_stonking_stonking_amd64_cloud.zip
+ubuntu_stonking_stonking_amd64_default.zip
