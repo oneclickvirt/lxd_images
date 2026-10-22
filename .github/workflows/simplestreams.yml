@@ -67,25 +67,11 @@ jobs:
       run: test -n "$NETLIFY_AUTH_TOKEN" && test -n "$NETLIFY_SITE_ID"
     - name: Deploy to Netlify
       shell: bash
-      run: |
-        set -euo pipefail
-        for attempt in 1 2 3; do
-          if npm exec --yes --package=netlify-cli@27.12.1 -- netlify deploy \
-              --dir ./build --prod --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN" \
-              --message "${GITHUB_REPOSITORY}@${GITHUB_SHA}"; then
-            exit 0
-          fi
-          if [[ "$attempt" -lt 3 ]]; then
-            echo "Netlify deploy attempt $attempt failed; retrying after a short delay." >&2
-            sleep "$((attempt * 10))"
-          fi
-        done
-        echo "Netlify deployment failed after 3 attempts; the existing production site remains active." >&2
-        exit 1
+      run: bash .github/scripts/deploy_image_portal.sh
       env:
         NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
         NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-      timeout-minutes: 20
+      timeout-minutes: 28
     - name: Verify the published Simplestreams source with the native LXD client
       shell: bash
       run: bash .github/scripts/verify_image_remote.sh lxd
@@ -100,6 +86,7 @@ jobs:
     - main
     paths:
     - .github/scripts/style_image_portal.py
+    - .github/scripts/deploy_image_portal.sh
     - .github/scripts/validate_image_remote.py
     - .github/scripts/verify_image_remote.sh
     - .github/scripts/install_stream_maintainer.sh
