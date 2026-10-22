@@ -1,4 +1,13 @@
 {
   "schema": 1,
-  "entries": []
+  "entries": [
+    {
+      "distro": "ubuntu",
+      "release": "stonking",
+      "arch": "arm64",
+      "kind": "vm",
+      "reason": "ARM64 VM first boot reports systemd preset errors on a read-only root and never reaches SSH/network readiness under hosted QEMU TCG. Keep automatic builds on hold pending a passing manual boot and restart validation.",
+      "evidence": "https://github.com/oneclickvirt/lxd_images/actions/runs/39735240572"
+    }
+  ]
 }
