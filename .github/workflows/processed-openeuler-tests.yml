@@ -1,0 +1,47 @@
+name: Published openEuler processed image tests
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+concurrency:
+  group: processed-openeuler-tests
+  cancel-in-progress: false
+jobs:
+  catalog:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.catalog.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: catalog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/processed_euler_suite.py matrix
+  test:
+    needs: catalog
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.catalog.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prepare disposable runtime
+        run: bash .github/scripts/prepare_hosted_runtime.sh lxd
+      - name: Verify checksums and compare processed pair against its original archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ matrix.image }}
+        run: python3 .github/scripts/processed_euler_suite.py download
+      - name: Validate original processed metadata, rootfs, SSH, network and restart
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: python3 .github/scripts/hosted_image_test.py --file "processed/$IMAGE" --runtime lxd
