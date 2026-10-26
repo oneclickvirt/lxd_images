@@ -4,8 +4,8 @@
   "mcp": true,
   "files": {
     "agent/profile.json": "9595e3364d09c554cdf1ae982e79bc50ab4f3cf4fdb8be212a93c628d93de490",
-    "skills/oneclickvirt-lxd-images/SKILL.md": "e880e02f08e91a0ab8586ba87edad4899e008455bf3270eee765e69d735cdbef",
-    "skills/oneclickvirt-lxd-images/SKILL_ZH.md": "862d85034d05747b54ea52d2d1cb2c0208817ed079609c01dc14bc615f0074a8",
-    "agent/server.py": "c54981973f8d98e6eada6e0442f3d7e5c9296947706c2c5d33b80b7f9a1c9b5b"
+    "skills/oneclickvirt-lxd-images/SKILL.md": "6694c538fdc2253334630e9d5ec735e772791835c541926cbfbc7f1b5a0ef703",
+    "skills/oneclickvirt-lxd-images/SKILL_ZH.md": "2072be7c5301f0d0619e08abc79f406ac774a81cb82f8d2d5d470c145e6a0324",
+    "agent/server.py": "f4fe673f355a9b8ab06b4f8c1f90251e0ad79e1d9324ee4d62eff5e12ac45b74"
   }
 }
