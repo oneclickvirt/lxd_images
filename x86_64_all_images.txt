@@ -37,6 +37,8 @@ fedora_43_43_amd64_cloud.zip
 fedora_43_43_amd64_default.zip
 fedora_44_44_amd64_cloud.zip
 fedora_44_44_amd64_default.zip
+fedora_45_45_amd64_cloud.zip
+fedora_45_45_amd64_default.zip
 gentoo_current_current_amd64_cloud.zip
 gentoo_current_current_amd64_openrc.zip
 gentoo_current_current_amd64_systemd.zip

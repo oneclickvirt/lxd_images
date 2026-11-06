@@ -37,6 +37,8 @@ fedora_43_43_arm64_cloud.zip
 fedora_43_43_arm64_default.zip
 fedora_44_44_arm64_cloud.zip
 fedora_44_44_arm64_default.zip
+fedora_45_45_arm64_cloud.zip
+fedora_45_45_arm64_default.zip
 gentoo_current_current_arm64_cloud.zip
 gentoo_current_current_arm64_openrc.zip
 gentoo_current_current_arm64_systemd.zip
