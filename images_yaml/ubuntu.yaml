@@ -352,18 +352,22 @@ files:
   - desktop
 - name: meta-data
   generator: cloud-init
+  types:
+  - container
 - name: network-config
   generator: cloud-init
+  types:
+  - container
 - name: user-data
   generator: cloud-init
+  types:
+  - container
 - name: vendor-data
   generator: cloud-init
+  types:
+  - container
 - name: ext4
   generator: fstab
-  types:
-  - vm
-- name: lxd-agent
-  generator: lxd-agent
   types:
   - vm
 - path: /etc/default/grub.d/50-lxd.cfg
@@ -428,6 +432,11 @@ packages:
   - packages:
     - cloud-init
     action: install
+  - packages:
+    - lxd-agent-loader
+    action: install
+    types:
+    - vm
   - packages:
     - systemd-resolved
     action: install
