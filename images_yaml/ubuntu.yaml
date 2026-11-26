@@ -308,6 +308,14 @@ targets:
       content: lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
     - type: all
       content: lxc.arch = {{ image.architecture_personality }}
+  lxd:
+    vm:
+      filesystem_options:
+      - options:
+        - -O
+        - ^metadata_csum_seed,^orphan_file
+        releases:
+        - jammy
 files:
 - path: /etc/hostname
   generator: hostname

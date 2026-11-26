@@ -87,6 +87,15 @@ targets:
       content: lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
     - type: all
       content: lxc.arch = {{ image.architecture_kernel }}
+  lxd:
+    vm:
+      filesystem_options:
+      - options:
+        - -O
+        - ^metadata_csum_seed,^orphan_file
+        releases:
+        - 8
+        - 9
 files:
 - name: hostname
   path: /etc/hostname
